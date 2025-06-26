@@ -1,0 +1,280 @@
+{
+  "name": "SimpleRISC16",
+  "version": "1.0",
+  "description": "A simple 16-bit RISC processor for educational purposes",
+  "word_size": 16,
+  "endianness": "little",
+  "instruction_size": 16,
+  "registers": {
+    "general_purpose": [
+      {"name": "R0", "size": 16, "alias": ["ZERO"], "description": "Always zero"},
+      {"name": "R1", "size": 16, "alias": ["AT"], "description": "Assembler temporary"},
+      {"name": "R2", "size": 16, "alias": ["V0"], "description": "Return value"},
+      {"name": "R3", "size": 16, "alias": ["V1"], "description": "Return value"},
+      {"name": "R4", "size": 16, "alias": ["A0"], "description": "Argument"},
+      {"name": "R5", "size": 16, "alias": ["A1"], "description": "Argument"},
+      {"name": "R6", "size": 16, "alias": ["A2"], "description": "Argument"},
+      {"name": "R7", "size": 16, "alias": ["A3"], "description": "Argument"},
+      {"name": "R8", "size": 16, "alias": ["T0"], "description": "Temporary"},
+      {"name": "R9", "size": 16, "alias": ["T1"], "description": "Temporary"},
+      {"name": "R10", "size": 16, "alias": ["T2"], "description": "Temporary"},
+      {"name": "R11", "size": 16, "alias": ["T3"], "description": "Temporary"},
+      {"name": "R12", "size": 16, "alias": ["T4"], "description": "Temporary"},
+      {"name": "R13", "size": 16, "alias": ["T5"], "description": "Temporary"},
+      {"name": "R14", "size": 16, "alias": ["S0"], "description": "Saved register"},
+      {"name": "R15", "size": 16, "alias": ["S1"], "description": "Saved register"}
+    ],
+    "special_purpose": [
+      {"name": "PC", "size": 16, "description": "Program Counter"},
+      {"name": "SP", "size": 16, "description": "Stack Pointer"},
+      {"name": "FLAGS", "size": 16, "description": "Status Flags"}
+    ]
+  },
+  "instructions": [
+    {
+      "mnemonic": "NOP",
+      "opcode": "0000",
+      "format": "R-type",
+      "description": "No operation",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "0000"},
+          {"name": "unused", "bits": "11:0", "value": "000000000000"}
+        ]
+      },
+      "syntax": "NOP",
+      "semantics": "No operation",
+      "flags_affected": []
+    },
+    {
+      "mnemonic": "ADD",
+      "opcode": "0001",
+      "format": "R-type",
+      "description": "Add two registers",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "0001"},
+          {"name": "rd", "bits": "11:8", "type": "register"},
+          {"name": "rs1", "bits": "7:4", "type": "register"},
+          {"name": "rs2", "bits": "3:0", "type": "register"}
+        ]
+      },
+      "syntax": "ADD $rd, $rs1, $rs2",
+      "semantics": "$rd = $rs1 + $rs2",
+      "flags_affected": ["Z", "N", "C", "V"]
+    },
+    {
+      "mnemonic": "SUB",
+      "opcode": "0010",
+      "format": "R-type",
+      "description": "Subtract two registers",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "0010"},
+          {"name": "rd", "bits": "11:8", "type": "register"},
+          {"name": "rs1", "bits": "7:4", "type": "register"},
+          {"name": "rs2", "bits": "3:0", "type": "register"}
+        ]
+      },
+      "syntax": "SUB $rd, $rs1, $rs2",
+      "semantics": "$rd = $rs1 - $rs2",
+      "flags_affected": ["Z", "N", "C", "V"]
+    },
+    {
+      "mnemonic": "AND",
+      "opcode": "0011",
+      "format": "R-type",
+      "description": "Bitwise AND",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "0011"},
+          {"name": "rd", "bits": "11:8", "type": "register"},
+          {"name": "rs1", "bits": "7:4", "type": "register"},
+          {"name": "rs2", "bits": "3:0", "type": "register"}
+        ]
+      },
+      "syntax": "AND $rd, $rs1, $rs2",
+      "semantics": "$rd = $rs1 & $rs2",
+      "flags_affected": ["Z", "N"]
+    },
+    {
+      "mnemonic": "OR",
+      "opcode": "0100",
+      "format": "R-type",
+      "description": "Bitwise OR",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "0100"},
+          {"name": "rd", "bits": "11:8", "type": "register"},
+          {"name": "rs1", "bits": "7:4", "type": "register"},
+          {"name": "rs2", "bits": "3:0", "type": "register"}
+        ]
+      },
+      "syntax": "OR $rd, $rs1, $rs2",
+      "semantics": "$rd = $rs1 | $rs2",
+      "flags_affected": ["Z", "N"]
+    },
+    {
+      "mnemonic": "LDI",
+      "opcode": "0101",
+      "format": "I-type",
+      "description": "Load immediate value",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "0101"},
+          {"name": "rd", "bits": "11:8", "type": "register"},
+          {"name": "immediate", "bits": "7:0", "type": "immediate", "signed": false}
+        ]
+      },
+      "syntax": "LDI $rd, #imm",
+      "semantics": "$rd = imm",
+      "flags_affected": ["Z", "N"]
+    },
+    {
+      "mnemonic": "LD",
+      "opcode": "0110",
+      "format": "I-type",
+      "description": "Load from memory",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "0110"},
+          {"name": "rd", "bits": "11:8", "type": "register"},
+          {"name": "rs1", "bits": "7:4", "type": "register"},
+          {"name": "offset", "bits": "3:0", "type": "immediate", "signed": true}
+        ]
+      },
+      "syntax": "LD $rd, offset($rs1)",
+      "semantics": "$rd = Memory[$rs1 + offset]",
+      "flags_affected": ["Z", "N"]
+    },
+    {
+      "mnemonic": "ST",
+      "opcode": "0111",
+      "format": "I-type",
+      "description": "Store to memory",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "0111"},
+          {"name": "rs1", "bits": "11:8", "type": "register"},
+          {"name": "rs2", "bits": "7:4", "type": "register"},
+          {"name": "offset", "bits": "3:0", "type": "immediate", "signed": true}
+        ]
+      },
+      "syntax": "ST $rs2, offset($rs1)",
+      "semantics": "Memory[$rs1 + offset] = $rs2",
+      "flags_affected": []
+    },
+    {
+      "mnemonic": "JMP",
+      "opcode": "1000",
+      "format": "J-type",
+      "description": "Unconditional jump",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "1000"},
+          {"name": "address", "bits": "11:0", "type": "address"}
+        ]
+      },
+      "syntax": "JMP address",
+      "semantics": "PC = address",
+      "flags_affected": []
+    },
+    {
+      "mnemonic": "JZ",
+      "opcode": "1001",
+      "format": "J-type",
+      "description": "Jump if zero",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "1001"},
+          {"name": "address", "bits": "11:0", "type": "address"}
+        ]
+      },
+      "syntax": "JZ address",
+      "semantics": "if (Z) PC = address",
+      "flags_affected": []
+    },
+    {
+      "mnemonic": "JNZ",
+      "opcode": "1010",
+      "format": "J-type",
+      "description": "Jump if not zero",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "1010"},
+          {"name": "address", "bits": "11:0", "type": "address"}
+        ]
+      },
+      "syntax": "JNZ address",
+      "semantics": "if (!Z) PC = address",
+      "flags_affected": []
+    },
+    {
+      "mnemonic": "CALL",
+      "opcode": "1011",
+      "format": "J-type",
+      "description": "Call subroutine",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "1011"},
+          {"name": "address", "bits": "11:0", "type": "address"}
+        ]
+      },
+      "syntax": "CALL address",
+      "semantics": "SP = SP - 2; Memory[SP] = PC; PC = address",
+      "flags_affected": []
+    },
+    {
+      "mnemonic": "RET",
+      "opcode": "1100",
+      "format": "R-type",
+      "description": "Return from subroutine",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "1100"},
+          {"name": "unused", "bits": "11:0", "value": "000000000000"}
+        ]
+      },
+      "syntax": "RET",
+      "semantics": "PC = Memory[SP]; SP = SP + 2",
+      "flags_affected": []
+    }
+  ],
+  "addressing_modes": [
+    {
+      "name": "register_direct",
+      "syntax": "$reg",
+      "description": "Direct register access"
+    },
+    {
+      "name": "immediate",
+      "syntax": "#value",
+      "description": "Immediate value"
+    },
+    {
+      "name": "register_indirect",
+      "syntax": "($reg)",
+      "description": "Memory address in register"
+    },
+    {
+      "name": "indexed",
+      "syntax": "offset($reg)",
+      "description": "Register plus offset"
+    }
+  ],
+  "assembly_syntax": {
+    "comment_char": ";",
+    "label_suffix": ":",
+    "register_prefix": "$",
+    "immediate_prefix": "#",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "case_sensitive": false,
+    "directives": [
+      ".org",
+      ".word",
+      ".byte",
+      ".space"
+    ]
+  }
+} 

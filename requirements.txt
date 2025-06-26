@@ -1,0 +1,20 @@
+# Core dependencies
+jsonschema>=4.0.0
+pydantic>=2.0.0
+click>=8.0.0
+rich>=13.0.0
+
+# Development dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
+
+# Documentation
+sphinx>=5.0.0
+sphinx-rtd-theme>=1.0.0
+
+# Optional: For enhanced parsing
+pyparsing>=3.0.0
+lark>=1.0.0 
