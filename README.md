@@ -83,9 +83,6 @@ Comprehensive documentation is available in the `docs/` directory:
 - **[Testing Guide](docs/testing.md)** - Testing framework and examples
 - **[API Reference](docs/api-reference.md)** - Complete programming interface documentation
 - **[Getting Started Tutorial](docs/getting-started.md)** - Step-by-step introduction
-
-### Additional Documentation
-
 - **[Contributing Guide](docs/contributing.md)** - Guidelines for contributors
 
 ## Example ISAs
