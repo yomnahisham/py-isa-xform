@@ -378,7 +378,14 @@ class Assembler:
         if field_type == "register":
             return self._resolve_register_operand(operand)
         elif field_type == "immediate":
-            value = self._resolve_immediate_operand(operand)
+            # Check if this is actually a label (for branch/jump instructions)
+            if operand.type == "label":
+                # Treat as address for branch/jump instructions
+                value = self._resolve_address_operand(operand)
+            else:
+                # Treat as literal immediate value
+                value = self._resolve_immediate_operand(operand)
+            
             # Validate immediate fits in bit width
             if signed:
                 min_val = -(1 << (bit_width - 1))
