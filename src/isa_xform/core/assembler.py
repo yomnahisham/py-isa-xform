@@ -6,6 +6,7 @@ import struct
 from enum import Enum
 from typing import List, Optional, Dict, Any, Union, Tuple
 from dataclasses import dataclass, field
+import re
 
 from .isa_loader import ISADefinition, Instruction, Directive, Register
 from .parser import Parser, ASTNode, LabelNode, InstructionNode, DirectiveNode, CommentNode, OperandNode
@@ -714,9 +715,11 @@ class Assembler:
         expansion = pseudo.expansion
         if not expansion:
             raise AssemblerError(f"Pseudo-instruction '{node.mnemonic}' has no expansion defined")
+        
         operand_map = {}
         for i, op in enumerate(node.operands):
             # Map $rd, $rs, $imm, $1, $2, ... and also plain rd, rs, imm
+            # But avoid mapping literal numbers that might appear in expansions
             if i == 0:
                 operand_map["$rd"] = str(op.value)
                 operand_map["rd"] = str(op.value)
@@ -729,10 +732,28 @@ class Assembler:
             operand_map[f"$op{i+1}"] = str(op.value)
             operand_map[f"op{i+1}"] = str(op.value)
             operand_map[f"${i+1}"] = str(op.value)
-            operand_map[f"{i+1}"] = str(op.value)
+            # Don't map plain numbers like "1", "2" as they might be literal values
+            # Only map them if they're explicitly used as placeholders
+            if str(i+1) not in ["1", "2", "3", "4", "5", "6", "7", "8", "9"]:
+                operand_map[f"{i+1}"] = str(op.value)
+        
+        # Use word boundary replacement to avoid replacing literal register references
         expanded_text = expansion
         for k, v in operand_map.items():
-            expanded_text = expanded_text.replace(k, v)
+            # Use word boundary matching to only replace actual placeholders
+            # This prevents replacing literal register references like x2 in "ADDI x2, -2"
+            # and literal numbers like -1 in "XORI rd, -1"
+            if k.startswith('$'):
+                # For $placeholders, replace with word boundaries
+                pattern = r'\b' + re.escape(k) + r'\b'
+                expanded_text = re.sub(pattern, v, expanded_text)
+            else:
+                # For plain placeholders (rd, rs, imm), be more careful
+                # Only replace if they appear as standalone words and are not part of numbers
+                # This prevents replacing "1" in "-1" or "x1" in "x2"
+                pattern = r'(?<![a-zA-Z0-9_-])' + re.escape(k) + r'(?![a-zA-Z0-9_-])'
+                expanded_text = re.sub(pattern, v, expanded_text)
+        
         expanded_instrs = [s.strip() for s in expanded_text.split(';') if s.strip()]
         parser = Parser(self.isa_definition)
         nodes = []
