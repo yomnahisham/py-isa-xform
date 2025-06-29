@@ -173,11 +173,15 @@ class Assembler:
             self.symbol_table.set_current_address(self.context.current_address)
     
     def _assemble_instruction(self, node: InstructionNode) -> bytearray:
-        """Assemble a single instruction"""
+        """Assemble a single instruction, expanding pseudo-instructions if needed"""
         instruction = self._find_instruction(node.mnemonic)
         if not instruction:
-            raise AssemblerError(f"Unknown instruction: {node.mnemonic}")
-        
+            # Try pseudo-instruction expansion
+            expanded_nodes = self._expand_pseudo_instruction(node)
+            code = bytearray()
+            for n in expanded_nodes:
+                code.extend(self._assemble_instruction(n))
+            return code
         # Encode the instruction based on its format
         encoded = self._encode_instruction(instruction, node.operands)
         
@@ -697,3 +701,47 @@ class Assembler:
         
         # Default to address 0 if no entry point found
         return 0
+
+    def _expand_pseudo_instruction(self, node: InstructionNode) -> List[InstructionNode]:
+        """Expand a pseudo-instruction node into real instructions, recursively if needed."""
+        pseudo = None
+        for p in getattr(self.isa_definition, 'pseudo_instructions', []):
+            if (p.mnemonic.upper() if not self.isa_definition.assembly_syntax.case_sensitive else p.mnemonic) == (node.mnemonic.upper() if not self.isa_definition.assembly_syntax.case_sensitive else node.mnemonic):
+                pseudo = p
+                break
+        if not pseudo:
+            raise AssemblerError(f"Unknown instruction: {node.mnemonic}")
+        expansion = pseudo.expansion
+        if not expansion:
+            raise AssemblerError(f"Pseudo-instruction '{node.mnemonic}' has no expansion defined")
+        operand_map = {}
+        for i, op in enumerate(node.operands):
+            # Map $rd, $rs, $imm, $1, $2, ... and also plain rd, rs, imm
+            if i == 0:
+                operand_map["$rd"] = str(op.value)
+                operand_map["rd"] = str(op.value)
+            elif i == 1:
+                operand_map["$rs"] = str(op.value)
+                operand_map["rs"] = str(op.value)
+            elif i == 2:
+                operand_map["$imm"] = str(op.value)
+                operand_map["imm"] = str(op.value)
+            operand_map[f"$op{i+1}"] = str(op.value)
+            operand_map[f"op{i+1}"] = str(op.value)
+            operand_map[f"${i+1}"] = str(op.value)
+            operand_map[f"{i+1}"] = str(op.value)
+        expanded_text = expansion
+        for k, v in operand_map.items():
+            expanded_text = expanded_text.replace(k, v)
+        expanded_instrs = [s.strip() for s in expanded_text.split(';') if s.strip()]
+        parser = Parser(self.isa_definition)
+        nodes = []
+        for instr in expanded_instrs:
+            parsed = parser.parse(instr)
+            for n in parsed:
+                if isinstance(n, InstructionNode):
+                    if not self._find_instruction(n.mnemonic):
+                        nodes.extend(self._expand_pseudo_instruction(n))
+                    else:
+                        nodes.append(n)
+        return nodes

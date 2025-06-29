@@ -35,6 +35,27 @@ class Instruction:
 
 
 @dataclass
+class OperandPattern:
+    """Represents an operand pattern for parsing"""
+    name: str
+    type: str  # register, immediate, address, label, etc.
+    pattern: str  # regex pattern for matching
+    description: str
+    examples: List[str] = field(default_factory=list)
+    validation_rules: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class InstructionFormat:
+    """Represents an instruction format definition"""
+    name: str
+    description: str
+    operand_patterns: List[OperandPattern]
+    encoding_template: Dict[str, Any]
+    examples: List[str] = field(default_factory=list)
+
+
+@dataclass
 class Directive:
     """Represents a directive definition"""
     name: str
@@ -42,6 +63,9 @@ class Directive:
     action: str
     argument_types: List[str] = field(default_factory=list)
     handler: Optional[str] = None
+    syntax: str = ""
+    examples: List[str] = field(default_factory=list)
+    validation_rules: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -51,6 +75,7 @@ class PseudoInstruction:
     description: str
     syntax: str
     expansion: str
+    validation_rules: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -60,6 +85,7 @@ class AddressingMode:
     syntax: str
     description: str
     pattern: Optional[str] = None
+    operand_types: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -74,6 +100,8 @@ class AssemblySyntax:
     binary_prefix: str = "0b"
     case_sensitive: bool = False
     directives: List[str] = field(default_factory=list)
+    operand_separators: List[str] = field(default_factory=lambda: [",", " "])
+    whitespace_handling: str = "flexible"  # strict, flexible, minimal
     
     def __post_init__(self):
         """Ensure comment_chars includes comment_char for compatibility"""
@@ -91,6 +119,7 @@ class AddressSpace:
     default_data_start: int = 0
     default_stack_start: int = 0
     memory_layout: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    alignment_requirements: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -104,11 +133,14 @@ class ISADefinition:
     instruction_size: int
     registers: Dict[str, List[Register]]
     instructions: List[Instruction]
+    instruction_formats: Dict[str, InstructionFormat] = field(default_factory=dict)
+    operand_patterns: Dict[str, OperandPattern] = field(default_factory=dict)
     pseudo_instructions: List[PseudoInstruction] = field(default_factory=list)
     directives: Dict[str, Directive] = field(default_factory=dict)
     addressing_modes: List[AddressingMode] = field(default_factory=list)
     assembly_syntax: AssemblySyntax = field(default_factory=AssemblySyntax)
     address_space: AddressSpace = field(default_factory=AddressSpace)
+    validation_rules: Dict[str, Any] = field(default_factory=dict)
 
 
 class ISALoader:
@@ -219,7 +251,10 @@ class ISALoader:
                     description=directive_data["description"],
                     argument_types=directive_data.get("argument_types", []),
                     action=directive_data["action"],
-                    handler=directive_data.get("handler")
+                    handler=directive_data.get("handler"),
+                    syntax=directive_data.get("syntax", ""),
+                    examples=directive_data.get("examples", []),
+                    validation_rules=directive_data.get("validation_rules", {})
                 )
                 directives[directive.name] = directive
 
@@ -230,7 +265,8 @@ class ISALoader:
                 name=mode_data["name"],
                 syntax=mode_data["syntax"],
                 description=mode_data["description"],
-                pattern=mode_data.get("pattern")
+                pattern=mode_data.get("pattern"),
+                operand_types=mode_data.get("operand_types", [])
             )
             addressing_modes.append(mode)
 
@@ -245,7 +281,9 @@ class ISALoader:
             hex_prefix=syntax_data.get("hex_prefix", "0x"),
             binary_prefix=syntax_data.get("binary_prefix", "0b"),
             case_sensitive=syntax_data.get("case_sensitive", False),
-            directives=syntax_data.get("directives", [])
+            directives=syntax_data.get("directives", []),
+            operand_separators=syntax_data.get("operand_separators", lambda: [",", " "]),
+            whitespace_handling=syntax_data.get("whitespace_handling", "flexible")
         )
         
         # Parse address space
@@ -254,7 +292,8 @@ class ISALoader:
             default_code_start=address_space_data.get("default_code_start", 0),
             default_data_start=address_space_data.get("default_data_start", 0),
             default_stack_start=address_space_data.get("default_stack_start", 0),
-            memory_layout=address_space_data.get("memory_layout", {})
+            memory_layout=address_space_data.get("memory_layout", {}),
+            alignment_requirements=address_space_data.get("alignment_requirements", {})
         )
         
         return ISADefinition(
@@ -266,11 +305,14 @@ class ISALoader:
             instruction_size=data.get("instruction_size", data["word_size"]),
             registers=registers,
             instructions=instructions,
+            instruction_formats={},
+            operand_patterns={},
             pseudo_instructions=pseudo_instructions,
             directives=directives,
             addressing_modes=addressing_modes,
             assembly_syntax=assembly_syntax,
-            address_space=address_space
+            address_space=address_space,
+            validation_rules={}
         )
     
     def list_available_isas(self) -> List[str]:

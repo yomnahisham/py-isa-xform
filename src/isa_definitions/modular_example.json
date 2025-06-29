@@ -1,0 +1,316 @@
+{
+  "name": "ModularExample",
+  "version": "1.0",
+  "description": "Example ISA demonstrating modular capabilities",
+  "word_size": 32,
+  "endianness": "little",
+  "instruction_size": 32,
+  "address_space": {
+    "default_code_start": 0x1000,
+    "default_data_start": 0x2000,
+    "default_stack_start": 0x8000,
+    "memory_layout": {
+      "code_section": {"start": 0x1000, "end": 0x1FFF},
+      "data_section": {"start": 0x2000, "end": 0x7FFF},
+      "stack_section": {"start": 0x8000, "end": 0xFFFF}
+    },
+    "alignment_requirements": {
+      "code": 4,
+      "data": 4,
+      "stack": 8
+    }
+  },
+  "registers": {
+    "general_purpose": [
+      {"name": "R0", "size": 32, "alias": ["ZERO"], "description": "Always zero"},
+      {"name": "R1", "size": 32, "alias": ["AT"], "description": "Assembler temporary"},
+      {"name": "R2", "size": 32, "alias": ["V0"], "description": "Return value"},
+      {"name": "R3", "size": 32, "alias": ["V1"], "description": "Return value"},
+      {"name": "R4", "size": 32, "alias": ["A0"], "description": "Argument"},
+      {"name": "R5", "size": 32, "alias": ["A1"], "description": "Argument"},
+      {"name": "R6", "size": 32, "alias": ["A2"], "description": "Argument"},
+      {"name": "R7", "size": 32, "alias": ["A3"], "description": "Argument"},
+      {"name": "R8", "size": 32, "alias": ["T0"], "description": "Temporary"},
+      {"name": "R9", "size": 32, "alias": ["T1"], "description": "Temporary"},
+      {"name": "R10", "size": 32, "alias": ["T2"], "description": "Temporary"},
+      {"name": "R11", "size": 32, "alias": ["T3"], "description": "Temporary"},
+      {"name": "R12", "size": 32, "alias": ["T4"], "description": "Temporary"},
+      {"name": "R13", "size": 32, "alias": ["T5"], "description": "Temporary"},
+      {"name": "R14", "size": 32, "alias": ["S0"], "description": "Saved register"},
+      {"name": "R15", "size": 32, "alias": ["S1"], "description": "Saved register"}
+    ],
+    "special_purpose": [
+      {"name": "PC", "size": 32, "description": "Program Counter"},
+      {"name": "SP", "size": 32, "description": "Stack Pointer"},
+      {"name": "FLAGS", "size": 32, "description": "Status Flags"}
+    ]
+  },
+  "assembly_syntax": {
+    "comment_char": "#",
+    "comment_chars": ["#", "//"],
+    "label_suffix": ":",
+    "register_prefix": "R",
+    "immediate_prefix": "#",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "case_sensitive": false,
+    "operand_separators": [",", " "],
+    "whitespace_handling": "flexible",
+    "directives": [".org", ".word", ".byte", ".space", ".ascii", ".asciiz", ".section", ".global", ".equ", ".align", ".custom"]
+  },
+  "operand_patterns": {
+    "register": {
+      "name": "register",
+      "type": "register",
+      "pattern": "^R([0-9]+)$",
+      "description": "Register operand (R0-R15)",
+      "examples": ["R0", "R1", "R15"],
+      "validation_rules": {
+        "min_value": 0,
+        "max_value": 15
+      }
+    },
+    "immediate": {
+      "name": "immediate",
+      "type": "immediate",
+      "pattern": "^#([+-]?(?:0x[0-9a-fA-F]+|0b[01]+|\\d+))$",
+      "description": "Immediate value with prefix",
+      "examples": ["#42", "#0x1A", "#0b1010", "#-10"],
+      "validation_rules": {
+        "signed": true,
+        "bit_width": 16
+      }
+    },
+    "address": {
+      "name": "address",
+      "type": "address",
+      "pattern": "^@([0-9a-fA-F]+)$",
+      "description": "Address reference with @ prefix",
+      "examples": ["@1000", "@0x2000"],
+      "validation_rules": {
+        "signed": false,
+        "bit_width": 24
+      }
+    },
+    "label": {
+      "name": "label",
+      "type": "label",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+      "description": "Label reference",
+      "examples": ["start", "loop", "main"],
+      "validation_rules": {
+        "max_length": 32
+      }
+    }
+  },
+  "instruction_formats": {
+    "R-type": {
+      "name": "R-type",
+      "description": "Register-to-register operations",
+      "operand_patterns": ["register", "register", "register"],
+      "encoding_template": {
+        "fields": [
+          {"name": "opcode", "bits": "31:26", "type": "fixed"},
+          {"name": "rs1", "bits": "25:21", "type": "register"},
+          {"name": "rs2", "bits": "20:16", "type": "register"},
+          {"name": "rd", "bits": "15:11", "type": "register"},
+          {"name": "funct", "bits": "10:0", "type": "fixed"}
+        ]
+      },
+      "examples": ["ADD R1, R2, R3", "SUB R4, R5, R6"]
+    },
+    "I-type": {
+      "name": "I-type",
+      "description": "Immediate operations",
+      "operand_patterns": ["register", "register", "immediate"],
+      "encoding_template": {
+        "fields": [
+          {"name": "opcode", "bits": "31:26", "type": "fixed"},
+          {"name": "rs1", "bits": "25:21", "type": "register"},
+          {"name": "rd", "bits": "20:16", "type": "register"},
+          {"name": "immediate", "bits": "15:0", "type": "immediate"}
+        ]
+      },
+      "examples": ["ADDI R1, R2, #42", "LOADI R3, #0x1000"]
+    },
+    "J-type": {
+      "name": "J-type",
+      "description": "Jump instructions",
+      "operand_patterns": ["address"],
+      "encoding_template": {
+        "fields": [
+          {"name": "opcode", "bits": "31:26", "type": "fixed"},
+          {"name": "address", "bits": "25:0", "type": "address"}
+        ]
+      },
+      "examples": ["JMP @1000", "CALL @main"]
+    }
+  },
+  "directives": {
+    ".custom": {
+      "name": ".custom",
+      "description": "Custom directive for this ISA",
+      "action": "Define custom behavior",
+      "argument_types": ["string", "number"],
+      "handler": "custom",
+      "syntax": ".custom name value",
+      "examples": [".custom magic 0xDEADBEEF"],
+      "validation_rules": {
+        "name_pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+        "value_range": [0, 0xFFFFFFFF]
+      }
+    }
+  },
+  "instructions": [
+    {
+      "mnemonic": "NOP",
+      "opcode": "000000",
+      "format": "R-type",
+      "description": "No operation",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "31:26", "value": "000000"},
+          {"name": "unused", "bits": "25:0", "value": "00000000000000000000000000"}
+        ]
+      },
+      "syntax": "NOP",
+      "semantics": "No operation",
+      "flags_affected": []
+    },
+    {
+      "mnemonic": "ADD",
+      "opcode": "000001",
+      "format": "R-type",
+      "description": "Add two registers",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "31:26", "value": "000001"},
+          {"name": "rs1", "bits": "25:21", "type": "register"},
+          {"name": "rs2", "bits": "20:16", "type": "register"},
+          {"name": "rd", "bits": "15:11", "type": "register"},
+          {"name": "funct", "bits": "10:0", "value": "00000000000"}
+        ]
+      },
+      "syntax": "ADD $rd, $rs1, $rs2",
+      "semantics": "$rd = $rs1 + $rs2",
+      "flags_affected": ["Z", "N", "C", "V"]
+    },
+    {
+      "mnemonic": "ADDI",
+      "opcode": "000010",
+      "format": "I-type",
+      "description": "Add immediate",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "31:26", "value": "000010"},
+          {"name": "rs1", "bits": "25:21", "type": "register"},
+          {"name": "rd", "bits": "20:16", "type": "register"},
+          {"name": "immediate", "bits": "15:0", "type": "immediate", "signed": true}
+        ]
+      },
+      "syntax": "ADDI $rd, $rs1, #imm",
+      "semantics": "$rd = $rs1 + imm",
+      "flags_affected": ["Z", "N", "C", "V"]
+    },
+    {
+      "mnemonic": "JMP",
+      "opcode": "000011",
+      "format": "J-type",
+      "description": "Unconditional jump",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "31:26", "value": "000011"},
+          {"name": "address", "bits": "25:0", "type": "address"}
+        ]
+      },
+      "syntax": "JMP @address",
+      "semantics": "PC = address",
+      "flags_affected": []
+    },
+    {
+      "mnemonic": "LOAD",
+      "opcode": "000100",
+      "format": "I-type",
+      "description": "Load from memory",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "31:26", "value": "000100"},
+          {"name": "rs1", "bits": "25:21", "type": "register"},
+          {"name": "rd", "bits": "20:16", "type": "register"},
+          {"name": "offset", "bits": "15:0", "type": "immediate", "signed": true}
+        ]
+      },
+      "syntax": "LOAD $rd, offset($rs1)",
+      "semantics": "$rd = Memory[$rs1 + offset]",
+      "flags_affected": ["Z", "N"]
+    },
+    {
+      "mnemonic": "STORE",
+      "opcode": "000101",
+      "format": "I-type",
+      "description": "Store to memory",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "31:26", "value": "000101"},
+          {"name": "rs1", "bits": "25:21", "type": "register"},
+          {"name": "rs2", "bits": "20:16", "type": "register"},
+          {"name": "offset", "bits": "15:0", "type": "immediate", "signed": true}
+        ]
+      },
+      "syntax": "STORE $rs2, offset($rs1)",
+      "semantics": "Memory[$rs1 + offset] = $rs2",
+      "flags_affected": []
+    }
+  ],
+  "pseudo_instructions": [
+    {
+      "mnemonic": "MOV",
+      "description": "Move register",
+      "syntax": "MOV $rd, $rs",
+      "expansion": "ADD $rd, $rs, R0",
+      "validation_rules": {
+        "rd_not_zero": true
+      }
+    },
+    {
+      "mnemonic": "CLR",
+      "description": "Clear register",
+      "syntax": "CLR $rd",
+      "expansion": "ADD $rd, R0, R0",
+      "validation_rules": {
+        "rd_not_zero": true
+      }
+    }
+  ],
+  "addressing_modes": [
+    {
+      "name": "register",
+      "syntax": "R#",
+      "description": "Register addressing",
+      "pattern": "^R([0-9]+)$",
+      "operand_types": ["register"]
+    },
+    {
+      "name": "immediate",
+      "syntax": "#value",
+      "description": "Immediate addressing",
+      "pattern": "^#([+-]?(?:0x[0-9a-fA-F]+|0b[01]+|\\d+))$",
+      "operand_types": ["immediate"]
+    },
+    {
+      "name": "base_offset",
+      "syntax": "offset(base)",
+      "description": "Base register with offset",
+      "pattern": "^([+-]?(?:0x[0-9a-fA-F]+|0b[01]+|\\d+))\\(R([0-9]+)\\)$",
+      "operand_types": ["immediate", "register"]
+    }
+  ],
+  "validation_rules": {
+    "instruction_alignment": 4,
+    "data_alignment": 4,
+    "max_immediate_value": 32767,
+    "min_immediate_value": -32768,
+    "max_address_value": 16777215,
+    "register_count": 16
+  }
+} 
