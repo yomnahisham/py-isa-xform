@@ -139,6 +139,10 @@ def simulate_asm_file(filepath):
         filepath (str): Path to the .asm file
     """
 
+    from .isa_loader import ISALoader  # or adjust based on where it is
+
+    isa_def = ISALoader().load(open(isa_json_path))  # this returns ISADefinition
+
     # Create register file
     rf = RegisterFile(isa_def)
 
@@ -214,3 +218,5 @@ def operate(semantics: str, fields: dict, register_file):
 
         # Optional debug:
         # print(f"[DEBUG] {dest_reg_name} = {value}")
+
+
