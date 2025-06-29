@@ -33,6 +33,14 @@ class Instruction:
     semantics: str
     flags_affected: List[str] = field(default_factory=list)
 
+@dataclass
+class Directive:
+    """Represents a directive definition"""
+    name: str
+    description: str
+    argument_types: List[str] # e.g., ["number"], ["string"], ["number", "number"], ...
+    action: str # e.g., "allocate bytes", "align_counter", "allocate_string", "set_section", "align_counter", "define_constant"
+
 
 @dataclass
 class ISADefinition:
@@ -45,6 +53,7 @@ class ISADefinition:
     instruction_size: int
     registers: Dict[str, List[Register]]
     instructions: List[Instruction]
+    directives: Dict[str, Directive]
 
 
 class ISALoader:
@@ -134,6 +143,18 @@ class ISALoader:
                 flags_affected=instr_data.get("flags_affected", [])
             )
             instructions.append(instruction)
+
+        # Parse directives
+        directives = {}
+        dir_list = data.get("directives", {}).items()
+        for dir_data in dir_list:
+            directive = Directive(
+                name = dir_data["name"],
+                description = dir_data["description"],
+                argument_types = dir_data["argument_types"],
+                action = dir_data["action"]
+            )
+            directives[category].append(register)
         
         return ISADefinition(
             name=data["name"],
@@ -143,7 +164,8 @@ class ISALoader:
             endianness=data["endianness"],
             instruction_size=data.get("instruction_size", data["word_size"]),
             registers=registers,
-            instructions=instructions
+            instructions=instructions,
+            directives=directives
         )
     
     def list_available_isas(self) -> List[str]:
