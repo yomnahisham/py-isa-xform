@@ -33,13 +33,64 @@ class Instruction:
     semantics: str
     flags_affected: List[str] = field(default_factory=list)
 
+
 @dataclass
 class Directive:
     """Represents a directive definition"""
     name: str
     description: str
-    argument_types: List[str] # e.g., ["number"], ["string"], ["number", "number"], ...
-    action: str # e.g., "allocate bytes", "align_counter", "allocate_string", "set_section", "align_counter", "define_constant"
+    action: str
+    argument_types: List[str] = field(default_factory=list)
+    handler: Optional[str] = None
+
+
+@dataclass
+class PseudoInstruction:
+    """Represents a pseudo-instruction definition"""
+    mnemonic: str
+    description: str
+    syntax: str
+    expansion: str
+
+
+@dataclass
+class AddressingMode:
+    """Represents an addressing mode definition"""
+    name: str
+    syntax: str
+    description: str
+    pattern: Optional[str] = None
+
+
+@dataclass
+class AssemblySyntax:
+    """Represents assembly syntax rules"""
+    comment_char: str = ";"
+    comment_chars: List[str] = field(default_factory=list)  # For multiple comment characters
+    label_suffix: str = ":"
+    register_prefix: str = "$"
+    immediate_prefix: str = "#" 
+    hex_prefix: str = "0x"
+    binary_prefix: str = "0b"
+    case_sensitive: bool = False
+    directives: List[str] = field(default_factory=list)
+    
+    def __post_init__(self):
+        """Ensure comment_chars includes comment_char for compatibility"""
+        if not self.comment_chars:
+            self.comment_chars = [self.comment_char]
+        elif self.comment_char not in self.comment_chars:
+            # If comment_chars is specified but doesn't include comment_char, use the first one
+            self.comment_char = self.comment_chars[0]
+
+
+@dataclass
+class AddressSpace:
+    """Represents address space configuration"""
+    default_code_start: int = 0
+    default_data_start: int = 0
+    default_stack_start: int = 0
+    memory_layout: Dict[str, Dict[str, int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -53,7 +104,11 @@ class ISADefinition:
     instruction_size: int
     registers: Dict[str, List[Register]]
     instructions: List[Instruction]
-    directives: Dict[str, Directive]
+    pseudo_instructions: List[PseudoInstruction] = field(default_factory=list)
+    directives: Dict[str, Directive] = field(default_factory=dict)
+    addressing_modes: List[AddressingMode] = field(default_factory=list)
+    assembly_syntax: AssemblySyntax = field(default_factory=AssemblySyntax)
+    address_space: AddressSpace = field(default_factory=AddressSpace)
 
 
 class ISALoader:
@@ -134,7 +189,7 @@ class ISALoader:
         for instr_data in data.get("instructions", []):
             instruction = Instruction(
                 mnemonic=instr_data["mnemonic"],
-                opcode=instr_data["opcode"],
+                opcode=instr_data.get("opcode", ""),
                 format=instr_data["format"],
                 description=instr_data["description"],
                 encoding=instr_data["encoding"],
@@ -144,17 +199,63 @@ class ISALoader:
             )
             instructions.append(instruction)
 
+        # Parse pseudo-instructions
+        pseudo_instructions = []
+        for pseudo_data in data.get("pseudo_instructions", []):
+            pseudo_instruction = PseudoInstruction(
+                mnemonic=pseudo_data["mnemonic"],
+                description=pseudo_data["description"],
+                syntax=pseudo_data["syntax"],
+                expansion=pseudo_data["expansion"]
+            )
+            pseudo_instructions.append(pseudo_instruction)
+
         # Parse directives
         directives = {}
-        dir_list = data.get("directives", {}).items()
-        for dir_data in dir_list:
-            directive = Directive(
-                name = dir_data["name"],
-                description = dir_data["description"],
-                argument_types = dir_data["argument_types"],
-                action = dir_data["action"]
+        for directive_data in data.get("directives", []):
+            if isinstance(directive_data, dict):
+                directive = Directive(
+                    name=directive_data["name"],
+                    description=directive_data["description"],
+                    argument_types=directive_data.get("argument_types", []),
+                    action=directive_data["action"],
+                    handler=directive_data.get("handler")
+                )
+                directives[directive.name] = directive
+
+        # Parse addressing modes
+        addressing_modes = []
+        for mode_data in data.get("addressing_modes", []):
+            mode = AddressingMode(
+                name=mode_data["name"],
+                syntax=mode_data["syntax"],
+                description=mode_data["description"],
+                pattern=mode_data.get("pattern")
             )
-            directives[category].append(register)
+            addressing_modes.append(mode)
+
+        # Parse assembly syntax
+        syntax_data = data.get("assembly_syntax", {})
+        assembly_syntax = AssemblySyntax(
+            comment_char=syntax_data.get("comment_char", ";"),
+            comment_chars=syntax_data.get("comment_chars", []),
+            label_suffix=syntax_data.get("label_suffix", ":"),
+            register_prefix=syntax_data.get("register_prefix", "$"),
+            immediate_prefix=syntax_data.get("immediate_prefix", "#"),
+            hex_prefix=syntax_data.get("hex_prefix", "0x"),
+            binary_prefix=syntax_data.get("binary_prefix", "0b"),
+            case_sensitive=syntax_data.get("case_sensitive", False),
+            directives=syntax_data.get("directives", [])
+        )
+        
+        # Parse address space
+        address_space_data = data.get("address_space", {})
+        address_space = AddressSpace(
+            default_code_start=address_space_data.get("default_code_start", 0),
+            default_data_start=address_space_data.get("default_data_start", 0),
+            default_stack_start=address_space_data.get("default_stack_start", 0),
+            memory_layout=address_space_data.get("memory_layout", {})
+        )
         
         return ISADefinition(
             name=data["name"],
@@ -165,7 +266,11 @@ class ISALoader:
             instruction_size=data.get("instruction_size", data["word_size"]),
             registers=registers,
             instructions=instructions,
-            directives=directives
+            pseudo_instructions=pseudo_instructions,
+            directives=directives,
+            addressing_modes=addressing_modes,
+            assembly_syntax=assembly_syntax,
+            address_space=address_space
         )
     
     def list_available_isas(self) -> List[str]:

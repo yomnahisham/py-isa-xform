@@ -1,360 +1,386 @@
 """
-Command-line interface for py-isa-xform
+Command-line interface for xform
 """
 
+import argparse
 import sys
-import click
+import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
+import json
 
 from .core.isa_loader import ISALoader
 from .core.parser import Parser, LabelNode, InstructionNode, DirectiveNode, CommentNode
+from .core.assembler import Assembler
+from .core.disassembler import Disassembler
 from .core.symbol_table import SymbolTable
-from .utils.error_handling import ISAError, ErrorReporter
+from .utils.error_handling import ISAError, ErrorReporter, ISALoadError, ParseError, AssemblerError, DisassemblerError
 
 
-@click.group()
-@click.version_option(version="0.1.0")
 def main():
-    """
-    py-isa-xform: A comprehensive ISA transformation toolkit
+    """Main CLI entry point"""
+    parser = argparse.ArgumentParser(
+        description="ISA Transformation Toolkit - Modular assembly and disassembly",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s assemble --isa simple_risc --input main.s --output program.bin
+  %(prog)s disassemble --isa simple_risc --input program.bin --output disassembled.s
+  %(prog)s validate --isa simple_risc
+  %(prog)s list-isas
+        """
+    )
     
-    This tool provides assembler and disassembler capabilities for custom instruction sets.
-    """
-    pass
-
-
-@main.command()
-@click.option('--isa', '-i', required=True, help='ISA name or path to ISA definition file')
-@click.option('--input', '-f', required=True, type=click.Path(exists=True), help='Input assembly file')
-@click.option('--output', '-o', type=click.Path(), help='Output binary file (default: input.bin)')
-@click.option('--verbose', '-v', is_flag=True, help='Verbose output')
-@click.option('--list-symbols', is_flag=True, help='List all symbols after assembly')
-def assemble(isa: str, input: str, output: Optional[str], verbose: bool, list_symbols: bool):
-    """
-    Assemble assembly code to machine code
-    """
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    
+    # Assemble command
+    assemble_parser = subparsers.add_parser('assemble', help='Assemble source files to machine code')
+    assemble_parser.add_argument('--isa', required=True, help='ISA definition file or name')
+    assemble_parser.add_argument('--input', required=True, nargs='+', help='Input assembly files')
+    assemble_parser.add_argument('--output', required=True, help='Output binary file')
+    assemble_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    assemble_parser.add_argument('--list-symbols', action='store_true', help='List resolved symbols')
+    
+    # Disassemble command
+    disassemble_parser = subparsers.add_parser('disassemble', help='Disassemble machine code to assembly')
+    disassemble_parser.add_argument('--isa', required=True, help='ISA definition file or name')
+    disassemble_parser.add_argument('--input', required=True, help='Input binary file')
+    disassemble_parser.add_argument('--output', required=True, help='Output assembly file')
+    disassemble_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    disassemble_parser.add_argument('--show-addresses', action='store_true', help='Show addresses in output')
+    disassemble_parser.add_argument('--show-machine-code', action='store_true', help='Show machine code in output')
+    disassemble_parser.add_argument('--start-address', type=lambda x: int(x, 0), default=0, help='Starting address for disassembly')
+    
+    # Validate command
+    validate_parser = subparsers.add_parser('validate', help='Validate ISA definition')
+    validate_parser.add_argument('--isa', required=True, help='ISA definition file or name')
+    validate_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    
+    # Parse command
+    parse_parser = subparsers.add_parser('parse', help='Parse assembly to AST')
+    parse_parser.add_argument('--isa', required=True, help='ISA definition file or name')
+    parse_parser.add_argument('--input', required=True, help='Input assembly file')
+    parse_parser.add_argument('--output', help='Output AST file (JSON)')
+    parse_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    
+    # List ISAs command
+    list_parser = subparsers.add_parser('list-isas', help='List available ISA definitions')
+    list_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    
+    args = parser.parse_args()
+    
+    if not args.command:
+        parser.print_help()
+        return 1
+    
     try:
-        # Load ISA
-        loader = ISALoader()
-        if Path(isa).exists():
-            isa_def = loader.load_isa_from_file(isa)
+        if args.command == 'assemble':
+            return assemble_command(args)
+        elif args.command == 'disassemble':
+            return disassemble_command(args)
+        elif args.command == 'validate':
+            return validate_command(args)
+        elif args.command == 'parse':
+            return parse_command(args)
+        elif args.command == 'list-isas':
+            return list_isas_command(args)
         else:
-            isa_def = loader.load_isa(isa)
-        
-        if verbose:
-            click.echo(f"Loaded ISA: {isa_def.name} v{isa_def.version}")
-            click.echo(f"Word size: {isa_def.word_size} bits")
-            click.echo(f"Endianness: {isa_def.endianness}")
-            click.echo(f"Instructions: {len(isa_def.instructions)}")
-        
-        # Read input file
-        input_path = Path(input)
-        with open(input_path, 'r') as f:
-            assembly_text = f.read()
-        
-        if verbose:
-            click.echo(f"Read assembly file: {input_path}")
-        
-        # Parse assembly
-        parser = Parser(isa_def)
-        try:
-            ast_nodes = parser.parse(assembly_text, str(input_path))
-            if verbose:
-                click.echo(f"Parsed {len(ast_nodes)} statements")
-        except Exception as e:
-            click.echo(f"Parse error: {e}", err=True)
-            sys.exit(1)
-        
-        # Create symbol table
-        symbol_table = SymbolTable()
-        
-        # First pass: collect symbols
-        current_address = 0
-        for node in ast_nodes:
-            if isinstance(node, LabelNode):
-                symbol_table.set_current_address(current_address)
-                symbol_table.define_label(node.name, node.line, node.column, node.file)
-                if verbose:
-                    click.echo(f"Defined label '{node.name}' at address {current_address}")
-            elif isinstance(node, InstructionNode):
-                # Estimate instruction size (simplified)
-                instruction_size = isa_def.instruction_size // 8
-                current_address += instruction_size
-            elif isinstance(node, DirectiveNode):
-                if node.name == '.org':
-                    if node.arguments:
-                        try:
-                            current_address = int(node.arguments[0], 0)
-                            symbol_table.set_current_address(current_address)
-                            if verbose:
-                                click.echo(f"Set origin to {current_address}")
-                        except ValueError:
-                            click.echo(f"Invalid address in .org directive: {node.arguments[0]}", err=True)
-                elif node.name == '.word':
-                    current_address += 2
-                elif node.name == '.byte':
-                    current_address += 1
-        
-        if verbose:
-            click.echo(f"First pass complete. Code size: {current_address} bytes")
-        
-        # Second pass: generate code (simplified)
-        output_path = Path(output) if output else input_path.with_suffix('.bin')
-        
-        # For now, just create a placeholder binary file
-        with open(output_path, 'wb') as f:
-            # Write a simple header
-            f.write(b'ISA\x00')  # Magic number
-            f.write(len(isa_def.name).to_bytes(1, 'little'))
-            f.write(isa_def.name.encode('ascii'))
-            f.write(current_address.to_bytes(4, 'little'))
+            print(f"Unknown command: {args.command}")
+            return 1
             
-            # Write placeholder code
-            f.write(b'\x00' * current_address)
+    except ISAError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
+            return 1
+
+
+def assemble_command(args) -> int:
+    """Handle assemble command"""
+    error_reporter = ErrorReporter()
+    
+    try:
+        # Load ISA definition
+        loader = ISALoader()
+        isa_definition = loader.load_isa(args.isa)
+        if args.verbose:
+            print(f"Loaded ISA: {isa_definition.name} v{isa_definition.version}")
         
-        click.echo(f"Assembly complete. Output: {output_path}")
+        # Parse all input files
+        parser = Parser(isa_definition)
+        all_nodes = []
+        
+        for input_file in args.input:
+            if args.verbose:
+                print(f"Parsing {input_file}...")
+            
+            try:
+                with open(input_file, 'r') as f:
+                    source = f.read()
+                
+                nodes = parser.parse(source)
+                all_nodes.extend(nodes)
+                
+                if args.verbose:
+                    print(f"  Parsed {len(nodes)} nodes")
+                    
+            except FileNotFoundError:
+                error_reporter.add_error(ParseError(f"Input file not found: {input_file}"))
+            except Exception as e:
+                error_reporter.add_error(ParseError(f"Failed to parse {input_file}: {e}"))
+        
+        error_reporter.raise_if_errors()
+        
+        # Assemble
+        symbol_table = SymbolTable()
+        assembler = Assembler(isa_definition, symbol_table)
+        
+        if args.verbose:
+            print("Assembling...")
+        
+        assembled_result = assembler.assemble(all_nodes)
+        machine_code = assembled_result.machine_code
+        
+        # Write output
+        with open(args.output, 'wb') as f:
+            f.write(machine_code)
+        
+        if args.verbose:
+            print(f"Generated {len(machine_code)} bytes of machine code")
+            print(f"Output written to {args.output}")
         
         # List symbols if requested
-        if list_symbols:
-            click.echo("\nSymbols:")
+        if args.list_symbols:
+            print("\nSymbols:")
             for name, symbol in symbol_table.symbols.items():
-                status = "DEFINED" if symbol.defined else "UNDEFINED"
-                click.echo(f"  {name}: {symbol.value} ({status})")
+                print(f"  {name}: 0x{symbol.value:04X} ({symbol.type.value})")
         
-        # Show statistics
-        stats = symbol_table.get_statistics()
-        if verbose:
-            click.echo(f"\nStatistics:")
-            click.echo(f"  Total symbols: {stats['total_symbols']}")
-            click.echo(f"  Defined symbols: {stats['defined_symbols']}")
-            click.echo(f"  Referenced symbols: {stats['referenced_symbols']}")
+        return 0
         
     except ISAError as e:
-        click.echo(f"ISA error: {e}", err=True)
-        sys.exit(1)
-    except Exception as e:
-        click.echo(f"Unexpected error: {e}", err=True)
-        sys.exit(1)
+        error_reporter.add_error(e)
+        print(error_reporter.format_errors(), file=sys.stderr)
+        return 1
 
 
-@main.command()
-@click.option('--isa', '-i', required=True, help='ISA name or path to ISA definition file')
-@click.option('--input', '-f', required=True, type=click.Path(exists=True), help='Input binary file')
-@click.option('--output', '-o', type=click.Path(), help='Output assembly file (default: input.s)')
-@click.option('--verbose', '-v', is_flag=True, help='Verbose output')
-def disassemble(isa: str, input: str, output: Optional[str], verbose: bool):
-    """
-    Disassemble machine code to assembly
-    """
-    try:
-        # Load ISA
-        loader = ISALoader()
-        if Path(isa).exists():
-            isa_def = loader.load_isa_from_file(isa)
-        else:
-            isa_def = loader.load_isa(isa)
-        
-        if verbose:
-            click.echo(f"Loaded ISA: {isa_def.name} v{isa_def.version}")
-        
-        # Read input file
-        input_path = Path(input)
-        with open(input_path, 'rb') as f:
-            binary_data = f.read()
-        
-        if verbose:
-            click.echo(f"Read binary file: {input_path} ({len(binary_data)} bytes)")
-        
-        # Simple disassembly (placeholder)
-        output_path = Path(output) if output else input_path.with_suffix('.s')
-        
-        with open(output_path, 'w') as f:
-            f.write(f"; Disassembled from {input_path}\n")
-            f.write(f"; ISA: {isa_def.name} v{isa_def.version}\n")
-            f.write(f"; Word size: {isa_def.word_size} bits\n")
-            f.write(f"; Endianness: {isa_def.endianness}\n\n")
-            
-            # Write placeholder disassembly
-            f.write("; Disassembly not yet implemented\n")
-            f.write("; This is a placeholder output\n\n")
-            
-            # List available instructions
-            f.write("; Available instructions:\n")
-            for instr in isa_def.instructions:
-                f.write(f";   {instr.mnemonic}: {instr.description}\n")
-        
-        click.echo(f"Disassembly complete. Output: {output_path}")
-        
-    except ISAError as e:
-        click.echo(f"ISA error: {e}", err=True)
-        sys.exit(1)
-    except Exception as e:
-        click.echo(f"Unexpected error: {e}", err=True)
-        sys.exit(1)
-
-
-@main.command()
-@click.option('--isa-file', '-f', type=click.Path(exists=True), help='ISA definition file to validate')
-@click.option('--isa-name', '-n', help='Built-in ISA name to validate')
-@click.option('--verbose', '-v', is_flag=True, help='Verbose output')
-def validate(isa_file: Optional[str], isa_name: Optional[str], verbose: bool):
-    """
-    Validate an ISA definition
-    """
-    if not isa_file and not isa_name:
-        click.echo("Error: Must specify either --isa-file or --isa-name", err=True)
-        sys.exit(1)
+def disassemble_command(args) -> int:
+    """Handle disassemble command"""
+    error_reporter = ErrorReporter()
     
     try:
+        # Load ISA definition
         loader = ISALoader()
+        isa_definition = loader.load_isa(args.isa)
+        if args.verbose:
+            print(f"Loaded ISA: {isa_definition.name} v{isa_definition.version}")
         
-        if isa_file:
-            isa_def = loader.load_isa_from_file(isa_file)
-            source = f"file: {isa_file}"
-        else:
-            assert isa_name is not None  # This is guaranteed by the click validation
-            isa_def = loader.load_isa(isa_name)
-            source = f"built-in ISA: {isa_name}"
+        # Read binary file
+        try:
+            with open(args.input, 'rb') as f:
+                binary_data = f.read()
+        except FileNotFoundError:
+            error_reporter.add_error(DisassemblerError(f"Input file not found: {args.input}"))
+            error_reporter.raise_if_errors()
+            return 1
         
-        click.echo(f"Validating {source}")
-        click.echo(f"✓ ISA loaded successfully")
+        if args.verbose:
+            print(f"Read {len(binary_data)} bytes from {args.input}")
         
-        if verbose:
-            click.echo(f"  Name: {isa_def.name}")
-            click.echo(f"  Version: {isa_def.version}")
-            click.echo(f"  Description: {isa_def.description}")
-            click.echo(f"  Word size: {isa_def.word_size} bits")
-            click.echo(f"  Endianness: {isa_def.endianness}")
-            click.echo(f"  Instruction size: {isa_def.instruction_size} bits")
+        # Check for ISA header
+        machine_code = binary_data
+        entry_point = args.start_address
+        if binary_data.startswith(b'ISA\x01'):
+            # Has header - extract machine code
+            offset = 4  # Magic + version
+            if len(binary_data) > offset:
+                name_len = binary_data[offset]
+                offset += 1 + name_len  # Name length + name
+                if len(binary_data) > offset + 8:  # Size + entry point
+                    code_size = int.from_bytes(binary_data[offset:offset+4], 'little')
+                    file_entry_point = int.from_bytes(binary_data[offset+4:offset+8], 'little')
+                    offset += 8
+                    # Extract only the code section
+                    machine_code = binary_data[offset:offset+code_size]
+                    if args.verbose:
+                        print(f"Extracted {len(machine_code)} bytes of code from header")
+                        print(f"File entry point: 0x{file_entry_point:X}")
+                    # Use file entry point if not specified
+                    if entry_point == 0:
+                        entry_point = file_entry_point
+        
+        # Disassemble
+        try:
+            # Ensure entry_point is an integer (0 will trigger ISA default)
+            disassemble_start = entry_point if entry_point is not None else 0
+            disassembler = Disassembler(isa_definition)
+            result = disassembler.disassemble(machine_code, disassemble_start)
             
-            # Count registers
-            total_registers = sum(len(regs) for regs in isa_def.registers.values())
-            click.echo(f"  Registers: {total_registers}")
-            click.echo(f"  Instructions: {len(isa_def.instructions)}")
+            # Format output
+            output_text = disassembler.format_disassembly(
+                result, 
+                include_addresses=args.show_addresses,
+                include_machine_code=args.show_machine_code
+            )
             
-            # List register categories
-            for category, regs in isa_def.registers.items():
-                click.echo(f"    {category}: {len(regs)} registers")
-        
-        # Basic validation
-        errors = []
-        
-        # Check for duplicate instruction mnemonics
-        mnemonics = [instr.mnemonic for instr in isa_def.instructions]
-        duplicates = [m for m in set(mnemonics) if mnemonics.count(m) > 1]
-        if duplicates:
-            errors.append(f"Duplicate instruction mnemonics: {duplicates}")
-        
-        # Check for duplicate register names
-        all_registers = []
-        for reg_list in isa_def.registers.values():
-            all_registers.extend(reg_list)
-        
-        reg_names = [reg.name for reg in all_registers]
-        duplicates = [r for r in set(reg_names) if reg_names.count(r) > 1]
-        if duplicates:
-            errors.append(f"Duplicate register names: {duplicates}")
-        
-        if errors:
-            click.echo("✗ Validation failed:")
-            for error in errors:
-                click.echo(f"  - {error}")
-            sys.exit(1)
-        else:
-            click.echo("✓ Validation passed")
+            # Write output
+            with open(args.output, 'w') as f:
+                f.write(output_text)
+            
+            if args.verbose:
+                print(f"Disassembled {len(result.instructions)} instructions")
+                print(f"Found {len(result.data_sections)} data sections")
+                print(f"Output written to {args.output}")
+            
+            return 0
+            
+        except Exception as e:
+            error_reporter.add_error(DisassemblerError(f"Disassembly failed: {e}"))
+            error_reporter.raise_if_errors()
+            return 1
         
     except ISAError as e:
-        click.echo(f"✗ Validation failed: {e}", err=True)
-        sys.exit(1)
-    except Exception as e:
-        click.echo(f"Unexpected error: {e}", err=True)
-        sys.exit(1)
+        error_reporter.add_error(e)
+        print(error_reporter.format_errors(), file=sys.stderr)
+        return 1
 
 
-@main.command()
-@click.option('--verbose', '-v', is_flag=True, help='Verbose output')
-def list_isas(verbose: bool):
-    """
-    List available ISA definitions
-    """
+def validate_command(args) -> int:
+    """Handle validate command"""
+    error_reporter = ErrorReporter()
+    
     try:
+        # Load ISA definition
         loader = ISALoader()
-        isas = loader.list_available_isas()
+        isa_definition = loader.load_isa(args.isa)
         
-        if not isas:
-            click.echo("No built-in ISA definitions found")
-            return
+        print(f"✓ ISA Definition: {isa_definition.name} v{isa_definition.version}")
+        print(f"✓ Word size: {isa_definition.word_size} bits")
+        print(f"✓ Endianness: {isa_definition.endianness}")
+        print(f"✓ Instruction size: {isa_definition.instruction_size} bits")
+        print(f"✓ Instructions: {len(isa_definition.instructions)}")
+        print(f"✓ Registers: {sum(len(regs) for regs in isa_definition.registers.values())}")
+        print(f"✓ Directives: {len(isa_definition.directives)}")
         
-        click.echo("Available ISA definitions:")
-        for isa in isas:
-            click.echo(f"  {isa}")
+        if args.verbose:
+            print("\nInstructions:")
+            for instr in isa_definition.instructions:
+                print(f"  {instr.mnemonic}: {instr.description}")
             
-            if verbose:
-                try:
-                    isa_def = loader.load_isa(isa)
-                    click.echo(f"    Description: {isa_def.description}")
-                    click.echo(f"    Word size: {isa_def.word_size} bits")
-                    click.echo(f"    Instructions: {len(isa_def.instructions)}")
-                except Exception as e:
-                    click.echo(f"    Error loading: {e}")
+            print("\nRegisters:")
+            for category, registers in isa_definition.registers.items():
+                print(f"  {category}:")
+                for reg in registers:
+                    print(f"    {reg.name}: {reg.description}")
         
-    except Exception as e:
-        click.echo(f"Error listing ISAs: {e}", err=True)
-        sys.exit(1)
+        print("\n✓ ISA definition is valid!")
+        return 0
+        
+    except ISAError as e:
+        error_reporter.add_error(e)
+        print("✗ ISA definition validation failed:")
+        print(error_reporter.format_errors(), file=sys.stderr)
+        return 1
 
 
-@main.command()
-@click.option('--isa', '-i', required=True, help='ISA name or path to ISA definition file')
-@click.option('--input', '-f', required=True, type=click.Path(exists=True), help='Input assembly file')
-@click.option('--verbose', '-v', is_flag=True, help='Verbose output')
-def parse(isa: str, input: str, verbose: bool):
-    """
-    Parse assembly code and show AST
-    """
+def parse_command(args) -> int:
+    """Handle parse command"""
+    error_reporter = ErrorReporter()
+    
     try:
-        # Load ISA
+        # Load ISA definition
         loader = ISALoader()
-        if Path(isa).exists():
-            isa_def = loader.load_isa_from_file(isa)
+        isa_definition = loader.load_isa(args.isa)
+        if args.verbose:
+            print(f"Loaded ISA: {isa_definition.name} v{isa_definition.version}")
+        
+        # Parse input file
+        parser = Parser(isa_definition)
+        
+        with open(args.input, 'r') as f:
+            source = f.read()
+        
+        nodes = parser.parse(source)
+        
+        if args.verbose:
+            print(f"Parsed {len(nodes)} nodes")
+        
+        # Output AST
+        if args.output:
+            ast_data = []
+            for node in nodes:
+                node_dict = {
+                    'type': type(node).__name__,
+                    'line': getattr(node, 'line', 0),
+                    'column': getattr(node, 'column', 0)
+                }
+                if isinstance(node, LabelNode):
+                    node_dict['name'] = node.name
+                if isinstance(node, InstructionNode):
+                    node_dict['mnemonic'] = node.mnemonic
+                    node_dict['operands'] = [str(op) for op in node.operands]
+                if isinstance(node, DirectiveNode):
+                    node_dict['name'] = node.name
+                    node_dict['arguments'] = node.arguments
+                if isinstance(node, CommentNode):
+                    node_dict['text'] = node.text
+                ast_data.append(node_dict)
+            
+            with open(args.output, 'w') as f:
+                json.dump(ast_data, f, indent=2)
+            
+            if args.verbose:
+                print(f"AST written to {args.output}")
         else:
-            isa_def = loader.load_isa(isa)
+            # Print to stdout
+            for node in nodes:
+                print(node)
         
-        if verbose:
-            click.echo(f"Loaded ISA: {isa_def.name}")
+        return 0
         
-        # Read input file
-        input_path = Path(input)
-        with open(input_path, 'r') as f:
-            assembly_text = f.read()
+    except ISAError as e:
+        error_reporter.add_error(e)
+        print(error_reporter.format_errors(), file=sys.stderr)
+        return 1
+
+
+def list_isas_command(args) -> int:
+    """Handle list-isas command"""
+    try:
+        # Find ISA definition files
+        isa_dir = Path(__file__).parent.parent / "isa_definitions"
+        isa_files = list(isa_dir.glob("*.json"))
         
-        # Parse assembly
-        parser = Parser(isa_def)
-        ast_nodes = parser.parse(assembly_text, str(input_path))
+        if not isa_files:
+            print("No ISA definitions found")
+            return 1
         
-        click.echo(f"Parsed {len(ast_nodes)} statements:")
-        click.echo()
+        print("Available ISA definitions:")
+        for isa_file in sorted(isa_files):
+            try:
+                loader = ISALoader()
+                isa_definition = loader.load_isa(isa_file.name)
+                print(f"  {isa_file.stem}: {isa_definition.name} v{isa_definition.version}")
+                if args.verbose:
+                    print(f"    Description: {isa_definition.description}")
+                    print(f"    Word size: {isa_definition.word_size} bits")
+                    print(f"    Instructions: {len(isa_definition.instructions)}")
+                    print()
+            except Exception as e:
+                print(f"  {isa_file.stem}: Error loading ({e})")
         
-        for i, node in enumerate(ast_nodes):
-            click.echo(f"{i+1:3d}: ", nl=False)
-            
-            if isinstance(node, LabelNode):
-                click.echo(f"LABEL: {node.name}")
-            elif isinstance(node, InstructionNode):
-                operands = [f"{op.type}:{op.value}" for op in node.operands]
-                click.echo(f"INSTR: {node.mnemonic} {' '.join(operands)}")
-            elif isinstance(node, DirectiveNode):
-                args = ' '.join(node.arguments)
-                click.echo(f"DIRECTIVE: {node.name} {args}")
-            elif isinstance(node, CommentNode):
-                click.echo(f"COMMENT: {node.text}")
-            else:
-                click.echo(f"UNKNOWN: {node}")
+        return 0
         
     except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+        print(f"Error listing ISAs: {e}", file=sys.stderr)
+        return 1
 
 
-if __name__ == '__main__':
-    main() 
+if __name__ == "__main__":
+    sys.exit(main()) 

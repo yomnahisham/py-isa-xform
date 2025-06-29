@@ -94,7 +94,15 @@ class Parser:
     
     def __init__(self, isa_definition: Optional[ISADefinition] = None):
         self.isa_definition = isa_definition
+        
+        # Default syntax rules (can be overridden by ISA definition)
         self.comment_char = ';'
+        self.comment_chars = [';']  # Support multiple comment characters
+        self.label_suffix = ':'
+        self.register_prefix = '$'
+        self.immediate_prefix = '#'
+        self.hex_prefix = '0x'
+        self.binary_prefix = '0b'
         self.case_sensitive = False
         
         # Setup syntax from ISA if available
@@ -103,8 +111,16 @@ class Parser:
     
     def _setup_syntax_from_isa(self):
         """Setup parser syntax from ISA definition"""
-        # These attributes are not part of ISADefinition, so we use defaults
-        pass
+        if self.isa_definition and hasattr(self.isa_definition, 'assembly_syntax'):
+            syntax = self.isa_definition.assembly_syntax
+            self.comment_char = syntax.comment_char
+            self.comment_chars = syntax.comment_chars
+            self.label_suffix = syntax.label_suffix
+            self.register_prefix = syntax.register_prefix
+            self.immediate_prefix = syntax.immediate_prefix
+            self.hex_prefix = syntax.hex_prefix
+            self.binary_prefix = syntax.binary_prefix
+            self.case_sensitive = syntax.case_sensitive
     
     def parse(self, text: str, file: Optional[str] = None) -> List[ASTNode]:
         """Parse assembly text into AST nodes"""
@@ -128,9 +144,19 @@ class Parser:
     
     def _parse_line(self, line: str, line_num: int, file: Optional[str]) -> Optional[Union[ASTNode, List[ASTNode]]]:
         """Parse a single line"""
-        # Remove comments
-        if self.comment_char in line:
-            comment_pos = line.find(self.comment_char)
+        # Remove comments - check for any comment character
+        comment_pos = -1
+        comment_char_found = None
+        
+        # Find the earliest comment character in the line
+        for comment_char in self.comment_chars:
+            pos = line.find(comment_char)
+            if pos != -1 and (comment_pos == -1 or pos < comment_pos):
+                comment_pos = pos
+                comment_char_found = comment_char
+        
+        # If a comment was found, handle it
+        if comment_pos != -1:
             comment_text = line[comment_pos:].strip()
             line = line[:comment_pos].strip()
             
@@ -142,25 +168,36 @@ class Parser:
         if not line:
             return None
         
-        # Check for label (ends with :)
-        if line.endswith(':'):
-            label_name = line[:-1].strip()
+        # Check for label (ends with label_suffix)
+        if line.endswith(self.label_suffix):
+            label_name = line[:-len(self.label_suffix)].strip()
             return LabelNode(label_name, line_num, 1, file)
         
-        # Check for label followed by instruction (contains :)
-        if ':' in line:
-            colon_pos = line.find(':')
-            label_name = line[:colon_pos].strip()
-            instruction_part = line[colon_pos + 1:].strip()
+        # Check for label followed by instruction (contains label_suffix)
+        if self.label_suffix in line:
+            suffix_pos = line.find(self.label_suffix)
+            label_name = line[:suffix_pos].strip()
+            instruction_part = line[suffix_pos + len(self.label_suffix):].strip()
             
             # Create label node
             label_node = LabelNode(label_name, line_num, 1, file)
             
             # If there's an instruction after the label, parse it
             if instruction_part:
-                instruction_node = self._parse_instruction_part(instruction_part, line_num, file)
-                if instruction_node:
-                    return [label_node, instruction_node]
+                # Check if it's a directive (starts with .)
+                if instruction_part.startswith('.'):
+                    # Parse as directive
+                    parts = instruction_part.split(None, 1)  # Split on whitespace, max 1 split
+                    directive_name = parts[0]
+                    arguments = parts[1].split(',') if len(parts) > 1 else []
+                    arguments = [arg.strip() for arg in arguments if arg.strip()]
+                    directive_node = DirectiveNode(directive_name, arguments, line_num, 1, file)
+                    return [label_node, directive_node]
+                else:
+                    # Parse as instruction
+                    instruction_node = self._parse_instruction_part(instruction_part, line_num, file)
+                    if instruction_node:
+                        return [label_node, instruction_node]
             
             return label_node
         
@@ -202,6 +239,23 @@ class Parser:
         
         if not operand_str:
             return None
+        
+        # Handle offset($reg) or offset(Rreg)
+        if '(' in operand_str and operand_str.endswith(')'):
+            offset_part, reg_part = operand_str.split('(', 1)
+            offset = offset_part.strip()
+            reg = reg_part[:-1].strip()  # Remove closing )
+            # Parse offset as immediate
+            if self._is_number(offset):
+                offset_node = OperandNode(offset, "immediate", line_num, 1, file)
+            else:
+                offset_node = OperandNode(offset, "label", line_num, 1, file)
+            # Parse register
+            if reg.startswith('$'):
+                reg = reg[1:]
+            reg_node = OperandNode(reg, "register", line_num, 1, file)
+            # Return as a memory operand node
+            return OperandNode((offset_node, reg_node), "mem", line_num, 1, file)
         
         # Immediate value (starts with #)
         if operand_str.startswith('#'):

@@ -1,0 +1,768 @@
+{
+    "name": "ZX16",
+    "version": "1.0",
+    "description": "ZX16 16-bit RISC-V inspired ISA",
+    "instruction_size": 16,
+    "word_size": 16,
+    "endianness": "little",
+    "address_space": {
+      "size": 65536,
+      "default_code_start": 32
+    },
+    "registers": {
+      "general_purpose": [
+        {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved)"},
+        {"name": "x1", "size": 16, "alias": ["ra"], "description": "Return address"},
+        {"name": "x2", "size": 16, "alias": ["sp"], "description": "Stack pointer"},
+        {"name": "x3", "size": 16, "alias": ["s0"], "description": "Saved/Frame pointer"},
+        {"name": "x4", "size": 16, "alias": ["s1"], "description": "Saved"},
+        {"name": "x5", "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved)"},
+        {"name": "x6", "size": 16, "alias": ["a0"], "description": "Argument 0/Return value"},
+        {"name": "x7", "size": 16, "alias": ["a1"], "description": "Argument 1"}
+      ]
+    },
+    "instructions": [
+      {
+        "mnemonic": "ADD",
+        "format": "R-type",
+        "description": "Add registers (two-operand)",
+        "syntax": "ADD rd, rs2",
+        "semantics": "rd = rd + rs2",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "0000"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "000"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SUB",
+        "format": "R-type",
+        "description": "Subtract registers (two-operand)",
+        "syntax": "SUB rd, rs2",
+        "semantics": "rd = rd - rs2",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "0001"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "000"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SLT",
+        "format": "R-type",
+        "description": "Set if less than (signed)",
+        "syntax": "SLT rd, rs2",
+        "semantics": "rd = (rd < rs2) ? 1 : 0",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "0010"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "001"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SLTU",
+        "format": "R-type",
+        "description": "Set if less than (unsigned)",
+        "syntax": "SLTU rd, rs2",
+        "semantics": "rd = (unsigned rd < unsigned rs2) ? 1 : 0",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "0011"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "010"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SLL",
+        "format": "R-type",
+        "description": "Shift left logical",
+        "syntax": "SLL rd, rs2",
+        "semantics": "rd = rd << (rs2 & 0xF)",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "0100"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "011"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SRL",
+        "format": "R-type",
+        "description": "Shift right logical",
+        "syntax": "SRL rd, rs2",
+        "semantics": "rd = rd >> (rs2 & 0xF)",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "0101"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "011"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SRA",
+        "format": "R-type",
+        "description": "Shift right arithmetic",
+        "syntax": "SRA rd, rs2",
+        "semantics": "rd = rd >> (rs2 & 0xF)",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "0110"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "011"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "OR",
+        "format": "R-type",
+        "description": "Bitwise OR",
+        "syntax": "OR rd, rs2",
+        "semantics": "rd = rd | rs2",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "0111"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "100"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "AND",
+        "format": "R-type",
+        "description": "Bitwise AND",
+        "syntax": "AND rd, rs2",
+        "semantics": "rd = rd & rs2",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "1000"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "101"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "XOR",
+        "format": "R-type",
+        "description": "Bitwise XOR",
+        "syntax": "XOR rd, rs2",
+        "semantics": "rd = rd ^ rs2",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "1001"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "110"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "MV",
+        "format": "R-type",
+        "description": "Move register",
+        "syntax": "MV rd, rs2",
+        "semantics": "rd = rs2",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "1010"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "111"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "JR",
+        "format": "R-type",
+        "description": "Jump register",
+        "syntax": "JR rd",
+        "semantics": "PC = rd",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "1011"},
+            {"name": "rs2", "bits": "11:9", "value": "000"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "000"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "JALR",
+        "format": "R-type",
+        "description": "Jump and link register",
+        "syntax": "JALR rd, rs2",
+        "semantics": "rd = PC + 2; PC = rs2",
+        "encoding": {
+          "fields": [
+            {"name": "funct4", "bits": "15:12", "value": "1100"},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "000"},
+            {"name": "opcode", "bits": "2:0", "value": "000"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "ADDI",
+        "format": "I-type",
+        "description": "Add immediate",
+        "syntax": "ADDI rd, imm",
+        "semantics": "rd = rd + sign_extend(imm)",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "000"},
+            {"name": "opcode", "bits": "2:0", "value": "001"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SLTI",
+        "format": "I-type",
+        "description": "Set if less than immediate (signed)",
+        "syntax": "SLTI rd, imm",
+        "semantics": "rd = (rd < sign_extend(imm)) ? 1 : 0",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "001"},
+            {"name": "opcode", "bits": "2:0", "value": "001"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SLTUI",
+        "format": "I-type",
+        "description": "Set if less than immediate (unsigned)",
+        "syntax": "SLTUI rd, imm",
+        "semantics": "rd = (unsigned rd < unsigned sign_extend(imm)) ? 1 : 0",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "010"},
+            {"name": "opcode", "bits": "2:0", "value": "001"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SLLI",
+        "format": "I-type",
+        "description": "Shift left logical immediate",
+        "syntax": "SLLI rd, imm",
+        "semantics": "rd = rd << imm[3:0]",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "011"},
+            {"name": "opcode", "bits": "2:0", "value": "001"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SRLI",
+        "format": "I-type",
+        "description": "Shift right logical immediate",
+        "syntax": "SRLI rd, imm",
+        "semantics": "rd = rd >> imm[3:0]",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "011"},
+            {"name": "opcode", "bits": "2:0", "value": "001"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SRAI",
+        "format": "I-type",
+        "description": "Shift right arithmetic immediate",
+        "syntax": "SRAI rd, imm",
+        "semantics": "rd = rd >> imm[3:0]",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "011"},
+            {"name": "opcode", "bits": "2:0", "value": "001"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "ORI",
+        "format": "I-type",
+        "description": "OR immediate",
+        "syntax": "ORI rd, imm",
+        "semantics": "rd = rd | sign_extend(imm)",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "100"},
+            {"name": "opcode", "bits": "2:0", "value": "001"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "ANDI",
+        "format": "I-type",
+        "description": "AND immediate",
+        "syntax": "ANDI rd, imm",
+        "semantics": "rd = rd & sign_extend(imm)",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "101"},
+            {"name": "opcode", "bits": "2:0", "value": "001"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "XORI",
+        "format": "I-type",
+        "description": "XOR immediate",
+        "syntax": "XORI rd, imm",
+        "semantics": "rd = rd ^ sign_extend(imm)",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "110"},
+            {"name": "opcode", "bits": "2:0", "value": "001"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "LI",
+        "format": "I-type",
+        "description": "Load immediate",
+        "syntax": "LI rd, imm",
+        "semantics": "rd = sign_extend(imm)",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "111"},
+            {"name": "opcode", "bits": "2:0", "value": "001"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "BEQ",
+        "format": "B-type",
+        "description": "Branch if equal",
+        "syntax": "BEQ rs1, rs2, offset",
+        "semantics": "if rs1 == rs2: PC = PC + offset",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rs1", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "000"},
+            {"name": "opcode", "bits": "2:0", "value": "010"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "BNE",
+        "format": "B-type",
+        "description": "Branch if not equal",
+        "syntax": "BNE rs1, rs2, offset",
+        "semantics": "if rs1 != rs2: PC = PC + offset",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rs1", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "001"},
+            {"name": "opcode", "bits": "2:0", "value": "010"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "BZ",
+        "format": "B-type",
+        "description": "Branch if zero",
+        "syntax": "BZ rs1, offset",
+        "semantics": "if rs1 == 0: PC = PC + offset",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "value": "000"},
+            {"name": "rs1", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "010"},
+            {"name": "opcode", "bits": "2:0", "value": "010"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "BNZ",
+        "format": "B-type",
+        "description": "Branch if not zero",
+        "syntax": "BNZ rs1, offset",
+        "semantics": "if rs1 != 0: PC = PC + offset",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "value": "000"},
+            {"name": "rs1", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "011"},
+            {"name": "opcode", "bits": "2:0", "value": "010"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "BLT",
+        "format": "B-type",
+        "description": "Branch if less than (signed)",
+        "syntax": "BLT rs1, rs2, offset",
+        "semantics": "if rs1 < rs2: PC = PC + offset",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rs1", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "100"},
+            {"name": "opcode", "bits": "2:0", "value": "010"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "BGE",
+        "format": "B-type",
+        "description": "Branch if greater or equal (signed)",
+        "syntax": "BGE rs1, rs2, offset",
+        "semantics": "if rs1 >= rs2: PC = PC + offset",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rs1", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "101"},
+            {"name": "opcode", "bits": "2:0", "value": "010"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "BLTU",
+        "format": "B-type",
+        "description": "Branch if less than (unsigned)",
+        "syntax": "BLTU rs1, rs2, offset",
+        "semantics": "if unsigned rs1 < unsigned rs2: PC = PC + offset",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rs1", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "110"},
+            {"name": "opcode", "bits": "2:0", "value": "010"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "BGEU",
+        "format": "B-type",
+        "description": "Branch if greater or equal (unsigned)",
+        "syntax": "BGEU rs1, rs2, offset",
+        "semantics": "if unsigned rs1 >= unsigned rs2: PC = PC + offset",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rs1", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "111"},
+            {"name": "opcode", "bits": "2:0", "value": "010"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SB",
+        "format": "S-type",
+        "description": "Store byte",
+        "syntax": "SB rs2, offset(rs1)",
+        "semantics": "mem[rs1 + sign_extend(offset)] = rs2[7:0]",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rs1", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "000"},
+            {"name": "opcode", "bits": "2:0", "value": "011"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "SW",
+        "format": "S-type",
+        "description": "Store word",
+        "syntax": "SW rs2, offset(rs1)",
+        "semantics": "mem[rs1 + sign_extend(offset)] = rs2",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rs1", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "001"},
+            {"name": "opcode", "bits": "2:0", "value": "011"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "LB",
+        "format": "L-type",
+        "description": "Load byte",
+        "syntax": "LB rd, offset(rs2)",
+        "semantics": "rd = sign_extend(mem[rs2 + sign_extend(offset)][7:0])",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "000"},
+            {"name": "opcode", "bits": "2:0", "value": "100"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "LW",
+        "format": "L-type",
+        "description": "Load word",
+        "syntax": "LW rd, offset(rs2)",
+        "semantics": "rd = mem[rs2 + sign_extend(offset)]",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "001"},
+            {"name": "opcode", "bits": "2:0", "value": "100"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "LBU",
+        "format": "L-type",
+        "description": "Load byte unsigned",
+        "syntax": "LBU rd, offset(rs2)",
+        "semantics": "rd = zero_extend(mem[rs2 + sign_extend(offset)][7:0])",
+        "encoding": {
+          "fields": [
+            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "rs2", "bits": "11:9", "type": "register"},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "func3", "bits": "5:3", "value": "100"},
+            {"name": "opcode", "bits": "2:0", "value": "100"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "J",
+        "format": "J-type",
+        "description": "Jump",
+        "syntax": "J offset",
+        "semantics": "PC = PC + offset",
+        "encoding": {
+          "fields": [
+            {"name": "link", "bits": "15:15", "value": "0"},
+            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": true},
+            {"name": "rd", "bits": "8:6", "value": "000"},
+            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": true},
+            {"name": "opcode", "bits": "2:0", "value": "101"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "JAL",
+        "format": "J-type",
+        "description": "Jump and link",
+        "syntax": "JAL rd, offset",
+        "semantics": "rd = PC + 2; PC = PC + offset",
+        "encoding": {
+          "fields": [
+            {"name": "link", "bits": "15:15", "value": "1"},
+            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": true},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": true},
+            {"name": "opcode", "bits": "2:0", "value": "101"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "LUI",
+        "format": "U-type",
+        "description": "Load upper immediate",
+        "syntax": "LUI rd, imm",
+        "semantics": "rd = (imm << 7)",
+        "encoding": {
+          "fields": [
+            {"name": "flag", "bits": "15:15", "value": "0"},
+            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": false},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": false},
+            {"name": "opcode", "bits": "2:0", "value": "110"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "AUIPC",
+        "format": "U-type",
+        "description": "Add upper immediate to PC",
+        "syntax": "AUIPC rd, imm",
+        "semantics": "rd = PC + (imm << 7)",
+        "encoding": {
+          "fields": [
+            {"name": "flag", "bits": "15:15", "value": "1"},
+            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": false},
+            {"name": "rd", "bits": "8:6", "type": "register"},
+            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": false},
+            {"name": "opcode", "bits": "2:0", "value": "110"}
+          ]
+        }
+      },
+      {
+        "mnemonic": "ECALL",
+        "format": "SYS-type",
+        "description": "Environment call",
+        "syntax": "ECALL svc",
+        "semantics": "Trap to service number",
+        "encoding": {
+          "fields": [
+            {"name": "svc", "bits": "15:6", "type": "immediate", "signed": false},
+            {"name": "unused", "bits": "5:3", "value": "000"},
+            {"name": "opcode", "bits": "2:0", "value": "111"}
+          ]
+        }
+      }
+    ],
+    "pseudo_instructions": [
+      {
+        "mnemonic": "NOP",
+        "description": "No operation",
+        "syntax": "NOP",
+        "expansion": "ADD x0, x0"
+      },
+      {
+        "mnemonic": "CLR",
+        "description": "Clear register",
+        "syntax": "CLR rd",
+        "expansion": "XOR rd, rd"
+      },
+      {
+        "mnemonic": "INC",
+        "description": "Increment register",
+        "syntax": "INC rd",
+        "expansion": "ADDI rd, 1"
+      },
+      {
+        "mnemonic": "DEC",
+        "description": "Decrement register",
+        "syntax": "DEC rd",
+        "expansion": "ADDI rd, -1"
+      },
+      {
+        "mnemonic": "NOT",
+        "description": "Bitwise NOT",
+        "syntax": "NOT rd",
+        "expansion": "XORI rd, -1"
+      },
+      {
+        "mnemonic": "NEG",
+        "description": "Negate register",
+        "syntax": "NEG rd",
+        "expansion": "XORI rd, -1; ADDI rd, 1"
+      },
+      {
+        "mnemonic": "CALL",
+        "description": "Call function",
+        "syntax": "CALL label",
+        "expansion": "JAL x1, label"
+      },
+      {
+        "mnemonic": "RET",
+        "description": "Return from function",
+        "syntax": "RET",
+        "expansion": "JR x1"
+      },
+      {
+        "mnemonic": "JMP",
+        "description": "Unconditional jump",
+        "syntax": "JMP label",
+        "expansion": "J label"
+      },
+      {
+        "mnemonic": "LI16",
+        "description": "Load 16-bit immediate",
+        "syntax": "LI16 rd, imm",
+        "expansion": "LUI rd, imm[15:9]; ORI rd, rd, imm[8:0]"
+      },
+      {
+        "mnemonic": "LA",
+        "description": "Load address",
+        "syntax": "LA rd, label",
+        "expansion": "AUIPC rd, label[15:9]; ADDI rd, rd, label[8:0]"
+      },
+      {
+        "mnemonic": "PUSH",
+        "description": "Push register to stack",
+        "syntax": "PUSH rd",
+        "expansion": "ADDI x2, -2; SW rd, 0(x2)"
+      },
+      {
+        "mnemonic": "POP",
+        "description": "Pop from stack to register",
+        "syntax": "POP rd",
+        "expansion": "LW rd, 0(x2); ADDI x2, 2"
+      }
+    ],
+    "assembly_syntax": {
+      "comment_chars": ["#", ";"],
+      "label_suffix": ":",
+      "register_prefix": "",
+      "immediate_prefix": "",
+      "string_delimiters": ["\"", "'"],
+      "case_sensitive": false,
+      "instruction_separator": "\n"
+    },
+    "constants": {
+      "RESET_VECTOR": 0,
+      "INT_VECTORS": 0,
+      "CODE_START": 32,
+      "MMIO_BASE": 61440,
+      "MMIO_SIZE": 4096,
+      "STACK_TOP": 61438,
+      "MEM_SIZE": 65536
+    }
+  } 

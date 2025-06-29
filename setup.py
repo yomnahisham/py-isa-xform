@@ -64,7 +64,7 @@ setup(
     
     entry_points={
         "console_scripts": [
-            "isa-xform=isa_xform.cli:main",
+            "xform=isa_xform.cli:main",
         ],
     },
     

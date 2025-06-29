@@ -12,21 +12,29 @@ class ErrorLocation:
     line: int
     column: int
     file: Optional[str] = None
+    context: Optional[str] = None  # Source line context
 
 
 class ISAError(Exception):
     """Base exception for ISA-related errors"""
     
-    def __init__(self, message: str, location: Optional[ErrorLocation] = None):
+    def __init__(self, message: str, location: Optional[ErrorLocation] = None, 
+                 suggestion: Optional[str] = None):
         self.message = message
         self.location = location
+        self.suggestion = suggestion
         super().__init__(self._format_message())
     
     def _format_message(self) -> str:
+        msg = self.message
         if self.location:
             file_info = f" in {self.location.file}" if self.location.file else ""
-            return f"{self.message} at line {self.location.line}, column {self.location.column}{file_info}"
-        return self.message
+            msg += f" at line {self.location.line}, column {self.location.column}{file_info}"
+            if self.location.context:
+                msg += f"\n  Context: {self.location.context}"
+        if self.suggestion:
+            msg += f"\n  Suggestion: {self.suggestion}"
+        return msg
 
 
 class ISALoadError(ISAError):
@@ -36,17 +44,28 @@ class ISALoadError(ISAError):
 
 class ISAValidationError(ISAError):
     """Raised when an ISA definition is invalid"""
-    pass
+    
+    def __init__(self, message: str, field: Optional[str] = None, 
+                 location: Optional[ErrorLocation] = None, suggestion: Optional[str] = None):
+        self.field = field
+        super().__init__(message, location, suggestion)
+    
+    def _format_message(self) -> str:
+        msg = super()._format_message()
+        if self.field:
+            msg += f" (field: '{self.field}')"
+        return msg
 
 
 class ParseError(ISAError):
     """Raised when there's an error parsing assembly code"""
     
     def __init__(self, message: str, location: Optional[ErrorLocation] = None, 
-                 expected: Optional[str] = None, found: Optional[str] = None):
+                 expected: Optional[str] = None, found: Optional[str] = None,
+                 suggestion: Optional[str] = None):
         self.expected = expected
         self.found = found
-        super().__init__(message, location)
+        super().__init__(message, location, suggestion)
     
     def _format_message(self) -> str:
         msg = super()._format_message()
@@ -59,9 +78,9 @@ class SymbolError(ISAError):
     """Raised when there's an error with symbol resolution"""
     
     def __init__(self, message: str, symbol: Optional[str] = None, 
-                 location: Optional[ErrorLocation] = None):
+                 location: Optional[ErrorLocation] = None, suggestion: Optional[str] = None):
         self.symbol = symbol
-        super().__init__(message, location)
+        super().__init__(message, location, suggestion)
     
     def _format_message(self) -> str:
         msg = super()._format_message()
@@ -80,21 +99,36 @@ class DisassemblerError(ISAError):
     pass
 
 
+class BitUtilsError(ISAError):
+    """Raised when there's an error in bit utilities"""
+    pass
+
+
+class ConfigurationError(ISAError):
+    """Raised when there's a configuration error"""
+    pass
+
+
 class ErrorReporter:
     """Collects and reports multiple errors"""
     
-    def __init__(self):
+    def __init__(self, max_errors: int = 100):
         self.errors: List[ISAError] = []
         self.warnings: List[str] = []
+        self.max_errors = max_errors
     
     def add_error(self, error: ISAError):
         """Add an error to the collection"""
+        if len(self.errors) >= self.max_errors:
+            self.errors.append(ISAError(f"Too many errors (>{self.max_errors}), stopping"))
+            return
         self.errors.append(error)
     
     def add_warning(self, warning: str, location: Optional[ErrorLocation] = None):
         """Add a warning to the collection"""
         if location:
-            warning = f"{warning} at line {location.line}, column {location.column}"
+            file_info = f" in {location.file}" if location.file else ""
+            warning = f"{warning} at line {location.line}, column {location.column}{file_info}"
         self.warnings.append(warning)
     
     def has_errors(self) -> bool:
@@ -143,4 +177,20 @@ class ErrorReporter:
         for i, warning in enumerate(self.warnings, 1):
             lines.append(f"  {i}. {warning}")
         
-        return "\n".join(lines) 
+        return "\n".join(lines)
+    
+    def format_summary(self) -> str:
+        """Format a summary of errors and warnings"""
+        error_count = len(self.errors)
+        warning_count = len(self.warnings)
+        
+        if error_count == 0 and warning_count == 0:
+            return "No errors or warnings"
+        
+        parts = []
+        if error_count > 0:
+            parts.append(f"{error_count} error{'s' if error_count != 1 else ''}")
+        if warning_count > 0:
+            parts.append(f"{warning_count} warning{'s' if warning_count != 1 else ''}")
+        
+        return ", ".join(parts) 

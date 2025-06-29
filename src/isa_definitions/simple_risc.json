@@ -5,6 +5,16 @@
   "word_size": 16,
   "endianness": "little",
   "instruction_size": 16,
+  "address_space": {
+    "default_code_start": 4096,
+    "default_data_start": 8192,
+    "default_stack_start": 12288,
+    "memory_layout": {
+      "code_section": {"start": 4096, "end": 8191},
+      "data_section": {"start": 8192, "end": 12287},
+      "stack_section": {"start": 12288, "end": 16383}
+    }
+  },
   "registers": {
     "general_purpose": [
       {"name": "R0", "size": 16, "alias": ["ZERO"], "description": "Always zero"},
@@ -262,6 +272,44 @@
       "description": "Register plus offset"
     }
   ],
+  "directives": [
+    {
+      "name": ".org",
+      "description": "Set origin address",
+      "action": "set_origin",
+      "argument_types": ["number"]
+    },
+    {
+      "name": ".word",
+      "description": "Define word data",
+      "action": "allocate_bytes",
+      "argument_types": ["number"]
+    },
+    {
+      "name": ".byte",
+      "description": "Define byte data",
+      "action": "allocate_bytes",
+      "argument_types": ["number"]
+    },
+    {
+      "name": ".space",
+      "description": "Reserve space",
+      "action": "allocate_space",
+      "argument_types": ["number"]
+    },
+    {
+      "name": ".ascii",
+      "description": "Define ASCII string",
+      "action": "allocate_string",
+      "argument_types": ["string"]
+    },
+    {
+      "name": ".asciiz",
+      "description": "Define null-terminated ASCII string",
+      "action": "allocate_string",
+      "argument_types": ["string"]
+    }
+  ],
   "assembly_syntax": {
     "comment_char": ";",
     "label_suffix": ":",
@@ -274,7 +322,9 @@
       ".org",
       ".word",
       ".byte",
-      ".space"
+      ".space",
+      ".ascii",
+      ".asciiz"
     ]
   }
 } 

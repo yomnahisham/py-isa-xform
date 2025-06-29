@@ -370,6 +370,13 @@ class SymbolTable:
         self.errors.clear()
         self.warnings.clear()
     
+    def get_symbol_at_address(self, address: int) -> Optional[Symbol]:
+        """Get symbol at specific address"""
+        for symbol in self.symbols.values():
+            if symbol.defined and symbol.value == address:
+                return symbol
+        return None
+    
     def get_statistics(self) -> Dict[str, int]:
         """Get symbol table statistics"""
         stats = {
