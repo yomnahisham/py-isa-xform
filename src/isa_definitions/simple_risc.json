@@ -72,8 +72,10 @@
       "syntax": "ADD $rd, $rs1, $rs2",
       "semantics": "$rd = $rs1 + $rs2",
       "flags_affected": ["Z", "N", "C", "V"]
+      
     },
     {
+
       "mnemonic": "SUB",
       "opcode": "0010",
       "format": "R-type",
