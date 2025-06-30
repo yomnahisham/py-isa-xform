@@ -4,12 +4,17 @@ ISA Loader: Loads and validates instruction set architecture definitions
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field
 from jsonschema import validate, ValidationError
 
-from ..utils.error_handling import ISALoadError, ISAValidationError
+from isa_xform.utils.error_handling import ISALoadError, ISAValidationError
+from isa_xform.utils.bit_utils import (
+    extract_bits, set_bits, sign_extend, parse_bit_range,
+    create_mask, bytes_to_int, int_to_bytes
+)
 
 
 @dataclass

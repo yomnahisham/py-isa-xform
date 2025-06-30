@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field
 from enum import Enum
 
-from ..utils.error_handling import SymbolError, ErrorLocation
+from isa_xform.utils.error_handling import SymbolError, ErrorLocation
 
 
 class SymbolType(Enum):

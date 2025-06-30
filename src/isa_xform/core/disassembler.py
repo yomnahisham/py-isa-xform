@@ -3,6 +3,10 @@ Disassembler: Converts machine code back to assembly language
 """
 
 import struct
+import sys
+from pathlib import Path
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
 from typing import List, Optional, Dict, Any, Tuple, Union
 from dataclasses import dataclass
 from .isa_loader import ISADefinition, Instruction
@@ -12,6 +16,7 @@ from ..utils.bit_utils import (
     extract_bits, set_bits, sign_extend, parse_bit_range, 
     create_mask, bytes_to_int, int_to_bytes
 )
+
 
 
 @dataclass
@@ -38,10 +43,10 @@ class Disassembler:
     """Converts machine code to assembly language"""
     
     def __init__(self, isa_definition: ISADefinition, symbol_table: Optional[SymbolTable] = None, 
-                 max_consecutive_nops: int = 8):
+        max_consecutive_nops: int = 8):
         self.isa_definition = isa_definition
         self.symbol_table = symbol_table or SymbolTable()
-        self.instruction_size_bytes = isa_definition.instruction_size // 8
+        self.instruction_size_bytes = (isa_definition.instruction_size // 8)
         self.max_consecutive_nops = max_consecutive_nops
         
         # Build lookup tables for fast disassembly
