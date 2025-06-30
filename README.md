@@ -1,4 +1,4 @@
-# py-isa-xform (AKA ~xform)
+# ~xform (py-isa-xform)
 
 A comprehensive ISA (Instruction Set Architecture) transformation toolkit that provides robust assembler and disassembler capabilities for custom instruction sets. This project enables the creation of custom processors and their associated toolchains for educational purposes, research, and rapid prototyping of novel architectures.
 
@@ -129,21 +129,15 @@ python3 -m isa_xform.cli list-isas
 
 ## Documentation
 
-Comprehensive documentation is available in the `docs/` directory:
+Comprehensive documentation is available in the `docs/` directory. The following are the main docs for understanding project structure:
 
 - **[Architecture Overview](docs/architecture.md)** - System design and component interaction
-- **[ISA Definition Guide](docs/isa-definition.md)** - Creating custom instruction set architectures
 - **[Custom ISA Definition Guide](ISA_DEFINITION_GUIDE.md)** - Step-by-step instructions for writing your own ISA JSON
-- **[Custom Instructions](docs/custom-instructions.md)** - Writing custom instruction implementations in Python
-- **[Parser Documentation](docs/parser.md)** - Assembly language parsing and AST generation
-- **[Symbol Table Guide](docs/symbol_table.md)** - Label and symbol management
 - **[CLI Reference](docs/cli.md)** - Command-line interface usage
 - **[Testing Guide](docs/testing.md)** - Testing framework and examples
 - **[API Reference](docs/api-reference.md)** - Complete programming interface documentation
 - **[Getting Started Tutorial](docs/getting-started.md)** - Step-by-step introduction
 - **[Contributing Guide](docs/contributing.md)** - Guidelines for contributors
-- **[Error Handling](docs/error-handling.md)** - Error reporting and debugging
-- **[Bit Utilities](docs/bit-utils.md)** - Bit manipulation and encoding utilities
 
 ## Example Usage
 
