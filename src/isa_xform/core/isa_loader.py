@@ -8,8 +8,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field
 from jsonschema import validate, ValidationError
+import sys
 
 from ..utils.error_handling import ISALoadError, ISAValidationError
+from .instruction_executor import compile_instruction_implementations
+from .directive_executor import compile_directive_implementations
 
 
 @dataclass
@@ -32,6 +35,7 @@ class Instruction:
     syntax: str
     semantics: str
     flags_affected: List[str] = field(default_factory=list)
+    implementation: Optional[str] = field(default=None)  # Python code for instruction execution
 
 
 @dataclass
@@ -66,6 +70,7 @@ class Directive:
     syntax: str = ""
     examples: List[str] = field(default_factory=list)
     validation_rules: Dict[str, Any] = field(default_factory=dict)
+    implementation: Optional[str] = None  # Python code for directive behavior
 
 
 @dataclass
@@ -160,6 +165,15 @@ class ISALoader:
             raise ISALoadError(f"ISA '{isa_name}' not found")
         
         isa_def = self._load_from_file(isa_file)
+        
+        # Compile any custom instruction implementations
+        try:
+            compile_instruction_implementations(isa_def)
+            compile_directive_implementations(isa_def)
+        except Exception as e:
+            # Log the error but don't fail loading - implementations are optional
+            print(f"Warning: Failed to compile instruction/directive implementations: {e}", file=sys.stderr)
+        
         self._cache[isa_name] = isa_def
         return isa_def
     
@@ -169,7 +183,17 @@ class ISALoader:
         if not file_path.exists():
             raise ISALoadError(f"ISA file not found: {file_path}")
         
-        return self._load_from_file(file_path)
+        isa_def = self._load_from_file(file_path)
+        
+        # Compile any custom instruction implementations
+        try:
+            compile_instruction_implementations(isa_def)
+            compile_directive_implementations(isa_def)
+        except Exception as e:
+            # Log the error but don't fail loading - implementations are optional
+            print(f"Warning: Failed to compile instruction/directive implementations: {e}", file=sys.stderr)
+        
+        return isa_def
     
     def _find_isa_file(self, isa_name: str) -> Optional[Path]:
         """Find an ISA file by name"""
@@ -227,7 +251,8 @@ class ISALoader:
                 encoding=instr_data["encoding"],
                 syntax=instr_data["syntax"],
                 semantics=instr_data["semantics"],
-                flags_affected=instr_data.get("flags_affected", [])
+                flags_affected=instr_data.get("flags_affected", []),
+                implementation=instr_data.get("implementation")
             )
             instructions.append(instruction)
 
@@ -254,7 +279,8 @@ class ISALoader:
                     handler=directive_data.get("handler"),
                     syntax=directive_data.get("syntax", ""),
                     examples=directive_data.get("examples", []),
-                    validation_rules=directive_data.get("validation_rules", {})
+                    validation_rules=directive_data.get("validation_rules", {}),
+                    implementation=directive_data.get("implementation")
                 )
                 directives[directive.name] = directive
 

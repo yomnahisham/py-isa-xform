@@ -9,6 +9,7 @@ xform serves as a foundation for building custom instruction set architectures a
 ### Key Capabilities
 
 - **ISA Definition System**: Define custom instruction set architectures using a flexible JSON-based specification format
+- **Custom Instruction Implementations**: Write actual Python code to define instruction behavior and semantics
 - **Assembly Engine**: Convert human-readable assembly code to machine code with comprehensive error reporting
 - **Disassembly Engine**: Reverse machine code back to assembly language with symbol reconstruction and correct operand ordering
 - **Extensible Parser**: Support for custom assembly syntaxes and addressing modes
@@ -89,16 +90,9 @@ python3 -m isa_xform.cli list-isas
 
 ## Supported Instruction Set Architectures
 
-### ZX16 (Primary Implementation)
-A 16-bit RISC-V inspired instruction set architecture featuring:
-- **8 General-Purpose Registers**: x0-x7 with aliases (t0, ra, sp, s0, s1, t1, a0, a1)
-- **16-bit Instructions**: Compact encoding for embedded applications
-- **Comprehensive Instruction Set**: Arithmetic, logical, control flow, and system operations
-- **System Services**: Multiple ECALL services for I/O and program control
-- **Immediate Constraints**: 7-bit signed immediate values (-64 to 63)
-- **Professional Toolchain**: Complete assembly and disassembly support
+**See the [Custom ISA Definition Guide](ISA_DEFINITION_GUIDE.md) for how to write your own ISA!**
 
-### Other Supported ISAs
+### Supported ISAs
 - **Simple RISC**: Basic RISC-style instruction set for educational purposes
 - **RISC-V RV32I**: Base integer instruction set for RISC-V 32-bit processors
 - **Modular Example**: Demonstrates modular ISA design patterns
@@ -126,12 +120,21 @@ A 16-bit RISC-V inspired instruction set architecture featuring:
 - **Syntax Specification**: Customizable assembly language syntax
 - **Validation Rules**: Built-in validation for ISA definitions
 
+### Custom Instruction Implementations
+- **Python Code Semantics**: Write actual Python code to define instruction behavior
+- **Sandboxed Execution**: Safe execution environment with controlled access to system resources
+- **Helper Functions**: Built-in functions for register access, memory operations, and flag management
+- **Automatic Compilation**: Custom implementations are compiled and validated when loading ISA definitions
+- **Seamless Integration**: Custom instructions work with assembler, disassembler, and simulator
+
 ## Documentation
 
 Comprehensive documentation is available in the `docs/` directory:
 
 - **[Architecture Overview](docs/architecture.md)** - System design and component interaction
 - **[ISA Definition Guide](docs/isa-definition.md)** - Creating custom instruction set architectures
+- **[Custom ISA Definition Guide](ISA_DEFINITION_GUIDE.md)** - Step-by-step instructions for writing your own ISA JSON
+- **[Custom Instructions](docs/custom-instructions.md)** - Writing custom instruction implementations in Python
 - **[Parser Documentation](docs/parser.md)** - Assembly language parsing and AST generation
 - **[Symbol Table Guide](docs/symbol_table.md)** - Label and symbol management
 - **[CLI Reference](docs/cli.md)** - Command-line interface usage
@@ -157,6 +160,30 @@ main:
     SUB a0, a1         # Subtract registers: a0 = a0 - a1
     ADDI a0, 20        # Add immediate: a0 = a0 + 20
     ECALL 0x3FF        # Exit program
+```
+
+### Custom Instruction Example
+```json
+{
+  "mnemonic": "MULT",
+  "description": "Multiply registers (custom instruction)",
+  "syntax": "MULT rd, rs2",
+  "implementation": "# Custom multiplication\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val * rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\nset_flag('Z', result == 0)",
+  "encoding": {
+    "fields": [
+      {"name": "funct4", "bits": "15:12", "value": "1111"},
+      {"name": "rs2", "bits": "11:9", "type": "register"},
+      {"name": "rd", "bits": "8:6", "type": "register"},
+      {"name": "func3", "bits": "5:3", "value": "000"},
+      {"name": "opcode", "bits": "2:0", "value": "000"}
+    ]
+  }
+}
+```
+
+```assembly
+# Using custom MULT instruction
+    MULT a0, a1        # a0 = a0 * a1 (custom instruction)
 ```
 
 ### Assembly and Disassembly

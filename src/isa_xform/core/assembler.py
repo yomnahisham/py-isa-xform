@@ -694,8 +694,31 @@ class Assembler:
         if not directive:
             return None
         
-        action = directive.action
+        # If the directive has a custom implementation, execute it
+        if directive.implementation:
+            from .directive_executor import get_directive_executor, DirectiveContext
+            executor = get_directive_executor()
+            context = DirectiveContext(
+                assembler=self,
+                symbol_table=self.symbol_table,
+                memory=bytearray(),  # Provide an empty bytearray by default
+                current_address=self.context.current_address,
+                section=self.context.current_section,
+                args=node.arguments,
+                extra={}
+            )
+            result = executor.execute_directive(directive.name, context)
+            # If the directive implementation sets 'result' to a bytearray or bytes, return it
+            if isinstance(result, (bytearray, bytes)):
+                # Convert bytes to bytearray if needed
+                if isinstance(result, bytes):
+                    result = bytearray(result)
+                self.context.current_address = context.current_address
+                self.symbol_table.set_current_address(self.context.current_address)
+                return result
+            return None
         
+        action = directive.action
         if action == "allocate_bytes":
             return self._handle_word_directive(node)
         elif action == "allocate_space":
