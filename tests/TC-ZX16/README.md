@@ -66,21 +66,21 @@ Expected result: Exit code 42 (final value in a0 after successful branching)
 ### Assembly Process
 ```bash
 # Assemble arithmetic test
-python3 -m isa_xform.cli assemble --isa zx16 --input tests/TC-ZX16/test_arithmetic.s --output test_arithmetic.bin
+python3 -m isa_xform.cli assemble --isa zx16 --input tests/TC-ZX16/ALU/test_arithmetic.s --output tests/TC-ZX16/ALU/test_arithmetic.bin
 
 # Assemble ECALL test
-python3 -m isa_xform.cli assemble --isa zx16 --input tests/TC-ZX16/test_ecall.s --output test_ecall.bin
+python3 -m isa_xform.cli assemble --isa zx16 --input tests/TC-ZX16/Ecall/test_ecall.s --output tests/TC-ZX16/Ecall/test_ecall.bin
 
 # Assemble branching test
-python3 -m isa_xform.cli assemble --isa zx16 --input tests/TC-ZX16/test_branching.s --output test_branching.bin
+python3 -m isa_xform.cli assemble --isa zx16 --input tests/TC-ZX16/Branching/test_branching.s --output tests/TC-ZX16/Branching/test_branching.bin
 ```
 
 ### Disassembly Verification
 ```bash
 # Disassemble to verify correct instruction encoding
-python3 -m isa_xform.cli disassemble --isa zx16 --input test_arithmetic.bin --output test_arithmetic_dis.s
-python3 -m isa_xform.cli disassemble --isa zx16 --input test_ecall.bin --output test_ecall_dis.s
-python3 -m isa_xform.cli disassemble --isa zx16 --input test_branching.bin --output test_branching_dis.s
+python3 -m isa_xform.cli disassemble --isa zx16 --input test_arithmetic.bin --output tests/TC-ZX16/ALU/test_arithmetic_dis.s
+python3 -m isa_xform.cli disassemble --isa zx16 --input test_ecall.bin --output tests/TC-ZX16/Ecall/test_ecall_dis.s
+python3 -m isa_xform.cli disassemble --isa zx16 --input test_branching.bin --output tests/TC-ZX16/Branching/test_branching_dis.s
 ```
 
 ### Expected Disassembly Output
