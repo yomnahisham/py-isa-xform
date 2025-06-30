@@ -206,7 +206,7 @@ class ZX16Simulator:
             rs2 = (inst >> 9) & 0x7
             rs1 = (inst >> 6) & 0x7
             funct3 = (inst >> 3) & 0x7
-            offset = self.sign_extend(imm, 16) * 2
+            offset = self.sign_extend(imm, 4)
             
             branch_taken = False
             if funct3 == 0x0:  # BEQ
@@ -227,8 +227,6 @@ class ZX16Simulator:
                 branch_taken = self.regs[rs1] >= self.regs[rs2]
             
             if branch_taken:
-                print("PC: " + str(self.pc))
-                print("Offset: " + str(offset))
                 self.pc = (self.pc + offset)
                 pc_updated = True
                 
@@ -327,7 +325,7 @@ class ZX16Simulator:
             
             # Use advanced disassembler
             disasm = self.disassemble_instruction(inst, self.pc)
-            print(f"0x{self.pc:04X}: {bin(inst)} {disasm}")
+            print(f"0x{self.pc:04X}: {inst} {disasm}")
             
             # Execute instruction
             if not self.execute_instruction(inst):
