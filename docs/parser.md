@@ -13,6 +13,7 @@ The parser is designed with the following principles:
 - **Performance**: Efficient line-by-line parsing with minimal memory overhead
 - **Clarity**: Clear separation between lexical analysis and syntax processing
 - **Error Reporting**: Detailed error messages with precise line and column information
+- **ISA Integration**: Full integration with ISA definitions for instruction validation
 
 ## Architecture
 
@@ -32,6 +33,7 @@ Assembly Text → Line Tokenization → AST Node Creation → AST List
 2. **Node Generator**: Creates appropriate AST nodes from tokens
 3. **Error Handler**: Provides detailed error reporting and recovery
 4. **ISA Integration**: Uses ISA definitions for instruction validation
+5. **Operand Parser**: Handles ISA-specific operand parsing and validation
 
 ## Core Classes
 
@@ -62,23 +64,25 @@ Parses assembly text and returns a list of AST nodes.
 **Example:**
 ```python
 from isa_xform.core.parser import Parser
-from isa_xform.core.isa_loader import load_isa_definition
+from isa_xform.core.isa_loader import ISALoader
 
 # Load ISA definition
-isa_def = load_isa_definition("simple_risc.json")
+loader = ISALoader()
+isa_def = loader.load_isa("zx16")
 
 # Create parser
 parser = Parser(isa_def)
 
 # Parse assembly text
 assembly_text = """
-    .data
-    value: .word 42
-    
     .text
+    .globl main
+    
     main:
-        add r1, r2, r3
-        sub r4, r1, r5
+        LI a0, 10          # Load immediate value
+        LI a1, 5           # Load immediate value
+        ADD a0, a1         # Add registers
+        ECALL 0x3FF        # Exit program
 """
 
 nodes = parser.parse(assembly_text)
@@ -131,8 +135,9 @@ Represents an assembly instruction with its operands.
 
 **Example:**
 ```assembly
-add r1, r2, r3      # Creates InstructionNode with mnemonic="add", operands=["r1", "r2", "r3"]
-sub r4, r1, #5      # Creates InstructionNode with mnemonic="sub", operands=["r4", "r1", "#5"]
+ADD a0, a1          # Creates InstructionNode with mnemonic="ADD", operands=["a0", "a1"]
+LI a0, 10           # Creates InstructionNode with mnemonic="LI", operands=["a0", "10"]
+ECALL 0x3FF         # Creates InstructionNode with mnemonic="ECALL", operands=["0x3FF"]
 ```
 
 ### `DirectiveNode`
@@ -145,9 +150,10 @@ Represents an assembler directive.
 
 **Example:**
 ```assembly
-.data                   # Creates DirectiveNode with name=".data", arguments=[]
-.word 42               # Creates DirectiveNode with name=".word", arguments=["42"]
-.ascii "Hello, World!" # Creates DirectiveNode with name=".ascii", arguments=["Hello, World!"]
+.text                   # Creates DirectiveNode with name=".text", arguments=[]
+.globl main             # Creates DirectiveNode with name=".globl", arguments=["main"]
+.word 42                # Creates DirectiveNode with name=".word", arguments=["42"]
+.ascii "Hello, World!"  # Creates DirectiveNode with name=".ascii", arguments=["Hello, World!"]
 ```
 
 ### `CommentNode`
@@ -160,7 +166,7 @@ Represents a comment in assembly code.
 **Example:**
 ```assembly
 # This is a comment     # Creates CommentNode with text="This is a comment"
-add r1, r2, r3         # Creates CommentNode with text="Add r1 and r2, store in r3"
+ADD a0, a1             # Creates CommentNode with text="Add a0 and a1"
 ```
 
 ## Parsing Process
@@ -180,7 +186,7 @@ The parser processes assembly code line by line for efficiency and clarity:
 The parser uses these rules to classify assembly lines:
 
 1. **Label Lines**: Lines ending with `:` (e.g., `main:`)
-2. **Directive Lines**: Lines starting with `.` (e.g., `.data`, `.word`)
+2. **Directive Lines**: Lines starting with `.` (e.g., `.text`, `.word`)
 3. **Instruction Lines**: Lines containing instruction mnemonics
 4. **Comment Lines**: Lines starting with `#` or containing `#`
 5. **Empty Lines**: Lines with only whitespace (ignored)
@@ -189,164 +195,251 @@ The parser uses these rules to classify assembly lines:
 
 Operands are parsed according to ISA-specific rules:
 
-- **Registers**: Identified by register names from ISA definition
-- **Immediates**: Values prefixed with `#` or numeric literals
-- **Labels**: Symbolic references to memory addresses
+- **Registers**: Identified by register names from ISA definition (e.g., `a0`, `a1`, `t1`, `s0`)
+- **Immediates**: Values prefixed with `#` or numeric literals (e.g., `10`, `0x3FF`, `-5`)
+- **Labels**: Symbolic references to memory addresses (e.g., `main`, `loop_start`)
 - **Addresses**: Memory references in various formats
+
+## ZX16 Parsing Examples
+
+### Basic Instructions
+
+```assembly
+# ZX16 instruction parsing
+LI a0, 10          # Load immediate: register a0, immediate 10
+ADD a0, a1         # Add registers: destination a0, source a1
+SUB a0, a1         # Subtract registers: destination a0, source a1
+ADDI a0, 20        # Add immediate: register a0, immediate 20
+```
+
+### Control Flow
+
+```assembly
+# ZX16 control flow parsing
+main:              # Label definition
+    LI a0, 10
+    BEQ a0, a1, equal_test  # Branch if equal with label target
+    J final_test            # Unconditional jump with label target
+equal_test:
+    LI a0, 42
+```
+
+### System Calls
+
+```assembly
+# ZX16 system call parsing
+ECALL 0x000        # Print character service
+ECALL 0x001        # Read character service
+ECALL 0x002        # Print string service
+ECALL 0x3FF        # Exit program service
+```
+
+### Directives
+
+```assembly
+# ZX16 directive parsing
+.text              # Text section directive
+.globl main        # Global symbol directive
+.data              # Data section directive
+.word 42           # Word data directive
+.ascii "Hello"     # ASCII string directive
+.asciiz "World"    # Null-terminated string directive
+```
 
 ## Error Handling
 
 ### Error Types
 
-The parser handles several types of errors:
+The parser provides comprehensive error handling:
 
-1. **Syntax Errors**: Invalid assembly syntax
-2. **Semantic Errors**: Invalid instruction usage
-3. **ISA Errors**: Instructions not defined in the ISA
-4. **Operand Errors**: Invalid operand types or values
+- **ParseError**: General parsing errors with line and column information
+- **SyntaxError**: Malformed assembly syntax
+- **UnknownInstructionError**: Instructions not defined in the ISA
+- **InvalidOperandError**: Operands that don't match expected format
+- **RegisterError**: Invalid register names
+- **ImmediateError**: Invalid immediate values
 
-### Error Reporting
+### Error Context
 
-Errors include detailed information:
+All errors include:
+- Source file name and line/column numbers
+- Context of the problematic code
+- Suggestions for resolution where applicable
+- ISA-specific validation information
 
-```python
-# Example error output
-ParseError: Invalid instruction 'invalid_instruction' at line 5, column 1
-ParseError: Expected register operand, got 'invalid_operand' at line 6, column 10
-ParseError: Unknown directive '.invalid' at line 7, column 1
+### ZX16 Error Examples
+
+```assembly
+# Error: Unknown instruction
+INVALID a0, a1     # Error: Unknown instruction: INVALID
+
+# Error: Unknown register
+ADD a2, a1         # Error: Unknown register: a2
+
+# Error: Invalid immediate
+LI a0, 100         # Error: Immediate value 100 doesn't fit in 7-bit signed field
+
+# Error: Malformed syntax
+ADD a0,            # Error: Missing operand for ADD instruction
 ```
-
-### Error Recovery
-
-The parser implements graceful error recovery:
-
-- **Line Skipping**: Skip lines with errors and continue parsing
-- **Partial Results**: Return successfully parsed nodes even if errors occur
-- **Error Collection**: Collect multiple errors for comprehensive reporting
 
 ## ISA Integration
 
 ### Instruction Validation
 
-The parser uses ISA definitions to validate instructions:
+The parser validates instructions against the ISA definition:
 
 ```python
-# Check if instruction exists in ISA
-if mnemonic not in isa_definition.instructions:
-    raise ParseError(f"Unknown instruction '{mnemonic}'")
-
-# Validate operand count
-instruction_def = isa_definition.instructions[mnemonic]
-if len(operands) != len(instruction_def.operands):
-    raise ParseError(f"Instruction '{mnemonic}' expects {len(instruction_def.operands)} operands, got {len(operands)}")
+# Parser checks instruction mnemonics against ISA
+isa_instructions = ["ADD", "SUB", "LI", "ECALL", "BEQ", "J"]
+parser.validate_instruction("ADD")  # Valid
+parser.validate_instruction("INVALID")  # Raises UnknownInstructionError
 ```
 
 ### Register Validation
 
-Register names are validated against the ISA definition:
+Register names are validated against the ISA register set:
 
 ```python
-# Check if register exists
-if operand not in isa_definition.registers:
-    raise ParseError(f"Unknown register '{operand}'")
+# ZX16 register validation
+valid_registers = ["a0", "a1", "t0", "t1", "s0", "s1", "sp", "ra"]
+parser.validate_register("a0")  # Valid
+parser.validate_register("a2")  # Raises RegisterError
+```
+
+### Operand Type Validation
+
+Operand types are validated based on instruction requirements:
+
+```python
+# ZX16 operand validation
+parser.validate_operands("ADD", ["a0", "a1"])  # Valid: two registers
+parser.validate_operands("LI", ["a0", "10"])   # Valid: register and immediate
+parser.validate_operands("ADD", ["a0"])        # Error: missing operand
 ```
 
 ## Performance Considerations
 
 ### Memory Efficiency
 
-- **Line-by-line processing**: Avoids loading entire file into memory
-- **Minimal object creation**: Reuses objects where possible
-- **Efficient string handling**: Uses string slicing and splitting
-
-### Processing Speed
-
-- **Early termination**: Stops processing on critical errors
-- **Optimized tokenization**: Fast string operations for token extraction
-- **Caching**: ISA definitions are cached for repeated access
-
-## Usage Examples
-
-### Basic Parsing
+The parser processes instructions incrementally to minimize memory usage:
 
 ```python
-from isa_xform.core.parser import Parser
-from isa_xform.core.isa_loader import load_isa_definition
-
-# Load ISA and create parser
-isa_def = load_isa_definition("simple_risc.json")
-parser = Parser(isa_def)
-
-# Parse assembly code
-assembly_code = """
-    .data
-    counter: .word 0
-    
-    .text
-    main:
-        addi r1, r0, 10    # Initialize counter
-        add r2, r1, r1     # Double the value
-"""
-
-nodes = parser.parse(assembly_code)
-
-# Process AST nodes
-for node in nodes:
-    print(f"{type(node).__name__}: {node}")
+# Line-by-line processing
+for line in assembly_text.split('\n'):
+    node = parser.parse_line(line)
+    if node:
+        nodes.append(node)
 ```
 
-### File Parsing
+### Error Recovery
+
+The parser continues processing after encountering errors:
 
 ```python
-# Parse from file
-nodes = parser.parse_file("program.s")
-
-# Filter by node type
-labels = [node for node in nodes if isinstance(node, LabelNode)]
-instructions = [node for node in nodes if isinstance(node, InstructionNode)]
-```
-
-### Error Handling
-
-```python
-try:
-    nodes = parser.parse(assembly_code)
-except ParseError as e:
-    print(f"Parse error: {e}")
-    # Handle error appropriately
+# Collect all errors for comprehensive reporting
+errors = []
+for line in assembly_text.split('\n'):
+    try:
+        node = parser.parse_line(line)
+        nodes.append(node)
+    except ParseError as e:
+        errors.append(e)
+        # Continue processing other lines
 ```
 
 ## Integration with Other Components
 
-### Symbol Table Integration
-
-The parser works closely with the symbol table:
-
-```python
-# Extract symbols from AST nodes
-symbol_table = SymbolTable()
-
-for node in nodes:
-    if isinstance(node, LabelNode):
-        symbol_table.add_symbol(node.name, current_address)
-    elif isinstance(node, DirectiveNode):
-        # Handle data directives
-        pass
-```
-
 ### Assembler Integration
 
-The parser provides the foundation for assembly:
+The parser works seamlessly with the assembler:
 
 ```python
-# Parse and then assemble
-nodes = parser.parse(assembly_code)
+# Parse and assemble in one workflow
+parser = Parser(isa_def)
 assembler = Assembler(isa_def)
-machine_code = assembler.assemble(nodes)
+
+nodes = parser.parse(assembly_source)
+result = assembler.assemble(nodes)
 ```
 
-## Conclusion
+### Symbol Table Integration
 
-The parser module provides a robust, efficient, and extensible foundation for assembly language processing in py-isa-xform. Its clean architecture, comprehensive error handling, and ISA integration make it suitable for both educational use and professional development workflows.
+The parser identifies symbols for the symbol table:
 
-The parser's design allows for easy extension and customization while maintaining high performance and reliability. Its integration with other components provides a complete pipeline for assembly language processing and analysis. 
+```python
+# Extract labels and symbols during parsing
+symbols = {}
+for node in nodes:
+    if isinstance(node, LabelNode):
+        symbols[node.name] = current_address
+```
+
+### CLI Integration
+
+The parser is accessible through the command-line interface:
+
+```bash
+# Parse assembly file
+python3 -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
+```
+
+## Best Practices
+
+### Assembly Code Structure
+
+Organize assembly code with clear sections:
+
+```assembly
+# Good structure
+    .text
+    .globl main
+
+main:
+    # Function prologue
+    LI a0, 10
+    
+    # Main logic
+    ADD a0, a1
+    
+    # Function epilogue
+    ECALL 0x3FF
+
+    .data
+constants:
+    .word 42
+```
+
+### Error Prevention
+
+Use valid ZX16 syntax to avoid parsing errors:
+
+```assembly
+# Good: Valid ZX16 syntax
+LI a0, 10          # Valid immediate value
+ADD a0, a1         # Valid register names
+BEQ a0, a1, label  # Valid branch instruction
+
+# Bad: Invalid syntax
+LI a0, 100         # Immediate too large
+ADD a2, a1         # Unknown register
+INVALID a0         # Unknown instruction
+```
+
+### Comments and Documentation
+
+Use comments to improve code readability:
+
+```assembly
+# ZX16 program with clear comments
+    .text
+    .globl main
+
+main:
+    LI a0, 10          # Load first operand
+    LI a1, 5           # Load second operand
+    ADD a0, a1         # Add operands: a0 = a0 + a1
+    ECALL 0x3FF        # Exit with result in a0
+```
+
+This parser provides professional-grade assembly language parsing with comprehensive error handling, ISA integration, and detailed validation, making it suitable for educational, research, and development applications. 

@@ -1,10 +1,10 @@
 # py-isa-xform Documentation
 
-A comprehensive toolkit for creating, analyzing, and working with custom instruction set architectures (ISAs). This documentation provides complete guides for all aspects of the system.
+Comprehensive documentation for the py-isa-xform toolkit, a professional-grade system for creating, analyzing, and working with custom instruction set architectures (ISAs). This documentation provides complete guides for all aspects of the system.
 
 ## Overview
 
-py-isa-xform is a professional-grade toolkit designed for educators, researchers, and developers working with custom instruction set architectures. It provides a complete ecosystem for ISA development, from specification to implementation.
+py-isa-xform is a professional-grade toolkit designed for educators, researchers, and developers working with custom instruction set architectures. It provides a complete ecosystem for ISA development, from specification to implementation, with particular emphasis on the ZX16 16-bit RISC-V inspired instruction set architecture.
 
 ### Key Features
 
@@ -13,13 +13,15 @@ py-isa-xform is a professional-grade toolkit designed for educators, researchers
 - **Comprehensive Error Handling**: Detailed error reporting with context and suggestions
 - **Configurable Syntax**: Adaptable to different assembly language conventions
 - **Professional Quality**: Production-ready code with extensive testing and documentation
+- **ZX16 Implementation**: Complete 16-bit RISC-V inspired ISA with comprehensive test suite
+- **Correct Disassembly**: Operand ordering matches assembly syntax, not encoding order
 
 ### Core Components
 
 1. **ISA Definition System**: JSON-based architecture specification with validation
 2. **Assembly Parser**: Converts assembly language to structured AST representation
-3. **Assembler**: Transforms assembly code into binary machine code
-4. **Disassembler**: Converts machine code back to human-readable assembly
+3. **Assembler**: Transforms assembly code into binary machine code with pseudo-instruction support
+4. **Disassembler**: Converts machine code back to human-readable assembly with correct operand ordering
 5. **Symbol Table Management**: Handles labels, constants, and memory references
 6. **Bit Utilities**: Low-level operations for instruction encoding and decoding
 7. **Error Handling**: Comprehensive error management with detailed reporting
@@ -30,49 +32,35 @@ py-isa-xform is a professional-grade toolkit designed for educators, researchers
 ### Quick Installation
 
 ```bash
-git clone https://github.com/your-org/py-isa-xform.git
+git clone https://github.com/yomnahisham/py-isa-xform.git
 cd py-isa-xform
 pip install -e .
 ```
 
-### Basic Usage
-
-```python
-from isa_xform.core.isa_loader import ISALoader
-from isa_xform.core.parser import Parser
-from isa_xform.core.assembler import Assembler
-
-# Load ISA definition
-loader = ISALoader()
-isa_def = loader.load_isa("simple_risc")
-
-# Parse assembly code
-parser = Parser(isa_def)
-nodes = parser.parse("""
-start:
-    ADD $r1, $r2, $r3
-    JMP end
-end:
-    NOP
-""")
-
-# Assemble to machine code
-assembler = Assembler(isa_def)
-result = assembler.assemble(nodes)
-print(f"Generated {len(result.machine_code)} bytes")
-```
-
-### Command Line Usage
+### Basic Usage with ZX16
 
 ```bash
-# Validate ISA definition
-python -m isa_xform validate my_isa.json
+# Assemble ZX16 program
+python3 -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
 
-# Assemble program
-python -m isa_xform assemble --isa simple_risc program.s
+# Disassemble to verify
+python3 -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program_dis.s
+```
 
-# Disassemble binary
-python -m isa_xform disassemble --isa simple_risc program.bin
+### ZX16 Assembly Example
+
+```assembly
+# ZX16 Arithmetic Operations
+    .text
+    .globl main
+
+main:
+    LI a0, 10          # Load immediate value
+    LI a1, 5           # Load immediate value
+    ADD a0, a1         # Add registers: a0 = a0 + a1
+    SUB a0, a1         # Subtract registers: a0 = a0 - a1
+    ADDI a0, 20        # Add immediate: a0 = a0 + 20
+    ECALL 0x3FF        # Exit program
 ```
 
 ## Documentation Structure
@@ -81,7 +69,7 @@ python -m isa_xform disassemble --isa simple_risc program.bin
 
 | Document | Description |
 |----------|-------------|
-| **[Getting Started](getting-started.md)** | Installation, basic usage, and first steps |
+| **[Getting Started](getting-started.md)** | Installation, basic usage, and first steps with ZX16 |
 | **[Architecture Overview](architecture.md)** | System design and component interactions |
 | **[API Reference](api-reference.md)** | Complete API documentation |
 
@@ -106,6 +94,46 @@ python -m isa_xform disassemble --isa simple_risc program.bin
 | **[Testing Guide](testing.md)** | Testing strategies and frameworks |
 | **[Contributing](contributing.md)** | Development setup and contribution guidelines |
 
+## ZX16 Instruction Set Architecture
+
+### Overview
+ZX16 is a 16-bit RISC-V inspired instruction set architecture designed for educational and embedded applications. It features a compact instruction encoding with comprehensive support for arithmetic, logical, control flow, and system operations.
+
+### Key Characteristics
+- **16-bit Instructions**: Compact encoding suitable for embedded applications
+- **8 General-Purpose Registers**: x0-x7 with standard aliases (t0, ra, sp, s0, s1, t1, a0, a1)
+- **7-bit Signed Immediates**: Immediate values in range -64 to 63
+- **Multiple ECALL Services**: System call support for I/O and program control
+- **Professional Toolchain**: Complete assembly and disassembly support
+
+### Instruction Categories
+
+#### Arithmetic and Logical Operations
+- **ADD, SUB**: Register arithmetic operations
+- **ADDI**: Immediate arithmetic operations
+- **AND, OR, XOR**: Bitwise logical operations
+- **SLT, SLTU**: Comparison operations (signed/unsigned)
+- **SLL, SRL, SRA**: Shift operations (logical/arithmetic)
+- **MV**: Register move operations
+
+#### Control Flow Operations
+- **BEQ, BNE**: Conditional branching (equal/not equal)
+- **BZ, BNZ**: Conditional branching (zero/not zero)
+- **J**: Unconditional jump
+
+#### System Operations
+- **ECALL**: System call with multiple service numbers
+  - `0x000`: Print character
+  - `0x001`: Read character
+  - `0x002`: Print string
+  - `0x3FF`: Exit program
+
+### Test Cases
+Comprehensive test cases are available in `tests/TC-ZX16/`:
+- **test_arithmetic.s**: Demonstrates all arithmetic and logical operations
+- **test_ecall.s**: Validates system call services
+- **test_branching.s**: Tests control flow operations
+
 ## Features Overview
 
 ### ISA Definition System
@@ -114,24 +142,29 @@ Define custom instruction set architectures using comprehensive JSON specificati
 
 ```json
 {
-  "name": "CustomISA",
+  "name": "ZX16",
   "version": "1.0",
-  "word_size": 32,
+  "description": "ZX16 16-bit RISC-V inspired ISA",
+  "instruction_size": 16,
+  "word_size": 16,
   "endianness": "little",
-  "instruction_size": 32,
-  "assembly_syntax": {
-    "comment_char": ";",
-    "register_prefix": "$",
-    "immediate_prefix": "#"
+  "registers": {
+    "general_purpose": [
+      {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary"},
+      {"name": "x6", "size": 16, "alias": ["a0"], "description": "Argument 0/Return value"}
+    ]
   },
   "instructions": [
     {
       "mnemonic": "ADD",
-      "opcode": "0001",
+      "format": "R-type",
+      "syntax": "ADD rd, rs2",
+      "semantics": "rd = rd + rs2",
       "encoding": {
         "fields": [
-          {"name": "opcode", "bits": "31:28", "value": "0001"},
-          {"name": "rd", "bits": "27:24", "type": "register"}
+          {"name": "funct4", "bits": "15:12", "value": "0000"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"}
         ]
       }
     }
@@ -141,12 +174,14 @@ Define custom instruction set architectures using comprehensive JSON specificati
 
 ### Assembly Processing
 
-Complete assembly toolchain with two-pass assembly support:
+Complete assembly toolchain with advanced features:
 
 - **Configurable Syntax**: Adapts to ISA-specific assembly language conventions
 - **Symbol Resolution**: Handles forward references and complex symbol dependencies
 - **Directive Support**: Standard and custom assembly directives
 - **Error Reporting**: Detailed error messages with file, line, and column information
+- **Pseudo-Instruction Expansion**: Automatic handling of high-level constructs
+- **Immediate Validation**: Proper handling of immediate value constraints
 
 ### Machine Code Generation
 
@@ -156,6 +191,7 @@ Professional-grade assembler with advanced features:
 - **Field-Based Encoding**: Supports modern ISA encoding schemes
 - **Validation**: Comprehensive operand and instruction validation
 - **Optimization**: Efficient assembly for large programs
+- **Register Validation**: Ensures only valid registers are used
 
 ### Disassembly Capabilities
 
@@ -165,6 +201,7 @@ Intelligent disassembler with advanced analysis:
 - **Data Detection**: Automatically identifies code vs. data sections
 - **Symbol Generation**: Creates meaningful labels for jump targets
 - **Multiple Formats**: Various output formatting options
+- **Correct Operand Ordering**: Outputs operands in syntax order, not encoding order
 
 ### Error Management
 
@@ -174,160 +211,62 @@ Comprehensive error handling system:
 - **Context Information**: File, line, column, and source context
 - **Suggestions**: Helpful hints for error resolution
 - **Error Types**: Specific exception classes for different error categories
+- **Immediate Validation**: Proper handling of immediate value constraints
 
 ## Use Cases
 
 ### Educational Applications
 
-- **Computer Architecture Courses**: Teach ISA design and assembly programming
+- **Computer Architecture Courses**: Teach ISA design and assembly programming with ZX16
 - **Processor Design**: Support FPGA and ASIC processor implementations
 - **Assembly Language Learning**: Practice with custom instruction sets
+- **Compiler Design**: Understand instruction set architecture design principles
 
 ### Research Applications
 
 - **ISA Experimentation**: Rapid prototyping of new instruction set features
 - **Compiler Backends**: Generate assembly for research compilers
-- **Architecture Analysis**: Study instruction set characteristics
+- **Architecture Analysis**: Study instruction set characteristics and performance
+- **Custom Processor Design**: Develop specialized instruction sets
 
 ### Professional Development
 
 - **Custom Processors**: Support embedded and specialized processors
 - **Tool Development**: Build development tools for custom architectures
 - **System Integration**: Interface with simulation and testing frameworks
+- **Educational Tools**: Create interactive learning environments
 
-## Examples
+## Examples and Test Cases
 
-The `examples/` directory contains complete test cases demonstrating various features:
+The project includes comprehensive examples and test cases:
 
-- **TC001**: Basic assembly and disassembly workflow
-- **TC002**: Advanced symbol resolution and debugging
-- **TC003**: Minimal ISA implementation
-- **TC004**: Complex instruction encoding examples
+### ZX16 Test Suite
+Located in `tests/TC-ZX16/`:
+- **Arithmetic Operations**: Complete coverage of arithmetic and logical instructions
+- **System Services**: ECALL service validation and testing
+- **Control Flow**: Branching and jump instruction testing
+- **Documentation**: Detailed README explaining test coverage and validation
 
-Each test case includes:
-- Source assembly files
-- Expected binary output
-- Disassembly verification
-- Documentation explaining the concepts demonstrated
+### Example Programs
+Located in `examples/`:
+- **Basic Programs**: Simple assembly language examples
+- **Complex Programs**: Advanced usage demonstrations
+- **Integration Examples**: Toolchain integration scenarios
 
-## Architecture
+## Recent Improvements
 
-py-isa-xform follows a modular architecture with clean component separation:
+- **Operand Order Fix**: Disassembler now outputs operands in correct syntax order
+- **ZX16 Implementation**: Complete 16-bit RISC-V inspired ISA
+- **Enhanced Error Handling**: Improved error messages and validation
+- **Professional Documentation**: Comprehensive and detailed documentation
+- **Test Coverage**: Extensive test cases demonstrating all ISA features
+- **Pseudo-Instruction Support**: Automatic expansion of high-level constructs
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   ISA Loader    │    │     Parser      │    │   Assembler     │
-│                 │    │                 │    │                 │
-│ • Load ISAs     │───▶│ • Parse ASM     │───▶│ • Generate Code │
-│ • Validate      │    │ • Create AST    │    │ • Resolve Syms  │
-│ • Configure     │    │ • Handle Syntax │    │ • Encode Instrs │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ Error Handling  │    │ Symbol Table    │    │  Disassembler   │
-│                 │    │                 │    │                 │
-│ • Error Types   │    │ • Track Symbols │    │ • Decode Binary │
-│ • Context Info  │    │ • Resolve Refs  │    │ • Extract Syms  │
-│ • Suggestions   │    │ • Handle Scopes │    │ • Format Output │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 ▼
-                    ┌─────────────────┐
-                    │   Bit Utils     │
-                    │                 │
-                    │ • Bit Fields    │
-                    │ • Sign Extend   │
-                    │ • Alignment     │
-                    │ • Endianness    │
-                    └─────────────────┘
-```
+## Support and Contributing
 
-## Quality Assurance
+- **Documentation**: Comprehensive guides for all system components
+- **Testing**: Extensive test coverage for validation and regression testing
+- **Contributing**: Detailed guidelines for contributors and developers
+- **Issues**: Professional issue tracking and resolution process
 
-### Testing
-
-- **Unit Tests**: Comprehensive coverage of all components
-- **Integration Tests**: End-to-end workflow validation
-- **Property-Based Testing**: Random input validation
-- **Performance Testing**: Scalability and efficiency verification
-
-### Documentation
-
-- **API Reference**: Complete documentation of all public interfaces
-- **User Guides**: Step-by-step tutorials and examples
-- **Architecture Docs**: System design and implementation details
-- **Code Examples**: Practical usage demonstrations
-
-### Error Handling
-
-- **Comprehensive Validation**: Input validation at all levels
-- **Graceful Degradation**: Robust handling of malformed input
-- **Clear Error Messages**: Detailed context and suggestions
-- **Error Recovery**: Continue processing when possible
-
-## Performance
-
-### Scalability
-
-- **Large Programs**: Handles programs with millions of instructions
-- **Complex ISAs**: Supports architectures with thousands of instructions
-- **Memory Efficiency**: Linear memory usage with program size
-- **Batch Processing**: Efficient handling of multiple files
-
-### Optimization
-
-- **Caching**: ISA definitions and lookup tables are cached
-- **Streaming**: Large files processed in chunks
-- **Parallel Processing**: Independent operations can run concurrently
-- **Efficient Algorithms**: Optimized for common operations
-
-## Community and Support
-
-### Getting Help
-
-1. **Documentation**: Start with the guides in this directory
-2. **Examples**: Study the test cases in `examples/`
-3. **API Reference**: Check the complete API documentation
-4. **Issues**: Report bugs and request features on GitHub
-
-### Contributing
-
-We welcome contributions! See the [Contributing Guide](contributing.md) for:
-
-- Development setup instructions
-- Code style guidelines
-- Testing requirements
-- Pull request process
-
-### License
-
-This project is licensed under the MIT License. See the LICENSE file for details.
-
-## Roadmap
-
-### Current Version (1.0)
-
-- Complete ISA definition system
-- Full assembly and disassembly pipeline
-- Comprehensive error handling
-- Professional documentation
-
-### Planned Features
-
-- **Optimization Passes**: Code optimization during assembly
-- **Debugging Support**: Debug symbol generation and handling
-- **IDE Integration**: Language server protocol support
-- **Advanced Analysis**: Control flow and data flow analysis
-
-### Long-term Vision
-
-- **Higher-level Languages**: C-like syntax compilation
-- **Formal Verification**: Mathematical verification of ISA properties
-- **Simulation Integration**: Direct interface with processor simulators
-- **Cross-Architecture Tools**: Translation between different ISAs
-
----
-
-For detailed information on any topic, please refer to the specific documentation files linked above. The [Getting Started Guide](getting-started.md) is the recommended starting point for new users.
+This documentation provides a complete reference for using py-isa-xform in educational, research, and professional development contexts.

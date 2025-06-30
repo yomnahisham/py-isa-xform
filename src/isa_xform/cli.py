@@ -353,27 +353,25 @@ def parse_command(args) -> int:
 def list_isas_command(args) -> int:
     """Handle list-isas command"""
     try:
-        # Find ISA definition files
-        isa_dir = Path(__file__).parent.parent / "isa_definitions"
-        isa_files = list(isa_dir.glob("*.json"))
+        loader = ISALoader()
+        isa_names = loader.list_available_isas()
         
-        if not isa_files:
+        if not isa_names:
             print("No ISA definitions found")
             return 1
         
         print("Available ISA definitions:")
-        for isa_file in sorted(isa_files):
+        for isa_name in sorted(isa_names):
             try:
-                loader = ISALoader()
-                isa_definition = loader.load_isa(isa_file.name)
-                print(f"  {isa_file.stem}: {isa_definition.name} v{isa_definition.version}")
+                isa_definition = loader.load_isa(isa_name)
+                print(f"  {isa_name}: {isa_definition.name} v{isa_definition.version}")
                 if args.verbose:
                     print(f"    Description: {isa_definition.description}")
                     print(f"    Word size: {isa_definition.word_size} bits")
                     print(f"    Instructions: {len(isa_definition.instructions)}")
                     print()
             except Exception as e:
-                print(f"  {isa_file.stem}: Error loading ({e})")
+                print(f"  {isa_name}: Error loading ({e})")
         
         return 0
         

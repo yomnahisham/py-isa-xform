@@ -6,13 +6,13 @@
   "endianness": "little",
   "instruction_size": 32,
   "address_space": {
-    "default_code_start": 0x1000,
-    "default_data_start": 0x2000,
-    "default_stack_start": 0x8000,
+    "default_code_start": 4096,
+    "default_data_start": 8192,
+    "default_stack_start": 32768,
     "memory_layout": {
-      "code_section": {"start": 0x1000, "end": 0x1FFF},
-      "data_section": {"start": 0x2000, "end": 0x7FFF},
-      "stack_section": {"start": 0x8000, "end": 0xFFFF}
+      "code_section": {"start": 4096, "end": 8191},
+      "data_section": {"start": 8192, "end": 32767},
+      "stack_section": {"start": 32768, "end": 65535}
     },
     "alignment_requirements": {
       "code": 4,

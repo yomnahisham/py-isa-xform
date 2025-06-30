@@ -1,10 +1,10 @@
 # Disassembler Documentation
 
-The Disassembler component converts machine code back into human-readable assembly language. It supports various instruction formats, handles data sections, and provides configurable output formatting.
+The Disassembler component converts machine code back into human-readable assembly language. It supports various instruction formats, handles data sections, and provides configurable output formatting with correct operand ordering.
 
 ## Overview
 
-The disassembler takes binary machine code and reconstructs assembly language instructions based on the ISA definition. It can differentiate between code and data sections, handle different instruction encodings, and generate formatted assembly output.
+The disassembler takes binary machine code and reconstructs assembly language instructions based on the ISA definition. It can differentiate between code and data sections, handle different instruction encodings, and generate formatted assembly output with operands in the correct syntax order.
 
 ## Key Features
 
@@ -14,6 +14,8 @@ The disassembler takes binary machine code and reconstructs assembly language in
 - **Symbol extraction**: Attempts to identify and name jump targets and data references
 - **Configurable output**: Various formatting options for disassembled code
 - **Error resilience**: Gracefully handles invalid or corrupted machine code
+- **Correct operand ordering**: Outputs operands in syntax order, not encoding order
+- **Professional output**: Clean, readable assembly code generation
 
 ## Core Classes
 
@@ -27,7 +29,7 @@ from isa_xform.core.isa_loader import ISALoader
 
 # Load ISA definition
 loader = ISALoader()
-isa_definition = loader.load_isa("simple_risc")
+isa_definition = loader.load_isa("zx16")
 
 # Create disassembler with custom configuration
 disassembler = Disassembler(isa_definition, max_consecutive_nops=16)
@@ -78,7 +80,7 @@ Represents a single disassembled instruction.
 - `address`: Memory address of the instruction
 - `machine_code`: Raw bytes of the instruction
 - `mnemonic`: Instruction mnemonic (e.g., "ADD", "JMP")
-- `operands`: List of operand strings
+- `operands`: List of operand strings in correct syntax order
 - `instruction`: Reference to the original Instruction definition
 - `comment`: Optional comment or annotation
 
@@ -101,10 +103,10 @@ The disassembler uses sophisticated pattern matching to identify instructions:
 For modern ISA definitions with field-based encoding:
 
 ```python
-# Example instruction pattern
+# Example instruction pattern for ZX16 ADD instruction
 pattern = {
     'instruction': instruction_def,
-    'opcode': 0b1010,           # Expected opcode bits
+    'opcode': 0b0000,           # Expected opcode bits
     'mask': 0b1111,             # Mask for opcode bits
     'fields': field_definitions  # Field layout
 }
@@ -129,6 +131,42 @@ The disassembler handles various opcode formats:
 - Binary strings: "1010"
 - Hexadecimal: "0xA"
 - Decimal: "10"
+
+## Operand Ordering
+
+The disassembler correctly outputs operands in the order specified by the instruction syntax, not the encoding field order.
+
+### Syntax-Based Ordering
+
+For ZX16 instructions, the disassembler parses the `syntax` field to determine operand order:
+
+```json
+{
+  "mnemonic": "ADD",
+  "syntax": "ADD rd, rs2",
+  "encoding": {
+    "fields": [
+      {"name": "rs2", "bits": "11:9", "type": "register"},
+      {"name": "rd", "bits": "8:6", "type": "register"}
+    ]
+  }
+}
+```
+
+**Result**: `ADD rd, rs2` (correct syntax order) instead of `ADD rs2, rd` (encoding order)
+
+### ZX16 Example
+
+```assembly
+# Source assembly
+ADD a0, a1         # a0 = a0 + a1
+
+# Disassembled output (correct)
+ADD x6, x7         # Operands in syntax order: rd, rs2
+
+# Previous incorrect output (encoding order)
+ADD x7, x6         # Wrong order based on field encoding
+```
 
 ## Data Section Detection
 
@@ -165,9 +203,9 @@ The disassembler attempts to identify symbols and labels:
 Branch and jump instructions reveal code labels:
 
 ```assembly
-0x1000: JMP 0x1020    # Creates label at 0x1020
+0x1000: J 0x1020    # Creates label at 0x1020
 # ...
-0x1020: ADD R1, R2    # Becomes "label_1020:"
+0x1020: ADD x6, x7  # Becomes "label_1020:"
 ```
 
 ### Data Reference Detection
@@ -175,7 +213,7 @@ Branch and jump instructions reveal code labels:
 Memory access instructions may reveal data symbols:
 
 ```assembly
-0x1000: LD R1, 0x2000   # May indicate data at 0x2000
+0x1000: LW x6, 0x2000   # May indicate data at 0x2000
 ```
 
 ### Symbol Naming
@@ -192,265 +230,178 @@ The disassembler provides flexible output formatting:
 ### Basic Format
 
 ```assembly
-ADD R1, R2, R3
-SUB R4, R5, R6
-JMP label_1020
+ADD x6, x7
+SUB x6, x7
+J label_1020
 ```
 
 ### With Addresses
 
 ```assembly
-0x1000: ADD R1, R2, R3
-0x1004: SUB R4, R5, R6
-0x1008: JMP label_1020
+0x1000: ADD x6, x7
+0x1002: SUB x6, x7
+0x1004: J label_1020
 ```
 
 ### With Machine Code
 
 ```assembly
-0x1000: 12340000    ADD R1, R2, R3
-0x1004: 23450000    SUB R4, R5, R6
-0x1008: 80001020    JMP label_1020
+0x1000: [00 76] ADD x6, x7
+0x1002: [01 76] SUB x6, x7
+0x1004: [F0 00] J label_1020
 ```
 
-### With Data Sections
+## ZX16 Disassembly Example
 
+### Input Binary
+```bash
+python3 -m isa_xform.cli disassemble --isa zx16 --input test_arithmetic.bin --output test_arithmetic_dis.s
+```
+
+### Output Assembly
 ```assembly
-# Code section
-0x1000: ADD R1, R2, R3
-0x1004: JMP data_2000
+; Disassembly of ZX16 v1.0
+; Word size: 16 bits
+; Endianness: little
 
-# Data section
-data_2000:
-    .word 0x12345678
-    .word 0x9ABCDEF0
+    LI x6, 10
+    LI x7, 5
+    LI x5, 3
+    LI x3, 2
+    ADD x6, x7
+    SUB x6, x7
+    ADDI x6, 20
+    ADDI x6, 0xFFFFFFFB
+    AND x6, x5
+    OR x6, x3
+    XOR x6, x7
+    SLT x6, x5
+    SLTU x6, x3
+    SLL x6, x5
+    SRL x6, x3
+    SRA x6, x5
+    MV x7, x6
+    ECALL 0
 ```
 
 ## Error Handling
 
-The disassembler includes robust error handling:
+The disassembler gracefully handles various error conditions:
 
-### Graceful Degradation
+### Invalid Instructions
 
-- Invalid instructions are treated as data
-- Partial instructions at end of file are handled gracefully
-- Corrupted machine code doesn't crash the disassembler
-
-### Error Reporting
+Unknown or corrupted instructions are treated as data:
 
 ```python
-from isa_xform.utils.error_handling import DisassemblerError
-
-try:
-    result = disassembler.disassemble(machine_code)
-except DisassemblerError as e:
-    print(f"Disassembly failed: {e}")
+# Invalid instruction becomes data section
+data_sections[current_address] = invalid_bytes
 ```
 
-### Diagnostic Information
+### Incomplete Instructions
 
-- Reports unrecognized instruction patterns
-- Identifies suspicious data patterns
-- Provides statistics on successful vs. failed instruction decoding
-
-## Configuration
-
-The disassembler adapts to ISA-specific configurations:
-
-### Instruction Size
-
-Automatically uses the ISA-defined instruction size:
+Partial instructions at the end of binary files are handled:
 
 ```python
-instruction_size_bytes = isa_definition.instruction_size // 8
+# Remaining bytes become data
+if remaining_bytes:
+    data_sections[current_address] = remaining_bytes
 ```
 
-### Endianness
+### Memory Access Errors
 
-Respects the ISA endianness setting:
+File reading errors are handled with appropriate error messages.
+
+## Performance Considerations
+
+### Efficient Pattern Matching
+
+The disassembler builds lookup tables for fast instruction recognition:
 
 ```python
-endianness = 'little' if isa_def.endianness.lower().startswith('little') else 'big'
+# Pre-built pattern tables for efficient matching
+self.instruction_patterns = []
+self.opcode_to_instruction = {}
 ```
 
-### Register Names
+### Memory Usage
 
-Uses ISA-defined register names and aliases:
-
-```python
-reg_name = get_register_name(reg_num)  # Uses ISA register definitions
-```
-
-## Advanced Features
-
-### Context-Aware Disassembly
-
-The disassembler uses context to improve accuracy:
-
-- **Branch analysis**: Identifies likely code vs. data based on branch targets
-- **Pattern recognition**: Recognizes common instruction sequences
-- **Statistical analysis**: Uses instruction frequency to validate disassembly
-
-### Heuristic Improvements
-
-Various heuristics improve disassembly quality:
-
-- **Function boundary detection**: Identifies function starts and ends
-- **Loop recognition**: Identifies loop structures
-- **Data alignment**: Recognizes aligned data structures
-
-## Usage Examples
-
-### Basic Disassembly
+The disassembler processes instructions incrementally to minimize memory usage:
 
 ```python
-from isa_xform.core.disassembler import Disassembler
-from isa_xform.core.isa_loader import ISALoader
-
-# Load ISA definition
-loader = ISALoader()
-isa_def = loader.load_isa("simple_risc")
-
-# Create disassembler
-disassembler = Disassembler(isa_def)
-
-# Read and disassemble binary file
-with open("program.bin", "rb") as f:
-    machine_code = f.read()
-
-result = disassembler.disassemble(machine_code, start_address=0x1000)
-
-# Format and display results
-output = disassembler.format_disassembly(
-    result, 
-    include_addresses=True,
-    include_machine_code=True
-)
-print(output)
-```
-
-### Custom Configuration
-
-```python
-# Custom consecutive NOP threshold
-disassembler = Disassembler(isa_def, max_consecutive_nops=32)
-
-# Disassemble with custom start address
-result = disassembler.disassemble(machine_code, start_address=0x8000)
-
-# Access individual components
-for instruction in result.instructions:
-    print(f"{instruction.address:04X}: {instruction.mnemonic} {', '.join(instruction.operands)}")
-
-for addr, data in result.data_sections.items():
-    print(f"Data at {addr:04X}: {data.hex()}")
-```
-
-### Symbol Analysis
-
-```python
-# Extract and analyze symbols
-symbols = result.symbols
-print("Discovered symbols:")
-for addr, name in symbols.items():
-    print(f"  {name} at 0x{addr:04X}")
-
-# Find entry points
-entry_points = [addr for addr, name in symbols.items() if name.startswith('func_')]
-print(f"Potential entry points: {len(entry_points)}")
+# Process in instruction-sized chunks
+while i < len(machine_code):
+    instr_bytes = machine_code[i:i + instruction_size]
+    # Process instruction...
+    i += instruction_size
 ```
 
 ## Integration with Other Components
 
-### File Format Support
+### ISA Loader Integration
 
-The disassembler works with various file formats:
+The disassembler works seamlessly with the ISA loader:
 
-- **Raw binary**: Direct machine code bytes
-- **ISA binary format**: Custom format with headers
-- **ELF/COFF**: Via external loaders (future enhancement)
+```python
+# Load ISA and create disassembler
+isa_def = loader.load_isa("zx16")
+disassembler = Disassembler(isa_def)
+```
 
 ### Symbol Table Integration
 
-```python
-from isa_xform.core.symbol_table import SymbolTable
+Optional symbol table support for enhanced disassembly:
 
+```python
 # Use existing symbol table
 symbol_table = SymbolTable()
-# ... populate symbol table ...
-
+symbol_table.add_symbol("main", 0x1000)
 disassembler = Disassembler(isa_def, symbol_table)
+```
+
+### CLI Integration
+
+The disassembler is accessible through the command-line interface:
+
+```bash
+python3 -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s
+```
+
+## Best Practices
+
+### ISA Definition
+
+Ensure ISA definitions include proper syntax fields for correct operand ordering:
+
+```json
+{
+  "mnemonic": "ADD",
+  "syntax": "ADD rd, rs2",
+  "encoding": {
+    "fields": [...]
+  }
+}
+```
+
+### Error Handling
+
+Always check for disassembly errors and handle data sections appropriately:
+
+```python
 result = disassembler.disassemble(machine_code)
+if result.data_sections:
+    print("Data sections found:", result.data_sections)
 ```
 
-### Parser Integration
+### Output Formatting
 
-Disassembled output can be re-parsed:
+Choose appropriate output format for your use case:
 
 ```python
-from isa_xform.core.parser import Parser
+# For debugging
+formatted = disassembler.format_disassembly(result, include_addresses=True, include_machine_code=True)
 
-# Disassemble to text
-assembly_text = disassembler.format_disassembly(result)
-
-# Parse back to AST
-parser = Parser(isa_def)
-nodes = parser.parse(assembly_text)
+# For clean assembly
+formatted = disassembler.format_disassembly(result, include_addresses=False)
 ```
 
-## Performance Considerations
-
-### Memory Usage
-
-- Instruction lookup tables are built once during initialization
-- Large machine code files are processed in streaming fashion where possible
-- Symbol tables grow with the number of discovered symbols
-
-### Processing Speed
-
-- Pattern matching is optimized with pre-computed masks
-- Opcode lookup uses hash tables for O(1) access
-- Data section detection uses efficient byte scanning
-
-### Optimization Tips
-
-- Use appropriate `max_consecutive_nops` threshold for your data
-- Pre-load symbol tables when available
-- Process large files in chunks if memory is limited
-
-## Extensibility
-
-The disassembler supports various extensions:
-
-### Custom Instruction Handlers
-
-```python
-def custom_instruction_decoder(instr_word, instr_bytes, address, pattern):
-    # Custom decoding logic
-    return DisassembledInstruction(...)
-
-# Register custom handler
-disassembler.custom_decoders['CUSTOM_FORMAT'] = custom_instruction_decoder
-```
-
-### Custom Symbol Recognition
-
-```python
-def custom_symbol_extractor(instructions):
-    # Custom symbol extraction logic
-    return symbol_dict
-
-# Use custom symbol extraction
-symbols = custom_symbol_extractor(result.instructions)
-```
-
-### Output Format Extensions
-
-```python
-def custom_formatter(result, options):
-    # Custom output formatting
-    return formatted_text
-
-# Use custom formatter
-output = custom_formatter(result, custom_options)
-``` 
+This disassembler provides professional-grade machine code analysis with correct operand ordering and comprehensive error handling, making it suitable for educational, research, and development applications. 

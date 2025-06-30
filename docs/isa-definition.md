@@ -8,8 +8,9 @@ An ISA definition is a JSON file that completely specifies an instruction set ar
 - Basic architecture properties (word size, endianness)
 - Register definitions
 - Instruction specifications
-- Addressing modes
+- Pseudo-instructions
 - Assembly syntax rules
+- Constants and services
 
 ## ISA Definition Structure
 
@@ -17,13 +18,16 @@ An ISA definition is a JSON file that completely specifies an instruction set ar
 
 ```json
 {
-  "name": "MyCustomISA",
+  "name": "ZX16",
   "version": "1.0",
-  "description": "A custom 16-bit RISC processor",
+  "description": "ZX16 16-bit RISC-V inspired ISA",
+  "instruction_size": 16,
   "word_size": 16,
   "endianness": "little",
-  "instruction_size": 16,
-  "memory_model": "von_neumann"
+  "address_space": {
+    "size": 65536,
+    "default_code_start": 32
+  }
 }
 ```
 
@@ -31,10 +35,10 @@ An ISA definition is a JSON file that completely specifies an instruction set ar
 - `name` - Unique identifier for the ISA
 - `version` - Version string for compatibility tracking
 - `description` - Human-readable description
+- `instruction_size` - Size of instructions in bits
 - `word_size` - Size of a word in bits (8, 16, 32, 64)
 - `endianness` - Byte order ("little" or "big")
-- `instruction_size` - Size of instructions in bits
-- `memory_model` - "von_neumann" or "harvard"
+- `address_space` - Memory layout configuration
 
 ### Register Definitions
 
@@ -42,15 +46,14 @@ An ISA definition is a JSON file that completely specifies an instruction set ar
 {
   "registers": {
     "general_purpose": [
-      {"name": "R0", "size": 16, "alias": ["ZERO"]},
-      {"name": "R1", "size": 16, "alias": ["AT"]},
-      {"name": "R2", "size": 16, "alias": ["V0"]},
-      {"name": "R3", "size": 16, "alias": ["V1"]}
-    ],
-    "special_purpose": [
-      {"name": "PC", "size": 16, "description": "Program Counter"},
-      {"name": "SP", "size": 16, "description": "Stack Pointer"},
-      {"name": "FLAGS", "size": 16, "description": "Status Flags"}
+      {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved)"},
+      {"name": "x1", "size": 16, "alias": ["ra"], "description": "Return address"},
+      {"name": "x2", "size": 16, "alias": ["sp"], "description": "Stack pointer"},
+      {"name": "x3", "size": 16, "alias": ["s0"], "description": "Saved/Frame pointer"},
+      {"name": "x4", "size": 16, "alias": ["s1"], "description": "Saved"},
+      {"name": "x5", "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved)"},
+      {"name": "x6", "size": 16, "alias": ["a0"], "description": "Argument 0/Return value"},
+      {"name": "x7", "size": 16, "alias": ["a1"], "description": "Argument 1"}
     ]
   }
 }
@@ -71,36 +74,35 @@ Instructions are the heart of the ISA definition:
   "instructions": [
     {
       "mnemonic": "ADD",
-      "opcode": "0000",
       "format": "R-type",
-      "description": "Add two registers",
+      "description": "Add registers (two-operand)",
+      "syntax": "ADD rd, rs2",
+      "semantics": "rd = rd + rs2",
       "encoding": {
         "fields": [
-          {"name": "opcode", "bits": "15:12", "value": "0000"},
-          {"name": "rd", "bits": "11:8", "type": "register"},
-          {"name": "rs1", "bits": "7:4", "type": "register"},
-          {"name": "rs2", "bits": "3:0", "type": "register"}
+          {"name": "funct4", "bits": "15:12", "value": "0000"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
         ]
-      },
-      "syntax": "ADD $rd, $rs1, $rs2",
-      "semantics": "$rd = $rs1 + $rs2",
-      "flags_affected": ["Z", "N", "C", "V"]
+      }
     },
     {
-      "mnemonic": "LDI",
-      "opcode": "0001",
+      "mnemonic": "ADDI",
       "format": "I-type",
-      "description": "Load immediate value",
+      "description": "Add immediate",
+      "syntax": "ADDI rd, imm",
+      "semantics": "rd = rd + imm",
       "encoding": {
         "fields": [
-          {"name": "opcode", "bits": "15:12", "value": "0001"},
-          {"name": "rd", "bits": "11:8", "type": "register"},
-          {"name": "immediate", "bits": "7:0", "type": "immediate", "signed": false}
+          {"name": "funct4", "bits": "15:12", "value": "0000"},
+          {"name": "imm", "bits": "11:9", "type": "immediate", "signed": true},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
         ]
-      },
-      "syntax": "LDI $rd, #imm",
-      "semantics": "$rd = imm",
-      "flags_affected": ["Z", "N"]
+      }
     }
   ]
 }
@@ -108,29 +110,27 @@ Instructions are the heart of the ISA definition:
 
 **Instruction Fields:**
 - `mnemonic` - Assembly language name
-- `opcode` - Binary opcode value
-- `format` - Instruction format type
+- `format` - Instruction format type (R-type, I-type, J-type, etc.)
 - `description` - Human-readable description
-- `encoding` - Bit-level encoding specification
 - `syntax` - Assembly syntax pattern
 - `semantics` - Operational description
-- `flags_affected` - Which flags are modified
+- `encoding` - Bit-level encoding specification
 
 ### Encoding Field Types
 
-1. **Opcode Field**
+1. **Fixed Value Field**
    ```json
-   {"name": "opcode", "bits": "15:12", "value": "0000"}
+   {"name": "funct4", "bits": "15:12", "value": "0000"}
    ```
 
 2. **Register Field**
    ```json
-   {"name": "rd", "bits": "11:8", "type": "register"}
+   {"name": "rd", "bits": "8:6", "type": "register"}
    ```
 
 3. **Immediate Field**
    ```json
-   {"name": "immediate", "bits": "7:0", "type": "immediate", "signed": true}
+   {"name": "imm", "bits": "11:9", "type": "immediate", "signed": true}
    ```
 
 4. **Address Field**
@@ -138,32 +138,48 @@ Instructions are the heart of the ISA definition:
    {"name": "address", "bits": "11:0", "type": "address"}
    ```
 
-### Addressing Modes
+### Pseudo-Instructions
 
-Define how operands are accessed:
+Define macro-like instructions that expand to real instructions:
 
 ```json
 {
-  "addressing_modes": [
+  "pseudo_instructions": [
     {
-      "name": "register_direct",
-      "syntax": "$reg",
-      "description": "Direct register access"
+      "mnemonic": "NOP",
+      "description": "No operation",
+      "syntax": "NOP",
+      "expansion": "ADD x0, x0"
     },
     {
-      "name": "immediate",
-      "syntax": "#value",
-      "description": "Immediate value"
+      "mnemonic": "CLR",
+      "description": "Clear register",
+      "syntax": "CLR rd",
+      "expansion": "XOR rd, rd"
     },
     {
-      "name": "register_indirect",
-      "syntax": "($reg)",
-      "description": "Memory address in register"
+      "mnemonic": "INC",
+      "description": "Increment register",
+      "syntax": "INC rd",
+      "expansion": "ADDI rd, 1"
     },
     {
-      "name": "indexed",
-      "syntax": "offset($reg)",
-      "description": "Register plus offset"
+      "mnemonic": "DEC",
+      "description": "Decrement register",
+      "syntax": "DEC rd",
+      "expansion": "ADDI rd, -1"
+    },
+    {
+      "mnemonic": "CALL",
+      "description": "Call function",
+      "syntax": "CALL label",
+      "expansion": "JAL x1, label"
+    },
+    {
+      "mnemonic": "RET",
+      "description": "Return from function",
+      "syntax": "RET",
+      "expansion": "JR x1"
     }
   ]
 }
@@ -174,131 +190,189 @@ Define how operands are accessed:
 ```json
 {
   "assembly_syntax": {
-    "comment_char": ";",
+    "comment_chars": ["#", ";"],
     "label_suffix": ":",
-    "register_prefix": "$",
-    "immediate_prefix": "#",
-    "hex_prefix": "0x",
-    "binary_prefix": "0b",
+    "register_prefix": "",
+    "immediate_prefix": "",
+    "string_delimiters": ["\"", "'"],
     "case_sensitive": false,
-    "directives": [
-      ".org",
-      ".word",
-      ".byte",
-      ".space"
-    ]
+    "instruction_separator": "\n"
   }
 }
 ```
 
-## Complete Example: Simple 16-bit RISC ISA
+### Constants
+
+Define system constants and memory layout:
 
 ```json
 {
-  "name": "SimpleRISC16",
+  "constants": {
+    "RESET_VECTOR": 0,
+    "INT_VECTORS": 0,
+    "CODE_START": 32,
+    "MMIO_BASE": 61440,
+    "MMIO_SIZE": 4096,
+    "STACK_TOP": 61438,
+    "MEM_SIZE": 65536
+  }
+}
+```
+
+### ECALL Services
+
+Define system call services:
+
+```json
+{
+  "ecall_services": {
+    "0x000": {
+      "name": "print_char",
+      "description": "Print character from a0 register",
+      "parameters": {
+        "a0": "Character to print"
+      },
+      "return": "None"
+    },
+    "0x001": {
+      "name": "read_char",
+      "description": "Read a character from user input into a0 register",
+      "parameters": {},
+      "return": "a0: Character read from input"
+    },
+    "0x002": {
+      "name": "print_string",
+      "description": "Print string starting at address in a0 register",
+      "parameters": {
+        "a0": "Address of null-terminated string"
+      },
+      "return": "None"
+    },
+    "0x3FF": {
+      "name": "exit",
+      "description": "Exit program with code in a0 register",
+      "parameters": {
+        "a0": "Exit code"
+      },
+      "return": "None"
+    }
+  }
+}
+```
+
+## Complete Example: ZX16 ISA
+
+```json
+{
+  "name": "ZX16",
   "version": "1.0",
-  "description": "A simple 16-bit RISC processor for educational purposes",
+  "description": "ZX16 16-bit RISC-V inspired ISA",
+  "instruction_size": 16,
   "word_size": 16,
   "endianness": "little",
-  "instruction_size": 16,
-  "memory_model": "von_neumann",
+  "address_space": {
+    "size": 65536,
+    "default_code_start": 32
+  },
   
   "registers": {
     "general_purpose": [
-      {"name": "R0", "size": 16, "alias": ["ZERO"]},
-      {"name": "R1", "size": 16},
-      {"name": "R2", "size": 16},
-      {"name": "R3", "size": 16},
-      {"name": "R4", "size": 16},
-      {"name": "R5", "size": 16},
-      {"name": "R6", "size": 16},
-      {"name": "R7", "size": 16}
-    ],
-    "special_purpose": [
-      {"name": "PC", "size": 16, "description": "Program Counter"},
-      {"name": "SP", "size": 16, "description": "Stack Pointer"},
-      {"name": "FLAGS", "size": 16, "description": "Status Flags"}
+      {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved)"},
+      {"name": "x1", "size": 16, "alias": ["ra"], "description": "Return address"},
+      {"name": "x2", "size": 16, "alias": ["sp"], "description": "Stack pointer"},
+      {"name": "x3", "size": 16, "alias": ["s0"], "description": "Saved/Frame pointer"},
+      {"name": "x4", "size": 16, "alias": ["s1"], "description": "Saved"},
+      {"name": "x5", "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved)"},
+      {"name": "x6", "size": 16, "alias": ["a0"], "description": "Argument 0/Return value"},
+      {"name": "x7", "size": 16, "alias": ["a1"], "description": "Argument 1"}
     ]
   },
   
   "instructions": [
     {
       "mnemonic": "ADD",
-      "opcode": "0000",
       "format": "R-type",
-      "description": "Add two registers",
+      "description": "Add registers (two-operand)",
+      "syntax": "ADD rd, rs2",
+      "semantics": "rd = rd + rs2",
       "encoding": {
         "fields": [
-          {"name": "opcode", "bits": "15:12", "value": "0000"},
-          {"name": "rd", "bits": "11:9", "type": "register"},
-          {"name": "rs1", "bits": "8:6", "type": "register"},
-          {"name": "rs2", "bits": "5:3", "type": "register"},
-          {"name": "unused", "bits": "2:0", "value": "000"}
+          {"name": "funct4", "bits": "15:12", "value": "0000"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
         ]
-      },
-      "syntax": "ADD $rd, $rs1, $rs2",
-      "semantics": "$rd = $rs1 + $rs2"
+      }
     },
     {
-      "mnemonic": "SUB",
-      "opcode": "0001",
-      "format": "R-type",
-      "description": "Subtract two registers",
-      "encoding": {
-        "fields": [
-          {"name": "opcode", "bits": "15:12", "value": "0001"},
-          {"name": "rd", "bits": "11:9", "type": "register"},
-          {"name": "rs1", "bits": "8:6", "type": "register"},
-          {"name": "rs2", "bits": "5:3", "type": "register"},
-          {"name": "unused", "bits": "2:0", "value": "000"}
-        ]
-      },
-      "syntax": "SUB $rd, $rs1, $rs2",
-      "semantics": "$rd = $rs1 - $rs2"
-    },
-    {
-      "mnemonic": "LDI",
-      "opcode": "1000",
+      "mnemonic": "ADDI",
       "format": "I-type",
-      "description": "Load immediate value",
+      "description": "Add immediate",
+      "syntax": "ADDI rd, imm",
+      "semantics": "rd = rd + imm",
       "encoding": {
         "fields": [
-          {"name": "opcode", "bits": "15:12", "value": "1000"},
-          {"name": "rd", "bits": "11:9", "type": "register"},
-          {"name": "immediate", "bits": "8:0", "type": "immediate", "signed": false}
+          {"name": "funct4", "bits": "15:12", "value": "0000"},
+          {"name": "imm", "bits": "11:9", "type": "immediate", "signed": true},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
         ]
-      },
-      "syntax": "LDI $rd, #imm",
-      "semantics": "$rd = imm"
+      }
     }
   ],
   
-  "addressing_modes": [
+  "pseudo_instructions": [
     {
-      "name": "register_direct",
-      "syntax": "$reg",
-      "description": "Direct register access"
+      "mnemonic": "NOP",
+      "description": "No operation",
+      "syntax": "NOP",
+      "expansion": "ADD x0, x0"
     },
     {
-      "name": "immediate",
-      "syntax": "#value",
-      "description": "Immediate value"
+      "mnemonic": "CALL",
+      "description": "Call function",
+      "syntax": "CALL label",
+      "expansion": "JAL x1, label"
     }
   ],
   
   "assembly_syntax": {
-    "comment_char": ";",
+    "comment_chars": ["#", ";"],
     "label_suffix": ":",
-    "register_prefix": "$",
-    "immediate_prefix": "#",
-    "hex_prefix": "0x",
-    "binary_prefix": "0b",
+    "register_prefix": "",
+    "immediate_prefix": "",
+    "string_delimiters": ["\"", "'"],
     "case_sensitive": false,
-    "directives": [
-      ".org",
-      ".word",
-      ".byte"
-    ]
+    "instruction_separator": "\n"
+  },
+  
+  "constants": {
+    "RESET_VECTOR": 0,
+    "CODE_START": 32,
+    "MMIO_BASE": 61440,
+    "STACK_TOP": 61438,
+    "MEM_SIZE": 65536
+  },
+  
+  "ecall_services": {
+    "0x000": {
+      "name": "print_char",
+      "description": "Print character from a0 register",
+      "parameters": {
+        "a0": "Character to print"
+      },
+      "return": "None"
+    },
+    "0x3FF": {
+      "name": "exit",
+      "description": "Exit program with code in a0 register",
+      "parameters": {
+        "a0": "Exit code"
+      },
+      "return": "None"
+    }
   }
 }
 ```
@@ -307,7 +381,7 @@ Define how operands are accessed:
 
 The ISA definition must satisfy several validation rules:
 
-1. **Opcode Uniqueness** - Each instruction must have a unique opcode
+1. **Opcode Uniqueness** - Each instruction must have a unique encoding pattern
 2. **Bit Field Coverage** - All instruction bits must be accounted for
 3. **Register Consistency** - Register references must match definitions
 4. **Syntax Consistency** - Assembly syntax must be unambiguous
@@ -323,7 +397,7 @@ The ISA definition must satisfy several validation rules:
 
 ## Common Pitfalls
 
-1. **Overlapping Opcodes** - Make sure opcodes are unique
+1. **Overlapping Encodings** - Make sure instruction encodings are unique
 2. **Incomplete Bit Fields** - All bits must be defined
 3. **Register Conflicts** - Avoid conflicting register names
 4. **Syntax Ambiguity** - Ensure assembly syntax is unambiguous

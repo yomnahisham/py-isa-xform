@@ -764,5 +764,37 @@
       "MMIO_SIZE": 4096,
       "STACK_TOP": 61438,
       "MEM_SIZE": 65536
+    },
+    "ecall_services": {
+      "0x000": {
+        "name": "print_char",
+        "description": "Print character from a0 register",
+        "parameters": {
+          "a0": "Character to print"
+        },
+        "return": "None"
+      },
+      "0x001": {
+        "name": "read_char",
+        "description": "Read a character from user input into a0 register",
+        "parameters": {},
+        "return": "a0: Character read from input"
+      },
+      "0x002": {
+        "name": "print_string",
+        "description": "Print string starting at address in a0 register",
+        "parameters": {
+          "a0": "Address of null-terminated string"
+        },
+        "return": "None"
+      },
+      "0x3FF": {
+        "name": "exit",
+        "description": "Exit program with code in a0 register",
+        "parameters": {
+          "a0": "Exit code"
+        },
+        "return": "None"
+      }
     }
   } 
