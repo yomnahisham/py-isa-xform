@@ -15,7 +15,7 @@ from .isa_loader import ISADefinition, Instruction
 from .symbol_table import SymbolTable
 
 class ZX16Simulator:
-    def __init__(self):
+    def __init__(self, disassembler: Disassembler):
         # Memory: 64KB (65536 bytes)
         self.memory = bytearray(65536)
         
@@ -30,146 +30,9 @@ class ZX16Simulator:
         
         # Initialize stack pointer
         self.regs[2] = 61438  # STACK_TOP
-        
+
         # Initialize the advanced disassembler
-        self._setup_disassembler()
-        
-    def _setup_disassembler(self):
-        """Setup the advanced disassembler with ZX16 ISA definition"""
-        # Create ZX16 ISA definition
-        zx16_isa = self._create_zx16_isa_definition()
-        
-        # Initialize symbol table
-        self.symbol_table = SymbolTable()
-        
-        # Create disassembler instance
-        self.disassembler = Disassembler(zx16_isa, self.symbol_table)
-
-
-    def _create_zx16_isa_definition(self) -> ISADefinition:
-        """Create ISA definition for ZX16 architecture"""
-        
-        name = "ZX16"
-        version = "1.0"
-        description = "ZX16 16-bit RISC-V inspired processor"
-        instruction_size = 16
-        word_size = 16
-        endianness = "little"
-        
-        # Define ZX16 registers
-        registers = {
-            "general": [
-                {"name": "t0", "index": 0},
-                {"name": "ra", "index": 1},
-                {"name": "sp", "index": 2},
-                {"name": "s0", "index": 3},
-                {"name": "s1", "index": 4},
-                {"name": "t1", "index": 5},
-                {"name": "a0", "index": 6},
-                {"name": "a1", "index": 7}
-            ]
-        }
-        
-        # Define ZX16 instructions with encoding patterns
-        instructions = self._create_zx16_instructions()
-        
-        # Create ISA definition with named arguments to ensure correct order
-        isa_def = ISADefinition(
-            name=name,
-            version=version,
-            description=description,
-            word_size=word_size,
-            endianness=endianness,
-            instruction_size=instruction_size,
-            registers=registers,
-            instructions=instructions
-        )
-            
-        return isa_def
-
-
-    def _create_zx16_instructions(self) -> List[Instruction]:
-        """Create instruction definitions for ZX16"""
-        instructions = []
-        
-        # R-type instructions
-        r_type_instructions = [
-        ("ADD", 0x0, 0x0, 0x0, "add rd, rs2"),
-        ("SUB", 0x1, 0x0, 0x0, "sub rd, rs2"),
-        ("SLT", 0x2, 0x1, 0x0, "slt rd, rs2"),
-        ("SLTU", 0x3, 0x2, 0x0, "sltu rd, rs2"),
-        ("SLL", 0x4, 0x3, 0x0, "sll rd, rs2"),
-        ("SRL", 0x5, 0x3, 0x0, "srl rd, rs2"),
-        ("SRA", 0x6, 0x3, 0x0, "sra rd, rs2"),
-        ("OR", 0x7, 0x4, 0x0, "or rd, rs2"),
-        ("AND", 0x8, 0x5, 0x0, "and rd, rs2"),
-        ("XOR", 0x9, 0x6, 0x0, "xor rd, rs2"),
-        ("MV", 0xA, 0x7, 0x0, "mv rd, rs2"),
-        ("JR", 0xB, 0x0, 0x0, "jr rd"),
-        ("JALR", 0xC, 0x0, 0x0, "jalr rd, rs2"),]
-        
-        for mnemonic, funct4, funct3, opcode, syntax in r_type_instructions:
-            encoding = {
-            "fields": [
-                {"name": "funct4", "bits": "15:12", "value": f"0b{funct4:04b}"},
-                {"name": "rd", "bits": "8:6", "type": "register"},        # PUT RD FIRST
-                {"name": "rs2", "bits": "11:9", "type": "register"},      # PUT RS2 SECOND
-                {"name": "funct3", "bits": "5:3", "value": f"0b{funct3:03b}"},
-                {"name": "opcode", "bits": "2:0", "value": f"0b{opcode:03b}"}
-            ]
-        }
-            description = f"{mnemonic} instruction"
-            semantics = f"Performs {mnemonic.lower()} operation on rd and rs2"
-            format_type = "R-type"
-            
-            # Create Instruction with all required arguments
-            instr = Instruction(
-                mnemonic=mnemonic,
-                opcode=opcode,
-                format=format_type,
-                description=description,
-                encoding=encoding,
-                syntax=syntax,
-                semantics=semantics
-            )
-            instructions.append(instr)
-            
-        # I-type instructions
-        i_type_instructions = [
-            ("ADDI", 0x0, 0x1, "addi rd, imm"),
-            ("SLTI", 0x1, 0x1, "slti rd, imm"),
-            ("SLTUI", 0x2, 0x1, "sltui rd, imm"),
-            ("ORI", 0x4, 0x1, "ori rd, imm"),
-            ("ANDI", 0x5, 0x1, "andi rd, imm"),
-            ("XORI", 0x6, 0x1, "xori rd, imm"),
-            ("LI", 0x7, 0x1, "li rd, imm"),
-        ]
-        
-        for mnemonic, funct3, opcode, syntax in i_type_instructions:
-            encoding = {
-                "fields": [
-                    {"name": "rd", "bits": "8:6", "type": "register"},            # PUT RD FIRST
-                    {"name": "imm", "bits": "15:9", "type": "immediate", "signed": True},  # PUT IMM SECOND
-                    {"name": "funct3", "bits": "5:3", "value": f"0b{funct3:03b}"},
-                    {"name": "opcode", "bits": "2:0", "value": f"0b{opcode:03b}"}
-                ]
-            }
-            description = f"{mnemonic} instruction"
-            semantics = f"Performs {mnemonic.lower()} operation with immediate value"
-            format_type = "I-type"
-            
-            # Create Instruction with all required arguments
-            instr = Instruction(
-                mnemonic=mnemonic,
-                opcode=opcode,
-                format=format_type,
-                description=description,
-                encoding=encoding,
-                syntax=syntax,
-                semantics=semantics
-            )
-            instructions.append(instr)
-        return instructions
+        self.disassembler = disassembler
 
     
     def load_memory_from_file(self, filename: str) -> None:
@@ -396,15 +259,17 @@ class ZX16Simulator:
                 
         elif opcode == 0x7:  # System (ECALL)
             svc = (inst >> 6) & 0x3FF
-            
             if svc == 1:  # Print integer
                 print(self.regs[6], end='')  # a0 register
             elif svc == 5:  # Print string
                 addr = self.regs[6]  # a0 register
+                string = ""
                 while addr < len(self.memory) and self.memory[addr] != 0:
-                    print(chr(self.memory[addr]), end='')
+                    string += chr(self.memory[addr])
                     addr += 1
-            elif svc == 3:  # Terminate
+                print(string, end='')
+            elif svc == 7:  # Terminate
+                print(svc)
                 return False
         
         if not pc_updated:
@@ -413,26 +278,34 @@ class ZX16Simulator:
         return True
     
     def run(self) -> None:
-        """Main simulation loop"""
+
+        print(f"Registers before execution: {self.regs}") 
+    
         instruction_count = 0
-        max_instructions = 1000000  # Prevent infinite loops
-        
-        while instruction_count < max_instructions:
-            if self.pc >= len(self.memory) - 1:
-                print("Program counter out of bounds")
-                break
-                
-            inst = self.fetch_instruction()
+        while self.pc < len(self.memory) and instruction_count < 1000:  # Add safety limit
+            # Fetch a 16-bit instruction from memory (little-endian)
+            inst = self.memory[self.pc] | (self.memory[self.pc + 1] << 8)
+            
+            # Skip if instruction is 0 (might indicate end of program)
             if inst == 0:
-                print("Encountered null instruction, terminating")
+                print(f"Encountered null instruction at 0x{self.pc:04X}, stopping")
                 break
-                
+            
+            # Use advanced disassembler
+            disasm = self.disassemble_instruction(inst, self.pc)
+            print(f"0x{self.pc:04X}: {inst:04X} {disasm}")
+            
+            # Execute instruction
             if not self.execute_instruction(inst):
-                print("Program terminated by ECALL")
+                print("Execution terminated by instruction")
                 break
                 
             instruction_count += 1
-        
-        if instruction_count >= max_instructions:
-            print("Maximum instruction limit reached")
+            
+            # Terminate if PC goes out of bounds
+            if self.pc >= len(self.memory):
+                print("PC out of bounds, stopping")
+                break
+        print(f"Execution completed after {instruction_count} instructions")
+        print(f"Registers after execution: {self.regs}") 
 
