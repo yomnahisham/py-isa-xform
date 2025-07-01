@@ -259,17 +259,19 @@ class ZX16Simulator:
                 
         elif opcode == 0x7:  # System (ECALL)
             svc = (inst >> 6) & 0x3FF
-            if svc == 1:  # Print integer
-                print(self.regs[6], end='')  # a0 register
-            elif svc == 5:  # Print string
+            if svc == 0:  # Print char
+                print(chr(self.memory[self.regs[6]])) # a0 register
+            elif svc == 1: # Read char
+                self.regs[6] = input() # a0 register
+            elif svc == 2:  # Print string
                 addr = self.regs[6]  # a0 register
                 string = ""
                 while addr < len(self.memory) and self.memory[addr] != 0:
                     string += chr(self.memory[addr])
                     addr += 1
                 print(string, end='')
-            elif svc == 7:  # Terminate
-                print(svc)
+            elif svc == 3:  # Terminate
+                print(inst)
                 return False
         
         if not pc_updated:
