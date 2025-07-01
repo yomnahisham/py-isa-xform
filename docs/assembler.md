@@ -1,10 +1,10 @@
 # Assembler Documentation
 
-The Assembler component converts assembly language source code into machine code. It supports two-pass assembly for forward reference resolution and is fully configurable based on the ISA definition.
+The Assembler component converts assembly language source code into machine code. It supports two-pass assembly for forward reference resolution, pseudo-instruction expansion, and comprehensive validation based on the ISA definition.
 
 ## Overview
 
-The assembler takes parsed Abstract Syntax Tree (AST) nodes from the parser and generates binary machine code. It handles instruction encoding, symbol resolution, directive processing, and address management.
+The assembler takes parsed Abstract Syntax Tree (AST) nodes from the parser and generates binary machine code. It handles instruction encoding, symbol resolution, directive processing, address management, and pseudo-instruction expansion.
 
 ## Key Features
 
@@ -14,6 +14,9 @@ The assembler takes parsed Abstract Syntax Tree (AST) nodes from the parser and 
 - **Comprehensive error reporting**: Detailed error messages with location information
 - **Symbol table integration**: Full symbol resolution and management
 - **Directive support**: Handles standard and custom assembly directives
+- **Pseudo-instruction expansion**: Automatic handling of high-level assembly constructs
+- **Immediate validation**: Proper handling of immediate value constraints
+- **Register validation**: Ensures only valid registers are used
 
 ## Core Classes
 
@@ -28,7 +31,7 @@ from isa_xform.core.symbol_table import SymbolTable
 
 # Load ISA definition
 loader = ISALoader()
-isa_definition = loader.load_isa("simple_risc")
+isa_definition = loader.load_isa("zx16")
 
 # Create assembler with symbol table
 symbol_table = SymbolTable()
@@ -106,23 +109,33 @@ Modern ISA definitions use field-based encoding:
 {
   "encoding": {
     "fields": [
-      {"name": "opcode", "bits": "31:28", "value": "1010"},
-      {"name": "rd", "bits": "27:24", "type": "register"},
-      {"name": "rs1", "bits": "23:20", "type": "register"},
-      {"name": "immediate", "bits": "19:0", "type": "immediate", "signed": true}
+      {"name": "funct4", "bits": "15:12", "value": "0000"},
+      {"name": "rs2", "bits": "11:9", "type": "register"},
+      {"name": "rd", "bits": "8:6", "type": "register"},
+      {"name": "func3", "bits": "5:3", "value": "000"},
+      {"name": "opcode", "bits": "2:0", "value": "000"}
     ]
   }
 }
 ```
 
-### Legacy Encoding
-
-Simple opcode-based encoding for compatibility:
+### ZX16 Encoding Example
 
 ```json
 {
-  "opcode": "1010",
-  "format": "R-type"
+  "mnemonic": "ADD",
+  "format": "R-type",
+  "syntax": "ADD rd, rs2",
+  "semantics": "rd = rd + rs2",
+  "encoding": {
+    "fields": [
+      {"name": "funct4", "bits": "15:12", "value": "0000"},
+      {"name": "rs2", "bits": "11:9", "type": "register"},
+      {"name": "rd", "bits": "8:6", "type": "register"},
+      {"name": "func3", "bits": "5:3", "value": "000"},
+      {"name": "opcode", "bits": "2:0", "value": "000"}
+    ]
+  }
 }
 ```
 
@@ -136,6 +149,13 @@ The assembler resolves different operand types based on the ISA definition:
 - Supports register aliases defined in the ISA
 - Handles ISA-specific register prefixes
 - Case-sensitive or case-insensitive based on ISA settings
+- Validates that only valid registers are used
+
+**ZX16 Register Example:**
+```assembly
+ADD a0, a1    # Uses register aliases: a0 -> x6, a1 -> x7
+LI t1, 5      # Uses register alias: t1 -> x5
+```
 
 ### Immediate Operands
 
@@ -143,6 +163,14 @@ The assembler resolves different operand types based on the ISA definition:
 - Validates immediate values fit within specified bit widths
 - Handles signed and unsigned immediates
 - Supports ISA-specific immediate prefixes
+- Provides detailed error messages for immediate overflow
+
+**ZX16 Immediate Validation:**
+```assembly
+LI a0, 10     # Valid: 10 fits in 7-bit signed range (-64 to 63)
+LI a0, 100    # Error: 100 doesn't fit in 7-bit signed field
+ADDI a0, -5   # Valid: -5 fits in 7-bit signed range
+```
 
 ### Address Operands
 
@@ -150,6 +178,54 @@ The assembler resolves different operand types based on the ISA definition:
 - Handles forward references through two-pass assembly
 - Supports relative and absolute addressing
 - Validates addresses are within valid ranges
+
+## Pseudo-Instruction Support
+
+The assembler automatically expands pseudo-instructions into actual machine code:
+
+### Built-in Pseudo-Instructions
+
+#### Load Immediate (LI)
+```assembly
+LI a0, 10     # Expands to: ADDI a0, x0, 10
+```
+
+#### Clear Register (CLR)
+```assembly
+CLR a0        # Expands to: XOR a0, a0
+```
+
+#### Move Register (MV)
+```assembly
+MV a1, a0     # Expands to: ADD a1, x0; ADD a1, a0
+```
+
+### Custom Pseudo-Instructions
+
+ISA definitions can include custom pseudo-instructions:
+
+```json
+{
+  "pseudo_instructions": [
+    {
+      "mnemonic": "LI16",
+      "description": "Load 16-bit immediate",
+      "syntax": "LI16 rd, imm",
+      "expansion": "LI rd, imm[7:0]; ORI rd, imm[15:8]"
+    }
+  ]
+}
+```
+
+### Bit Field Extraction
+
+Pseudo-instructions support bit field extraction in expansions:
+
+```assembly
+LI16 a0, 0x1234    # Expands to:
+                   # LI a0, 0x34
+                   # ORI a0, 0x12
+```
 
 ## Directive Processing
 
@@ -176,10 +252,24 @@ The assembler handles standard assembly directives:
 ### Section Directives
 
 - `.section name`: Switches to named section
+- `.text`: Switches to text section
+- `.data`: Switches to data section
 
-### Custom Directives
+### ZX16 Directive Example
 
-The assembler supports ISA-specific custom directives defined in the ISA specification.
+```assembly
+    .text
+    .globl main
+
+main:
+    LI a0, 10
+    ADD a0, a1
+    ECALL 0x3FF
+
+    .data
+message:
+    .asciiz "Hello, World!"
+```
 
 ## Error Handling
 
@@ -191,6 +281,8 @@ The assembler provides comprehensive error reporting:
 - **ParseError**: Malformed assembly syntax
 - **SymbolError**: Undefined or duplicate symbols
 - **BitUtilsError**: Bit manipulation errors
+- **ImmediateError**: Immediate value validation errors
+- **RegisterError**: Invalid register usage
 
 ### Error Context
 
@@ -198,164 +290,155 @@ All errors include:
 - Source file name and line/column numbers
 - Context of the problematic code
 - Suggestions for resolution where applicable
-- Related symbol information
+- Detailed error messages with specific constraints
 
-### Example Error Output
+### ZX16 Error Examples
 
-```
-Error: Immediate value 256 doesn't fit in 8-bit unsigned field at line 15, column 20 in main.s
-  Context: LDI $r1, #256
-  Suggestion: Use a value between 0 and 255, or use a different instruction
-```
+```assembly
+# Error: Unknown register
+LI a2, 10     # Error: Unknown register: a2
 
-## Configuration
+# Error: Immediate too large
+LI a0, 100    # Error: Immediate value 100 doesn't fit in 7-bit signed field
 
-The assembler adapts to ISA-specific configurations:
-
-### Assembly Syntax
-
-- Comment characters
-- Label suffixes
-- Register and immediate prefixes
-- Number format prefixes
-- Case sensitivity
-
-### Instruction Formats
-
-- Variable instruction sizes
-- Different encoding schemes
-- Custom operand types
-- ISA-specific addressing modes
-
-### Memory Layout
-
-- Configurable default addresses
-- Section-specific memory regions
-- Alignment requirements
-- Endianness handling
-
-## Usage Examples
-
-### Basic Assembly
-
-```python
-from isa_xform.core.assembler import Assembler
-from isa_xform.core.parser import Parser
-from isa_xform.core.isa_loader import ISALoader
-
-# Load ISA and create components
-loader = ISALoader()
-isa_def = loader.load_isa("simple_risc")
-parser = Parser(isa_def)
-assembler = Assembler(isa_def)
-
-# Parse and assemble
-source_code = """
-start:
-    ADD $r1, $r2, $r3
-    JMP end
-end:
-    NOP
-"""
-
-nodes = parser.parse(source_code)
-result = assembler.assemble(nodes)
-
-# Access results
-machine_code = result.machine_code
-symbols = result.symbol_table.symbols
+# Error: Invalid instruction
+INVALID a0    # Error: Unknown instruction: INVALID
 ```
 
-### Custom ISA Assembly
+## ZX16 Assembly Example
 
-```python
-# Load custom ISA with different syntax
-custom_isa = loader.load_isa_from_file("custom_isa.json")
-assembler = Assembler(custom_isa)
+### Complete Program
+```assembly
+# ZX16 Arithmetic Operations
+    .text
+    .globl main
 
-# Assembly code using custom syntax
-custom_source = """
-# Custom ISA with % register prefix and @ immediate prefix
 main:
-    LOAD %R1, @42
-    STORE %R1, offset(%R2)
-"""
-
-nodes = parser.parse(custom_source)
-result = assembler.assemble(nodes)
+    # Load immediate values
+    LI a0, 10          # a0 = 10
+    LI a1, 5           # a1 = 5
+    
+    # Arithmetic operations
+    ADD a0, a1         # a0 = a0 + a1 (10 + 5 = 15)
+    SUB a0, a1         # a0 = a0 - a1 (15 - 5 = 10)
+    ADDI a0, 20        # a0 = a0 + 20 (10 + 20 = 30)
+    
+    # Logical operations
+    AND a0, a1         # a0 = a0 & a1
+    OR a0, a1          # a0 = a0 | a1
+    XOR a0, a1         # a0 = a0 ^ a1
+    
+    # Exit program
+    ECALL 0x3FF        # Exit with code in a0
 ```
 
-### Error Handling
+### Assembly Process
+```bash
+# Assemble the program
+python3 -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
 
-```python
-from isa_xform.utils.error_handling import ErrorReporter, AssemblerError
-
-error_reporter = ErrorReporter()
-
-try:
-    result = assembler.assemble(nodes)
-except AssemblerError as e:
-    error_reporter.add_error(e)
-    print(error_reporter.format_errors())
+# Verify with disassembly
+python3 -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program_dis.s
 ```
 
 ## Performance Considerations
 
-### Two-Pass vs Single-Pass
+### Two-Pass Assembly
 
-- **Two-pass**: Required for forward references, slower but more flexible
-- **Single-pass**: Faster for simple code without forward references
+- First pass: Symbol collection and address calculation
+- Second pass: Machine code generation
+- Efficient for programs with forward references
 
 ### Memory Usage
 
-- Symbol table size grows with number of symbols
-- Machine code buffer size depends on program size
-- AST nodes are processed sequentially to minimize memory usage
+- Processes instructions incrementally
+- Symbol table grows with program complexity
+- Efficient bit manipulation for instruction encoding
 
-### Optimization Tips
+### Optimization Features
 
-- Use single-pass assembly when possible
-- Pre-sort symbols to improve lookup performance
-- Use appropriate data structures for large programs
+- Immediate value validation during assembly
+- Register validation for early error detection
+- Pseudo-instruction expansion optimization
 
-## Integration
+## Integration with Other Components
 
-The assembler integrates with other components:
+### Parser Integration
 
-- **Parser**: Consumes AST nodes from the parser
-- **ISA Loader**: Uses ISA definitions for instruction encoding
-- **Symbol Table**: Manages symbol resolution and storage
-- **Error Handling**: Provides detailed error reporting
-- **Bit Utils**: Uses bit manipulation utilities for encoding
-
-## Extensibility
-
-The assembler is designed for extensibility:
-
-### Custom Directives
-
-Add support for new directives by extending the directive handler mapping:
+The assembler works seamlessly with the parser:
 
 ```python
-assembler.directive_handlers['.custom'] = custom_directive_handler
+from isa_xform.core.parser import Parser
+
+# Parse assembly source
+parser = Parser(isa_def)
+nodes = parser.parse(assembly_source)
+
+# Assemble parsed nodes
+assembler = Assembler(isa_def)
+result = assembler.assemble(nodes)
 ```
 
-### Custom Instruction Formats
+### Symbol Table Integration
 
-Support new instruction formats by extending the encoding logic:
+Advanced symbol management:
 
 ```python
-def custom_encoding_handler(instruction, operands):
-    # Custom encoding logic
-    return encoded_instruction
+# Use existing symbol table
+symbol_table = SymbolTable()
+symbol_table.add_symbol("main", 0x1000)
+
+# Assemble with symbol table
+assembler = Assembler(isa_def, symbol_table)
+result = assembler.assemble(nodes)
 ```
 
-### Custom Operand Types
+### CLI Integration
 
-Add support for new operand types by extending operand resolution:
+Command-line interface support:
 
-```python
-def resolve_custom_operand(operand, field_type, bit_width):
-    # Custom operand resolution logic
-    return resolved_value
-``` 
+```bash
+python3 -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin --verbose
+```
+
+## Best Practices
+
+### Immediate Values
+
+Always validate immediate values fit within ISA constraints:
+
+```assembly
+# Good: Use valid immediates
+LI a0, 10     # Valid for ZX16 (7-bit signed: -64 to 63)
+
+# Bad: Use invalid immediates
+LI a0, 100    # Error: Too large for ZX16
+```
+
+### Register Usage
+
+Use only valid registers defined in the ISA:
+
+```assembly
+# Good: Use valid ZX16 registers
+ADD a0, a1    # Valid: a0 and a1 are defined
+
+# Bad: Use undefined registers
+ADD a2, a3    # Error: a2 and a3 not defined in ZX16
+```
+
+### Pseudo-Instructions
+
+Use pseudo-instructions for cleaner code:
+
+```assembly
+# Good: Use pseudo-instructions
+LI a0, 10     # Clear and readable
+CLR a1        # Clear register
+
+# Alternative: Direct instructions
+ADDI a0, x0, 10   # More verbose
+XOR a1, a1        # Less readable
+```
+
+This assembler provides professional-grade assembly capabilities with comprehensive validation, pseudo-instruction support, and detailed error reporting, making it suitable for educational, research, and development applications. 

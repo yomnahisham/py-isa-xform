@@ -48,34 +48,65 @@ def __init__(self)
 
 **Key Methods:**
 
-#### `add_symbol(name: str, value: int, symbol_type: str = "label") -> None`
+#### `define_symbol(name: str, value: Any, symbol_type: SymbolType = SymbolType.LABEL, scope: SymbolScope = SymbolScope.LOCAL, size: Optional[int] = None, line: Optional[int] = None, column: Optional[int] = None, file: Optional[str] = None) -> Symbol`
 
-Adds a symbol to the symbol table.
+Defines a new symbol in the symbol table.
 
 **Parameters:**
 - `name`: Symbol name (string)
-- `value`: Symbol value, typically a memory address (integer)
-- `symbol_type`: Type of symbol ("label", "constant", "data") (default: "label")
+- `value`: Symbol value (address, constant, etc.)
+- `symbol_type`: Type of symbol (SymbolType.LABEL, SymbolType.CONSTANT, etc.)
+- `scope`: Symbol scope (SymbolScope.LOCAL, SymbolScope.GLOBAL, SymbolScope.EXTERNAL)
+- `size`: Size in bytes (for variables)
+- `line`: Line number where defined
+- `column`: Column number where defined
+- `file`: File where defined
+
+**Returns:**
+- `Symbol`: The defined symbol object
 
 **Raises:**
-- `SymbolError`: If symbol already exists or validation fails
+- `SymbolError`: If symbol is already defined
 
 **Example:**
 ```python
-from isa_xform.core.symbol_table import SymbolTable
+from isa_xform.core.symbol_table import SymbolTable, SymbolType, SymbolScope
 
 symbol_table = SymbolTable()
 
-# Add labels
-symbol_table.add_symbol("main", 0x1000, "label")
-symbol_table.add_symbol("start_loop", 0x1010, "label")
+# Define labels
+symbol_table.define_symbol("main", 0x1000, SymbolType.LABEL, SymbolScope.GLOBAL, line=10)
+symbol_table.define_symbol("start_loop", 0x1010, SymbolType.LABEL, SymbolScope.LOCAL, line=15)
 
-# Add constants
-symbol_table.add_symbol("MAX_COUNT", 100, "constant")
-symbol_table.add_symbol("BUFFER_SIZE", 1024, "constant")
+# Define constants
+symbol_table.define_symbol("MAX_COUNT", 100, SymbolType.CONSTANT, SymbolScope.GLOBAL, line=5)
+symbol_table.define_symbol("BUFFER_SIZE", 1024, SymbolType.CONSTANT, SymbolScope.GLOBAL, line=6)
 
-# Add data symbols
-symbol_table.add_symbol("data_buffer", 0x2000, "data")
+# Define data symbols
+symbol_table.define_symbol("data_buffer", 0x2000, SymbolType.LABEL, SymbolScope.GLOBAL, size=1024, line=20)
+```
+
+#### `reference_symbol(name: str, address: int, line: Optional[int] = None, column: Optional[int] = None, file: Optional[str] = None) -> Symbol`
+
+References a symbol (may be forward reference).
+
+**Parameters:**
+- `name`: Symbol name
+- `address`: Address where symbol is referenced
+- `line`: Line number of reference
+- `column`: Column number of reference
+- `file`: File of reference
+
+**Returns:**
+- `Symbol`: The referenced symbol object
+
+**Raises:**
+- `SymbolError`: If symbol cannot be resolved
+
+**Example:**
+```python
+# Reference a symbol (may be forward reference)
+symbol = symbol_table.reference_symbol("undefined_label", 0x1020, line=25)
 ```
 
 #### `get_symbol(name: str) -> Optional[Symbol]`
@@ -93,43 +124,112 @@ Retrieves a symbol from the symbol table.
 # Get symbol information
 symbol = symbol_table.get_symbol("main")
 if symbol:
-    print(f"Symbol {symbol.name} = {symbol.value} ({symbol.symbol_type})")
+    print(f"Symbol {symbol.name} = {symbol.value} ({symbol.type.value})")
+    print(f"Defined: {symbol.defined}")
+    print(f"Referenced: {symbol.referenced}")
 ```
 
-#### `has_symbol(name: str) -> bool`
+#### `resolve_symbol(name: str) -> Optional[Any]`
 
-Checks if a symbol exists in the symbol table.
+Resolves a symbol to its value.
 
 **Parameters:**
-- `name`: Symbol name to check
+- `name`: Symbol name
 
 **Returns:**
-- `bool`: True if symbol exists, False otherwise
+- Symbol value if found and defined, None otherwise
 
 **Example:**
 ```python
-# Check symbol existence
-if symbol_table.has_symbol("undefined_label"):
-    print("Symbol exists")
-else:
-    print("Symbol not found")
+# Resolve symbol value
+value = symbol_table.resolve_symbol("MAX_COUNT")
+if value is not None:
+    print(f"MAX_COUNT = {value}")
 ```
 
-#### `resolve_symbols(nodes: List[ASTNode]) -> None`
+#### `define_label(name: str, line: Optional[int] = None, column: Optional[int] = None, file: Optional[str] = None) -> Symbol`
 
-Resolves forward references in a list of AST nodes.
+Defines a label at the current address.
 
 **Parameters:**
-- `nodes`: List of AST nodes to process
+- `name`: Label name
+- `line`: Line number where defined
+- `column`: Column number where defined
+- `file`: File where defined
 
-**Raises:**
-- `SymbolError`: If unresolved symbols remain
+**Returns:**
+- `Symbol`: The defined label symbol
 
 **Example:**
 ```python
-# Resolve symbols in parsed assembly
-nodes = parser.parse(assembly_code)
-symbol_table.resolve_symbols(nodes)
+# Define a label at current address
+symbol_table.set_current_address(0x1000)
+label = symbol_table.define_label("main", line=10)
+print(f"Label {label.name} at address 0x{label.value:X}")
+```
+
+#### `define_constant(name: str, value: Any, line: Optional[int] = None, column: Optional[int] = None, file: Optional[str] = None) -> Symbol`
+
+Defines a constant symbol.
+
+**Parameters:**
+- `name`: Constant name
+- `value`: Constant value
+- `line`: Line number where defined
+- `column`: Column number where defined
+- `file`: File where defined
+
+**Returns:**
+- `Symbol`: The defined constant symbol
+
+**Example:**
+```python
+# Define constants
+const = symbol_table.define_constant("PI", 3.14159, line=5)
+const2 = symbol_table.define_constant("MAX_SIZE", 1024, line=6)
+```
+
+#### `reset()`
+
+Resets the symbol table for a new pass.
+
+**Example:**
+```python
+# Reset for second pass
+symbol_table.reset()
+```
+
+#### `validate() -> List[str]`
+
+Validates the symbol table and returns any errors.
+
+**Returns:**
+- List of error messages
+
+**Example:**
+```python
+# Validate symbol table
+errors = symbol_table.validate()
+if errors:
+    print("Symbol table errors:")
+    for error in errors:
+        print(f"  - {error}")
+```
+
+#### `get_statistics() -> Dict[str, int]`
+
+Gets statistics about the symbol table.
+
+**Returns:**
+- Dictionary with statistics
+
+**Example:**
+```python
+# Get statistics
+stats = symbol_table.get_statistics()
+print(f"Total symbols: {stats['total_symbols']}")
+print(f"Defined symbols: {stats['defined_symbols']}")
+print(f"Undefined symbols: {stats['undefined_symbols']}")
 ```
 
 ### `Symbol`
@@ -138,21 +238,56 @@ Represents a single symbol in the symbol table.
 
 **Attributes:**
 - `name`: Symbol name (string)
-- `value`: Symbol value, typically a memory address (integer)
-- `symbol_type`: Type of symbol ("label", "constant", "data")
-- `defined`: Whether the symbol is fully defined (boolean)
+- `type`: Type of symbol (SymbolType enum)
+- `scope`: Symbol scope (SymbolScope enum)
+- `value`: Symbol value (Any)
+- `size`: Size in bytes (Optional[int])
+- `line`: Line number where defined (Optional[int])
+- `column`: Column number where defined (Optional[int])
+- `file`: File where defined (Optional[str])
+- `defined`: Whether the symbol is fully defined (bool)
+- `referenced`: Whether the symbol has been referenced (bool)
+- `forward_references`: List of addresses where symbol is forward referenced (List[int])
 
 **Example:**
 ```python
 # Create symbol object
-symbol = Symbol("main", 0x1000, "label", True)
+symbol = Symbol(
+    name="main",
+    type=SymbolType.LABEL,
+    scope=SymbolScope.GLOBAL,
+    value=0x1000,
+    line=10,
+    defined=True
+)
 
 # Access symbol properties
 print(f"Name: {symbol.name}")
+print(f"Type: {symbol.type.value}")
+print(f"Scope: {symbol.scope.value}")
 print(f"Value: 0x{symbol.value:X}")
-print(f"Type: {symbol.symbol_type}")
 print(f"Defined: {symbol.defined}")
+print(f"Referenced: {symbol.referenced}")
 ```
+
+### `SymbolType` Enum
+
+Defines the types of symbols:
+
+- `LABEL`: Memory address labels
+- `CONSTANT`: Fixed value constants
+- `REGISTER`: Register references
+- `EXTERNAL`: External symbols
+- `LOCAL`: Local scope symbols
+- `GLOBAL`: Global scope symbols
+
+### `SymbolScope` Enum
+
+Defines the scoping of symbols:
+
+- `LOCAL`: Local scope (function/block level)
+- `GLOBAL`: Global scope (file level)
+- `EXTERNAL`: External scope (linker level)
 
 ## Symbol Types
 
@@ -161,7 +296,8 @@ print(f"Defined: {symbol.defined}")
 Labels represent memory addresses in the assembly program.
 
 **Characteristics:**
-- **Scope**: Global or local (depending on assembly syntax)
+- **Type**: `SymbolType.LABEL`
+- **Scope**: Usually `SymbolScope.GLOBAL` or `SymbolScope.LOCAL`
 - **Value**: Memory address where the label is defined
 - **Usage**: Referenced by instructions and other labels
 
@@ -181,7 +317,8 @@ loop:           # Label at address 0x1004
 Constants represent fixed values used throughout the program.
 
 **Characteristics:**
-- **Scope**: Global (accessible throughout the program)
+- **Type**: `SymbolType.CONSTANT`
+- **Scope**: Usually `SymbolScope.GLOBAL`
 - **Value**: Fixed numeric value
 - **Usage**: Referenced by instructions and directives
 
@@ -196,214 +333,115 @@ addi r1, r0, MAX_COUNT    # Load constant value
 addi r2, r0, BUFFER_SIZE  # Load buffer size
 ```
 
-### Data Symbols
+### External Symbols
 
-Data symbols represent memory locations for data storage.
+External symbols represent symbols defined in other modules.
 
 **Characteristics:**
-- **Scope**: Global or local
-- **Value**: Memory address where data is stored
-- **Usage**: Referenced by load/store instructions
+- **Type**: `SymbolType.EXTERNAL`
+- **Scope**: `SymbolScope.EXTERNAL`
+- **Value**: Usually None (resolved by linker)
+- **Usage**: Referenced across multiple files
 
 **Example:**
 ```assembly
-.data
-    counter: .word 0      # Data symbol at address 0x2000
-    buffer: .space 1024   # Data symbol at address 0x2004
+# External symbol declaration
+.extern printf
+.extern malloc
 
-.text
-    lw r1, counter        # Load from data symbol
-    sw r2, buffer         # Store to data symbol
+# Usage
+call printf    # Call external function
+call malloc    # Call external function
 ```
 
-## Address Resolution
+## Forward Reference Handling
 
-### Forward Reference Handling
+The symbol table supports forward references, allowing symbols to be used before they are defined.
 
-The symbol table handles forward references through a two-pass approach:
+### Forward Reference Process
 
-1. **First Pass**: Collect all symbol definitions and their addresses
-2. **Second Pass**: Resolve all forward references using collected addresses
+1. **First Pass**: Collect all symbol definitions and note forward references
+2. **Second Pass**: Resolve all forward references with final addresses
 
 **Example:**
-```assembly
-# First pass: Define labels
-main:           # Address 0x1000
-    jmp loop    # Forward reference to loop
-    add r1, r2, r3
-
-loop:           # Address 0x1004
-    sub r1, r1, #1
-    jnz loop    # Backward reference
-```
-
-### Address Assignment
-
-Addresses are assigned based on the assembly process:
-
 ```python
-# Address assignment example
-current_address = 0x1000
+# First pass - forward reference
+symbol_table.set_current_address(0x1000)
+symbol = symbol_table.reference_symbol("loop", 0x1000)  # Forward reference
+symbol_table.advance_address(2)
 
-for node in nodes:
-    if isinstance(node, LabelNode):
-        # Assign current address to label
-        symbol_table.add_symbol(node.name, current_address, "label")
-    elif isinstance(node, InstructionNode):
-        # Increment address by instruction size
-        current_address += instruction_size
-    elif isinstance(node, DirectiveNode):
-        # Handle data directives
-        if node.name == ".word":
-            current_address += 4  # 32-bit word
-        elif node.name == ".byte":
-            current_address += 1  # 8-bit byte
+# Later in first pass - symbol definition
+symbol_table.set_current_address(0x1004)
+symbol_table.define_label("loop")  # Now defined
+
+# Second pass - resolve forward references
+symbol_table.reset()
+symbol_table.resolve_forward_references()
 ```
 
 ## Error Handling
 
-### Error Types
+The symbol table provides comprehensive error detection:
 
-The symbol table handles several types of errors:
+### Common Errors
 
-1. **Duplicate Symbol Errors**: Multiple definitions of the same symbol
-2. **Undefined Symbol Errors**: References to non-existent symbols
-3. **Circular Reference Errors**: Circular dependencies between symbols
-4. **Scope Errors**: Invalid symbol scope or visibility
+1. **Duplicate Definition**: Symbol defined multiple times
+2. **Undefined Symbol**: Symbol referenced but never defined
+3. **Invalid Scope**: Symbol used outside its scope
+4. **Type Mismatch**: Symbol used with wrong type
 
 ### Error Reporting
 
-Errors include detailed information:
-
 ```python
-# Example error messages
-SymbolError: Duplicate symbol definition 'main' at line 10
-SymbolError: Undefined symbol 'undefined_label' referenced at line 15
-SymbolError: Circular reference detected in symbol 'loop'
+# Check for errors
+errors = symbol_table.validate()
+if errors:
+    print("Symbol table errors:")
+    for error in errors:
+        print(f"  - {error}")
+
+# Get undefined symbols
+undefined = symbol_table.get_undefined_symbols()
+if undefined:
+    print("Undefined symbols:")
+    for symbol in undefined:
+        print(f"  - {symbol.name}")
+
+# Get unreferenced symbols
+unreferenced = symbol_table.get_unreferenced_symbols()
+if unreferenced:
+    print("Unreferenced symbols:")
+    for symbol in unreferenced:
+        print(f"  - {symbol.name}")
 ```
 
-### Validation
+## Integration with Assembler
 
-The symbol table provides comprehensive validation:
-
-```python
-# Validate symbol table state
-def validate_symbol_table(symbol_table):
-    errors = []
-    
-    # Check for undefined symbols
-    for symbol in symbol_table.symbols.values():
-        if not symbol.defined:
-            errors.append(f"Undefined symbol: {symbol.name}")
-    
-    # Check for duplicate symbols
-    # Check for circular references
-    # Check for invalid addresses
-    
-    return errors
-```
-
-## Performance Considerations
-
-### Memory Efficiency
-
-- **Hash-based lookup**: O(1) average case symbol lookup
-- **Minimal object overhead**: Efficient symbol object representation
-- **Lazy resolution**: Resolve references only when needed
-
-### Processing Speed
-
-- **Single-pass resolution**: Resolve references in one pass when possible
-- **Caching**: Cache resolved addresses for repeated access
-- **Early termination**: Stop processing on critical errors
-
-## Usage Examples
-
-### Basic Symbol Management
+The symbol table integrates seamlessly with the assembler:
 
 ```python
 from isa_xform.core.symbol_table import SymbolTable
+from isa_xform.core.assembler import Assembler
 
-# Create symbol table
+# Create symbol table and assembler
 symbol_table = SymbolTable()
+assembler = Assembler(isa_definition, symbol_table)
 
-# Add symbols
-symbol_table.add_symbol("main", 0x1000, "label")
-symbol_table.add_symbol("MAX_COUNT", 100, "constant")
-symbol_table.add_symbol("data_buffer", 0x2000, "data")
-
-# Check symbols
-assert symbol_table.has_symbol("main")
-assert symbol_table.get_symbol("MAX_COUNT").value == 100
+# Assemble code with symbol resolution
+machine_code = assembler.assemble(assembly_code)
 ```
 
-### Assembly Integration
+## Best Practices
 
-```python
-# Integrate with parser and assembler
-nodes = parser.parse(assembly_code)
-symbol_table = SymbolTable()
+1. **Define Before Use**: Define symbols before referencing them when possible
+2. **Use Descriptive Names**: Use clear, descriptive symbol names
+3. **Check for Errors**: Always validate the symbol table after assembly
+4. **Handle Forward References**: Be aware of forward reference limitations
+5. **Use Appropriate Scopes**: Use the correct scope for each symbol type
 
-# First pass: collect symbols
-current_address = 0x1000
-for node in nodes:
-    if isinstance(node, LabelNode):
-        symbol_table.add_symbol(node.name, current_address, "label")
-    elif isinstance(node, InstructionNode):
-        current_address += 4  # Assume 4-byte instructions
-    elif isinstance(node, DirectiveNode):
-        if node.name == ".word":
-            current_address += 4
+## Performance Considerations
 
-# Second pass: resolve references
-symbol_table.resolve_symbols(nodes)
-```
-
-### Error Handling
-
-```python
-try:
-    symbol_table.add_symbol("main", 0x1000, "label")
-    symbol_table.add_symbol("main", 0x2000, "label")  # Duplicate!
-except SymbolError as e:
-    print(f"Symbol error: {e}")
-```
-
-## Integration with Other Components
-
-### Parser Integration
-
-The symbol table works closely with the parser:
-
-```python
-# Extract symbols from parsed AST
-for node in nodes:
-    if isinstance(node, LabelNode):
-        symbol_table.add_symbol(node.name, current_address, "label")
-    elif isinstance(node, DirectiveNode):
-        if node.name == ".equ":
-            # Handle constant definitions
-            name, value = node.arguments[0], int(node.arguments[1])
-            symbol_table.add_symbol(name, value, "constant")
-```
-
-### Assembler Integration
-
-The symbol table provides address resolution for the assembler:
-
-```python
-# Resolve symbol references in instructions
-for node in nodes:
-    if isinstance(node, InstructionNode):
-        for i, operand in enumerate(node.operands):
-            if operand in symbol_table.symbols:
-                # Replace symbol with address
-                symbol = symbol_table.get_symbol(operand)
-                node.operands[i] = str(symbol.value)
-```
-
-## Conclusion
-
-The symbol table module provides a robust, efficient, and extensible foundation for symbol management in py-isa-xform. Its comprehensive feature set, including forward reference handling, address resolution, and error validation, makes it suitable for both simple educational programs and complex assembly applications.
-
-The module's clean architecture and integration capabilities ensure seamless operation with other components while providing the flexibility needed for custom symbol types and resolution strategies. The comprehensive error handling and validation systems ensure reliable operation across a wide range of use cases. 
+1. **Symbol Lookup**: O(1) average case for symbol lookups
+2. **Memory Usage**: Efficient storage with minimal overhead
+3. **Validation**: Fast validation with early error detection
+4. **Forward References**: Efficient tracking and resolution 

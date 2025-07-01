@@ -205,10 +205,78 @@ class Assembler:
             # Modern field-based encoding
             instruction_word = self._encode_with_fields(encoding["fields"], operands)
         else:
-            # Legacy encoding format - handle as best we can
-            instruction_word = self._encode_legacy_format(instruction, operands)
+            # Create field-based encoding from instruction format if no fields defined
+            fields = self._create_fields_from_format(instruction, operands)
+            instruction_word = self._encode_with_fields(fields, operands)
         
         return instruction_word
+    
+    def _create_fields_from_format(self, instruction: Instruction, operands: List[OperandNode]) -> List[Dict[str, Any]]:
+        """Create field definitions from instruction format when not explicitly defined"""
+        fields = []
+        instruction_size = self.isa_definition.instruction_size
+        
+        # Try to extract opcode from instruction
+        opcode = 0
+        if hasattr(instruction, 'opcode') and instruction.opcode:
+            try:
+                opcode = int(instruction.opcode, 2)
+            except ValueError:
+                opcode = 0
+        
+        # Create fields based on instruction format
+        if instruction.format == "R-type":
+            # R-type: opcode | rd | rs1 | rs2
+            if instruction_size == 16:
+                fields = [
+                    {"name": "opcode", "bits": "15:12", "value": opcode},
+                    {"name": "rd", "bits": "11:8", "type": "register"},
+                    {"name": "rs1", "bits": "7:4", "type": "register"},
+                    {"name": "rs2", "bits": "3:0", "type": "register"}
+                ]
+            else:  # 32-bit
+                fields = [
+                    {"name": "opcode", "bits": "31:26", "value": opcode},
+                    {"name": "rd", "bits": "25:21", "type": "register"},
+                    {"name": "rs1", "bits": "20:16", "type": "register"},
+                    {"name": "rs2", "bits": "15:11", "type": "register"},
+                    {"name": "funct", "bits": "10:0", "value": 0}
+                ]
+        elif instruction.format == "I-type":
+            # I-type: opcode | rd | rs1 | immediate
+            if instruction_size == 16:
+                fields = [
+                    {"name": "opcode", "bits": "15:12", "value": opcode},
+                    {"name": "rd", "bits": "11:8", "type": "register"},
+                    {"name": "rs1", "bits": "7:4", "type": "register"},
+                    {"name": "immediate", "bits": "3:0", "type": "immediate", "signed": True}
+                ]
+            else:  # 32-bit
+                fields = [
+                    {"name": "opcode", "bits": "31:26", "value": opcode},
+                    {"name": "rd", "bits": "25:21", "type": "register"},
+                    {"name": "rs1", "bits": "20:16", "type": "register"},
+                    {"name": "immediate", "bits": "15:0", "type": "immediate", "signed": True}
+                ]
+        elif instruction.format == "J-type":
+            # J-type: opcode | address
+            if instruction_size == 16:
+                fields = [
+                    {"name": "opcode", "bits": "15:12", "value": opcode},
+                    {"name": "address", "bits": "11:0", "type": "address"}
+                ]
+            else:  # 32-bit
+                fields = [
+                    {"name": "opcode", "bits": "31:26", "value": opcode},
+                    {"name": "address", "bits": "25:0", "type": "address"}
+                ]
+        else:
+            # Unknown format - create a simple field structure
+            fields = [
+                {"name": "opcode", "bits": f"{instruction_size-1}:0", "value": opcode}
+            ]
+        
+        return fields
     
     def _encode_with_fields(self, fields: List[Dict[str, Any]], operands: List[OperandNode]) -> int:
         """Encode instruction using field definitions"""
@@ -329,50 +397,6 @@ class Assembler:
         
         return mapping
     
-    def _encode_legacy_format(self, instruction: Instruction, operands: List[OperandNode]) -> int:
-        """Encode instruction using legacy format"""
-        # Try to extract opcode from instruction
-        opcode = 0
-        if hasattr(instruction, 'opcode') and instruction.opcode:
-            try:
-                opcode = int(instruction.opcode, 2)
-            except ValueError:
-                opcode = 0
-        
-        # Simple encoding based on instruction format
-        if instruction.format == "R-type":
-            # R-type: opcode | rd | rs1 | rs2
-            instruction_word = opcode << 12
-            if len(operands) >= 1:
-                rd = self._resolve_register_operand(operands[0])
-                instruction_word = set_bits(instruction_word, 11, 8, rd)
-            if len(operands) >= 2:
-                rs1 = self._resolve_register_operand(operands[1])
-                instruction_word = set_bits(instruction_word, 7, 4, rs1)
-            if len(operands) >= 3:
-                rs2 = self._resolve_register_operand(operands[2])
-                instruction_word = set_bits(instruction_word, 3, 0, rs2)
-        elif instruction.format == "I-type":
-            # I-type: opcode | rd | rs1 | immediate
-            instruction_word = opcode << 12
-            if len(operands) >= 1:
-                rd = self._resolve_register_operand(operands[0])
-                instruction_word = set_bits(instruction_word, 11, 8, rd)
-            if len(operands) >= 2:
-                rs1 = self._resolve_register_operand(operands[1])
-                instruction_word = set_bits(instruction_word, 7, 4, rs1)
-            if len(operands) >= 3:
-                imm = self._resolve_immediate_operand(operands[2])
-                instruction_word = set_bits(instruction_word, 3, 0, imm)
-        elif instruction.format == "J-type":
-            # J-type: opcode | address
-            instruction_word = opcode << 12
-            if len(operands) >= 1:
-                addr = self._resolve_address_operand(operands[0])
-                instruction_word = set_bits(instruction_word, 11, 0, addr)
-        
-        return instruction_word
-    
     def _resolve_operand_value(self, operand: OperandNode, field_type: str, bit_width: int, signed: bool = False) -> int:
         """Resolve operand value based on field type"""
         if field_type == "register":
@@ -380,8 +404,15 @@ class Assembler:
         elif field_type == "immediate":
             # Check if this is actually a label (for branch/jump instructions)
             if operand.type == "label":
-                # Treat as address for branch/jump instructions
-                value = self._resolve_address_operand(operand)
+                # For branch instructions, calculate relative offset from current instruction
+                target_address = self._resolve_address_operand(operand)
+                current_address = self.context.current_address
+                offset = target_address - current_address
+                
+                # For branch instructions, the offset is relative to the instruction address
+                # For jump instructions, the offset is relative to the instruction address
+                # Both use PC-relative addressing
+                return offset
             else:
                 # Treat as literal immediate value
                 value = self._resolve_immediate_operand(operand)
@@ -397,9 +428,11 @@ class Assembler:
                     raise AssemblerError(f"Immediate value {value} doesn't fit in {bit_width}-bit unsigned field")
             return value & create_mask(bit_width)  # Ensure proper bit width
         elif field_type == "address":
+            # For address fields, use absolute address
             return self._resolve_address_operand(operand)
         else:
-            raise AssemblerError(f"Unknown field type: {field_type}")
+            # Default to immediate value
+            return self._resolve_immediate_operand(operand)
     
     def _resolve_register_operand(self, operand: OperandNode) -> int:
         """Resolve register operand to register number"""
@@ -661,8 +694,31 @@ class Assembler:
         if not directive:
             return None
         
-        action = directive.action
+        # If the directive has a custom implementation, execute it
+        if directive.implementation:
+            from .directive_executor import get_directive_executor, DirectiveContext
+            executor = get_directive_executor()
+            context = DirectiveContext(
+                assembler=self,
+                symbol_table=self.symbol_table,
+                memory=bytearray(),  # Provide an empty bytearray by default
+                current_address=self.context.current_address,
+                section=self.context.current_section,
+                args=node.arguments,
+                extra={}
+            )
+            result = executor.execute_directive(directive.name, context)
+            # If the directive implementation sets 'result' to a bytearray or bytes, return it
+            if isinstance(result, (bytearray, bytes)):
+                # Convert bytes to bytearray if needed
+                if isinstance(result, bytes):
+                    result = bytearray(result)
+                self.context.current_address = context.current_address
+                self.symbol_table.set_current_address(self.context.current_address)
+                return result
+            return None
         
+        action = directive.action
         if action == "allocate_bytes":
             return self._handle_word_directive(node)
         elif action == "allocate_space":
@@ -675,8 +731,8 @@ class Assembler:
             return self._handle_align_directive(node)
         elif action == "define_constant":
             return self._handle_equ_directive(node)
-        elif action == "allocate_crazy":
-            return self._handle_crazy_directive(node)
+        # elif action == "allocate_crazy":
+        #     return self._handle_crazy_directive(node)
         
         return None
     
@@ -731,8 +787,14 @@ class Assembler:
                 operand_map["$rd"] = str(op.value)
                 operand_map["rd"] = str(op.value)
             elif i == 1:
-                operand_map["$rs"] = str(op.value)
-                operand_map["rs"] = str(op.value)
+                # For pseudo-instructions like LI16, the second operand should be 'imm'
+                # For regular instructions, it should be 'rs'
+                if node.mnemonic.upper() in ["LI16", "LA"]:
+                    operand_map["$imm"] = str(op.value)
+                    operand_map["imm"] = str(op.value)
+                else:
+                    operand_map["$rs"] = str(op.value)
+                    operand_map["rs"] = str(op.value)
             elif i == 2:
                 operand_map["$imm"] = str(op.value)
                 operand_map["imm"] = str(op.value)
@@ -744,8 +806,37 @@ class Assembler:
             if str(i+1) not in ["1", "2", "3", "4", "5", "6", "7", "8", "9"]:
                 operand_map[f"{i+1}"] = str(op.value)
         
-        # Use word boundary replacement to avoid replacing literal register references
+        # Handle bit field extractions like imm[15:9] and imm[8:0] BEFORE operand mapping
         expanded_text = expansion
+        for k, v in operand_map.items():
+            if k == "imm" or k == "$imm":
+                # Parse the immediate value
+                try:
+                    imm_value = self._parse_number(v)
+                    
+                    # Replace bit field extractions with calculated values
+                    # imm[15:9] -> upper 7 bits
+                    upper_bits = (imm_value >> 9) & 0x7F  # 7 bits
+                    expanded_text = expanded_text.replace(f"{k}[15:9]", str(upper_bits))
+                    
+                    # imm[8:0] -> lower 9 bits  
+                    lower_bits = imm_value & 0x1FF  # 9 bits
+                    expanded_text = expanded_text.replace(f"{k}[8:0]", str(lower_bits))
+                    
+                    # Also handle other common bit field patterns
+                    # imm[15:7] -> upper 9 bits
+                    upper_9 = (imm_value >> 7) & 0x1FF  # 9 bits
+                    expanded_text = expanded_text.replace(f"{k}[15:7]", str(upper_9))
+                    
+                    # imm[6:0] -> lower 7 bits
+                    lower_7 = imm_value & 0x7F  # 7 bits
+                    expanded_text = expanded_text.replace(f"{k}[6:0]", str(lower_7))
+                    
+                except (ValueError, TypeError) as e:
+                    # If we can't parse the immediate, just replace the placeholder
+                    pass
+        
+        # Use word boundary replacement to avoid replacing literal register references
         for k, v in operand_map.items():
             # Use word boundary matching to only replace actual placeholders
             # This prevents replacing literal register references like x2 in "ADDI x2, -2"
@@ -762,6 +853,7 @@ class Assembler:
                 expanded_text = re.sub(pattern, v, expanded_text)
         
         expanded_instrs = [s.strip() for s in expanded_text.split(';') if s.strip()]
+        
         parser = Parser(self.isa_definition)
         nodes = []
         for instr in expanded_instrs:

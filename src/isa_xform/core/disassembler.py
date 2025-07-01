@@ -230,15 +230,21 @@ class Disassembler:
     
     def _extract_simple_opcode(self, instr_word: int) -> int:
         """Extract opcode for simple instruction formats"""
-        # For most RISC architectures, opcode is in the upper bits
-        if self.isa_definition.instruction_size == 16:
+        instruction_size = self.isa_definition.instruction_size
+        
+        # Try to extract opcode from the instruction
+        # For most ISAs, opcode is in the upper bits, but the exact size varies
+        if instruction_size == 16:
+            # For 16-bit instructions, typically 4-bit opcode in upper bits
             return extract_bits(instr_word, 15, 12)
-        elif self.isa_definition.instruction_size == 32:
+        elif instruction_size == 32:
+            # For 32-bit instructions, typically 7-bit opcode in lower bits (RISC-V style)
             return extract_bits(instr_word, 6, 0)
         else:
-            opcode_bits = 4  # Default opcode size
-            return extract_bits(instr_word, self.isa_definition.instruction_size - 1, 
-                              self.isa_definition.instruction_size - opcode_bits)
+            # For other sizes, try to extract a reasonable opcode size
+            # Assume opcode is in the upper bits with size = instruction_size / 4
+            opcode_bits = max(4, instruction_size // 4)
+            return extract_bits(instr_word, instruction_size - 1, instruction_size - opcode_bits)
     
     def _decode_instruction_with_pattern(self, instr_word: int, instr_bytes: bytes, address: int, pattern: Dict[str, Any]) -> DisassembledInstruction:
         """Decode instruction using field pattern matching"""
@@ -284,41 +290,41 @@ class Disassembler:
         """Decode instruction using simple format"""
         operands = []
         
-        # Basic operand extraction for simple formats
-        if instruction.format == "R-type":
-            # Extract register fields using bit utilities
-            rd = extract_bits(instr_word, 11, 8)
-            rs1 = extract_bits(instr_word, 7, 4)
-            rs2 = extract_bits(instr_word, 3, 0)
+        # Get ISA assembly syntax configuration
+        assembly_syntax = getattr(self.isa_definition, 'assembly_syntax', None)
+        if assembly_syntax:
+            register_prefix = getattr(assembly_syntax, 'register_prefix', '')
+            immediate_prefix = getattr(assembly_syntax, 'immediate_prefix', '')
+        else:
+            register_prefix = ''
+            immediate_prefix = ''
+        
+        # Create field definitions from instruction format for decoding
+        fields = self._create_fields_from_format(instruction)
+        field_values = {}
+        
+        # Extract field values using the same field definitions
+        for field in fields:
+            field_name = field.get("name", "")
+            bits = field.get("bits", "")
+            field_type = field.get("type", "")
             
-            if "rd" in instruction.syntax.lower():
-                operands.append(f"R{rd}")
-            if "rs1" in instruction.syntax.lower():
-                operands.append(f"R{rs1}")
-            if "rs2" in instruction.syntax.lower():
-                operands.append(f"R{rs2}")
+            try:
+                high, low = parse_bit_range(bits)
+                bit_width = high - low + 1
+                value = extract_bits(instr_word, high, low)
                 
-        elif instruction.format == "I-type":
-            # Extract immediate and register fields
-            rd = extract_bits(instr_word, 11, 8)
-            rs1 = extract_bits(instr_word, 7, 4)
-            imm = extract_bits(instr_word, 3, 0)
-            
-            if "rd" in instruction.syntax.lower():
-                operands.append(f"R{rd}")
-            if "rs1" in instruction.syntax.lower():
-                operands.append(f"R{rs1}")
-            if "imm" in instruction.syntax.lower():
-                operands.append(f"#{imm}")
+                # Handle signed immediates
+                if field.get("signed", False) and (value & (1 << (bit_width - 1))):
+                    value = sign_extend(value, bit_width)
                 
-        elif instruction.format == "J-type":
-            # Extract address field
-            addr = extract_bits(instr_word, 11, 0)
-            symbol = self.symbol_table.get_symbol_at_address(addr)
-            if symbol:
-                operands.append(symbol.name)
-            else:
-                operands.append(f"0x{addr:X}")
+                field_values[field_name] = value
+            except ValueError:
+                # Skip invalid bit ranges
+                continue
+        
+        # Format operands based on instruction syntax
+        operands = self._format_operands(instruction, field_values)
         
         return DisassembledInstruction(
             address=address,
@@ -328,60 +334,136 @@ class Disassembler:
             instruction=instruction
         )
     
+    def _create_fields_from_format(self, instruction: Instruction) -> List[Dict[str, Any]]:
+        """Create field definitions from instruction format for decoding"""
+        fields = []
+        instruction_size = self.isa_definition.instruction_size
+        
+        # Try to extract opcode from instruction
+        opcode = 0
+        if hasattr(instruction, 'opcode') and instruction.opcode:
+            try:
+                opcode = int(instruction.opcode, 2)
+            except ValueError:
+                opcode = 0
+        
+        # Create fields based on instruction format
+        if instruction.format == "R-type":
+            # R-type: opcode | rd | rs1 | rs2
+            if instruction_size == 16:
+                fields = [
+                    {"name": "opcode", "bits": "15:12", "value": opcode},
+                    {"name": "rd", "bits": "11:8", "type": "register"},
+                    {"name": "rs1", "bits": "7:4", "type": "register"},
+                    {"name": "rs2", "bits": "3:0", "type": "register"}
+                ]
+            else:  # 32-bit
+                fields = [
+                    {"name": "opcode", "bits": "31:26", "value": opcode},
+                    {"name": "rd", "bits": "25:21", "type": "register"},
+                    {"name": "rs1", "bits": "20:16", "type": "register"},
+                    {"name": "rs2", "bits": "15:11", "type": "register"},
+                    {"name": "funct", "bits": "10:0", "value": 0}
+                ]
+        elif instruction.format == "I-type":
+            # I-type: opcode | rd | rs1 | immediate
+            if instruction_size == 16:
+                fields = [
+                    {"name": "opcode", "bits": "15:12", "value": opcode},
+                    {"name": "rd", "bits": "11:8", "type": "register"},
+                    {"name": "rs1", "bits": "7:4", "type": "register"},
+                    {"name": "immediate", "bits": "3:0", "type": "immediate", "signed": True}
+                ]
+            else:  # 32-bit
+                fields = [
+                    {"name": "opcode", "bits": "31:26", "value": opcode},
+                    {"name": "rd", "bits": "25:21", "type": "register"},
+                    {"name": "rs1", "bits": "20:16", "type": "register"},
+                    {"name": "immediate", "bits": "15:0", "type": "immediate", "signed": True}
+                ]
+        elif instruction.format == "J-type":
+            # J-type: opcode | address
+            if instruction_size == 16:
+                fields = [
+                    {"name": "opcode", "bits": "15:12", "value": opcode},
+                    {"name": "address", "bits": "11:0", "type": "address"}
+                ]
+            else:  # 32-bit
+                fields = [
+                    {"name": "opcode", "bits": "31:26", "value": opcode},
+                    {"name": "address", "bits": "25:0", "type": "address"}
+                ]
+        else:
+            # Unknown format - create a simple field structure
+            fields = [
+                {"name": "opcode", "bits": f"{instruction_size-1}:0", "value": opcode}
+            ]
+        
+        return fields
+    
     def _format_operands(self, instruction: Instruction, field_values: Dict[str, int]) -> List[str]:
-        """Format operands based on instruction syntax and field values"""
+        """Format operands based on instruction syntax order and field values"""
         operands = []
-        syntax = instruction.syntax.lower()
+        assembly_syntax = getattr(self.isa_definition, 'assembly_syntax', None)
+        register_prefix = getattr(assembly_syntax, 'register_prefix', '') if assembly_syntax else ''
+        immediate_prefix = getattr(assembly_syntax, 'immediate_prefix', '') if assembly_syntax else ''
+
+        # Try to get operand order from the syntax string (e.g., 'ADD rd, rs2')
+        syntax_order = []
+        if hasattr(instruction, 'syntax') and instruction.syntax:
+            # Extract operand names from syntax string
+            # e.g., 'ADD rd, rs2' -> ['rd', 'rs2']
+            parts = instruction.syntax.split()
+            if len(parts) > 1:
+                operand_part = ' '.join(parts[1:])
+                operand_names = [op.strip() for op in operand_part.split(',')]
+                syntax_order = [op for op in operand_names if op in field_values]
         
-        # Special case: memory ops with offset and base register
-        if 'offset' in field_values and 'rs1' in field_values:
-            offset = field_values['offset']
-            base = field_values['rs1']
-            
-            # For LD: rd, offset(rs1). For ST: rs2, offset(rs1)
-            if instruction.mnemonic.upper() == 'LD' and 'rd' in field_values:
-                operands.append(f"R{field_values['rd']}")
-            elif instruction.mnemonic.upper() == 'ST' and 'rs2' in field_values:
-                operands.append(f"R{field_values['rs2']}")
-            
-            # Format offset as hex if it's a reasonable size
-            if offset > 255:
-                offset_str = f"0x{offset:X}"
-            else:
-                offset_str = str(offset)
-            
-            operands.append(f"{offset_str}(R{base})")
-            return operands
-        
-        # Special case: custom immediate for CRAZY or similar
-        if 'magic' in field_values:
-            if 'rd' in field_values:
-                operands.append(f"R{field_values['rd']}")
-            operands.append(f"#0x{field_values['magic']:X}")
-            return operands
-        
-        # Default: map field names to their values
-        for field_name, value in field_values.items():
-            if field_name == "rd" and "rd" in syntax:
-                operands.append(f"R{value}")
-            elif field_name == "rs1" and "rs1" in syntax:
-                operands.append(f"R{value}")
-            elif field_name == "rs2" and "rs2" in syntax:
-                operands.append(f"R{value}")
-            elif field_name in ["immediate", "imm"] and ("imm" in syntax or "immediate" in syntax):
-                # Format large immediates as hex
-                if value > 255:
-                    operands.append(f"#0x{value:X}")
+        # Fallback: use encoding field order
+        if not syntax_order:
+            encoding = getattr(instruction, 'encoding', None)
+            if encoding and isinstance(encoding, dict) and 'fields' in encoding:
+                for field in encoding['fields']:
+                    if 'type' in field and field['type'] not in ('fixed', 'funct', 'unused'):
+                        if field['name'] in field_values:
+                            syntax_order.append(field['name'])
+        # Fallback: use field_values order
+        if not syntax_order:
+            syntax_order = [k for k in field_values.keys() if k not in ('opcode', 'funct', 'unused')]
+
+        for field_name in syntax_order:
+            if field_name not in field_values:
+                continue
+            value = field_values[field_name]
+            # Format based on type
+            if field_name.startswith('r') or field_name in ('rd', 'rs1', 'rs2'):
+                operands.append(self._format_register(value, register_prefix))
+            elif field_name in ('immediate', 'imm', 'offset'):
+                if value > 255 or value < -255:
+                    operands.append(f"{immediate_prefix}0x{value:X}")
                 else:
-                    operands.append(f"#{value}")
-            elif field_name == "address" and "address" in syntax:
+                    operands.append(f"{immediate_prefix}{value}")
+            elif field_name == 'address':
                 symbol = self.symbol_table.get_symbol_at_address(value)
                 if symbol:
                     operands.append(symbol.name)
                 else:
                     operands.append(f"0x{value:X}")
-        
+            else:
+                operands.append(str(value))
         return operands
+    
+    def _format_register(self, reg_num: int, register_prefix: str) -> str:
+        """Format register name using ISA's register configuration"""
+        # Look up register name in ISA definition
+        for category, registers in self.isa_definition.registers.items():
+            if reg_num < len(registers):
+                reg = registers[reg_num]
+                # Use the register name from ISA definition with proper prefix
+                return f"{register_prefix}{reg.name}"
+        
+        # Fallback to generic name with prefix
+        return f"{register_prefix}R{reg_num}"
     
     def _get_register_name(self, reg_num: int) -> str:
         """Get register name from register number"""

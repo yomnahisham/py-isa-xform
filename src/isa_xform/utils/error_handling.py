@@ -99,6 +99,11 @@ class DisassemblerError(ISAError):
     pass
 
 
+class InstructionExecutionError(ISAError):
+    """Raised when there's an error executing custom instruction implementations"""
+    pass
+
+
 class BitUtilsError(ISAError):
     """Raised when there's an error in bit utilities"""
     pass

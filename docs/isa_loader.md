@@ -13,6 +13,7 @@ The ISA loader is designed with the following principles:
 - **Performance**: Efficient loading and caching of ISA definitions
 - **Extensibility**: Easy addition of new ISA features and validation rules
 - **Reliability**: Robust error handling and detailed error reporting
+- **Professional Quality**: Production-ready code suitable for educational and research use
 
 ## Architecture
 
@@ -37,32 +38,103 @@ JSON File → JSON Parser → Structure Validation → ISA Definition Object →
 
 ## Core Classes
 
+### `ISALoader`
+
+The main class responsible for loading and managing ISA definitions.
+
+**Constructor:**
+```python
+def __init__(self)
+```
+
+**Key Methods:**
+
+#### `load_isa(isa_name: str) -> ISADefinition`
+
+Loads an ISA definition by name from built-in or local files.
+
+**Parameters:**
+- `isa_name`: Name of the ISA (e.g., "zx16", "simple_risc")
+
+**Returns:**
+- `ISADefinition`: Loaded ISA definition object
+
+**Raises:**
+- `ISALoadError`: If the ISA cannot be loaded
+
+**Example:**
+```python
+from isa_xform.core.isa_loader import ISALoader
+
+# Create loader
+loader = ISALoader()
+
+# Load ZX16 ISA
+isa_def = loader.load_isa("zx16")
+print(f"Loaded ISA: {isa_def.name}")
+print(f"Version: {isa_def.version}")
+print(f"Description: {isa_def.description}")
+```
+
+#### `load_isa_from_file(file_path: Union[str, Path]) -> ISADefinition`
+
+Loads an ISA definition from a specific file path.
+
+**Parameters:**
+- `file_path`: Path to the ISA definition JSON file
+
+**Returns:**
+- `ISADefinition`: Loaded ISA definition object
+
+**Raises:**
+- `ISALoadError`: If the file cannot be loaded or is invalid
+
+**Example:**
+```python
+# Load custom ISA from file
+isa_def = loader.load_isa_from_file("custom_isa.json")
+```
+
+#### `list_available_isas() -> List[str]`
+
+Lists all available ISA definitions.
+
+**Returns:**
+- `List[str]`: List of available ISA names
+
+**Example:**
+```python
+# List available ISAs
+available_isas = loader.list_available_isas()
+print("Available ISAs:", available_isas)
+# Output: ['zx16', 'simple_risc', 'riscv_rv32i', 'modular_example', 'crazy_isa']
+```
+
 ### `ISADefinition`
 
 Represents a complete instruction set architecture definition.
 
 **Attributes:**
 - `name`: The name of the ISA (string)
+- `version`: ISA version (string)
 - `description`: Human-readable description of the ISA (string)
 - `word_size`: Size of a word in bits (integer)
+- `instruction_size`: Size of instructions in bits (integer)
 - `endianness`: Byte order ("little" or "big") (string)
-- `instructions`: Dictionary mapping instruction names to `Instruction` objects
-- `registers`: Dictionary mapping register names to `Register` objects
-- `addressing_modes`: Dictionary mapping mode names to `AddressingMode` objects
+- `registers`: Dictionary mapping register categories to lists of `Register` objects
+- `instructions`: List of `Instruction` objects
+- `assembly_syntax`: `AssemblySyntax` object defining syntax rules
+- `address_space`: `AddressSpace` object defining memory layout
 
 **Example:**
 ```python
-from isa_xform.core.isa_loader import load_isa_definition
-
-# Load ISA definition
-isa_def = load_isa_definition("simple_risc.json")
-
 # Access ISA properties
 print(f"ISA: {isa_def.name}")
+print(f"Version: {isa_def.version}")
 print(f"Word size: {isa_def.word_size} bits")
+print(f"Instruction size: {isa_def.instruction_size} bits")
 print(f"Endianness: {isa_def.endianness}")
 print(f"Instructions: {len(isa_def.instructions)}")
-print(f"Registers: {len(isa_def.registers)}")
 ```
 
 ### `Instruction`
@@ -70,44 +142,22 @@ print(f"Registers: {len(isa_def.registers)}")
 Represents a single instruction in the ISA.
 
 **Attributes:**
-- `name`: Instruction mnemonic (string)
-- `opcode`: Numeric opcode value (integer)
-- `format`: Instruction format identifier (string)
-- `operands`: List of operand specifications (`Operand` objects)
-- `encoding`: Bit field encoding specification (dictionary)
+- `mnemonic`: Instruction mnemonic (string)
+- `format`: Instruction format (string, e.g., "R-type", "I-type")
 - `description`: Human-readable instruction description (string)
+- `syntax`: Assembly syntax string (e.g., "ADD rd, rs2")
+- `semantics`: Instruction semantics description (string)
+- `encoding`: Dictionary containing field-based encoding specification
 
 **Example:**
 ```python
-# Access instruction information
-add_instruction = isa_def.instructions["add"]
-print(f"Instruction: {add_instruction.name}")
-print(f"Opcode: {add_instruction.opcode}")
+# Access ZX16 ADD instruction
+add_instruction = next(instr for instr in isa_def.instructions if instr.mnemonic == "ADD")
+print(f"Instruction: {add_instruction.mnemonic}")
 print(f"Format: {add_instruction.format}")
-print(f"Operands: {len(add_instruction.operands)}")
+print(f"Syntax: {add_instruction.syntax}")
+print(f"Semantics: {add_instruction.semantics}")
 print(f"Description: {add_instruction.description}")
-```
-
-### `Operand`
-
-Represents an instruction operand.
-
-**Attributes:**
-- `name`: Operand name (string)
-- `type`: Operand type ("register", "immediate", "address") (string)
-- `bits`: Number of bits allocated to this operand (integer)
-- `position`: Bit position in the instruction (integer)
-- `addressing_mode`: Associated addressing mode (string)
-
-**Example:**
-```python
-# Access operand information
-for operand in add_instruction.operands:
-    print(f"Operand: {operand.name}")
-    print(f"  Type: {operand.type}")
-    print(f"  Bits: {operand.bits}")
-    print(f"  Position: {operand.position}")
-    print(f"  Addressing mode: {operand.addressing_mode}")
 ```
 
 ### `Register`
@@ -116,361 +166,333 @@ Represents a processor register.
 
 **Attributes:**
 - `name`: Register name (string)
-- `bits`: Register size in bits (integer)
+- `size`: Register size in bits (integer)
+- `alias`: List of register aliases (List[string])
 - `description`: Human-readable description (string)
 
 **Example:**
 ```python
-# Access register information
-for reg_name, register in isa_def.registers.items():
-    print(f"Register: {reg_name}")
-    print(f"  Size: {register.bits} bits")
-    print(f"  Description: {register.description}")
+# Access ZX16 registers
+for category, registers in isa_def.registers.items():
+    print(f"Register category: {category}")
+    for register in registers:
+        print(f"  Register: {register.name}")
+        print(f"    Size: {register.size} bits")
+        print(f"    Aliases: {register.alias}")
+        print(f"    Description: {register.description}")
 ```
 
-### `AddressingMode`
+### `AssemblySyntax`
 
-Represents an addressing mode.
+Represents assembly syntax configuration.
 
 **Attributes:**
-- `name`: Addressing mode name (string)
-- `description`: Human-readable description (string)
-- `format`: Format specification (string)
+- `comment_char`: Primary comment character (string)
+- `comment_chars`: List of all comment characters (List[string])
+- `label_suffix`: Label suffix character (string)
+- `register_prefix`: Register prefix (string)
+- `immediate_prefix`: Immediate prefix (string)
+- `hex_prefix`: Hexadecimal prefix (string)
+- `binary_prefix`: Binary prefix (string)
+- `case_sensitive`: Whether syntax is case sensitive (boolean)
+- `operand_separators`: List of operand separator characters (List[string])
 
 **Example:**
 ```python
-# Access addressing mode information
-for mode_name, mode in isa_def.addressing_modes.items():
-    print(f"Addressing mode: {mode_name}")
-    print(f"  Description: {mode.description}")
-    print(f"  Format: {mode.format}")
+# Access assembly syntax
+syntax = isa_def.assembly_syntax
+print(f"Comment char: {syntax.comment_char}")
+print(f"Register prefix: {syntax.register_prefix}")
+print(f"Immediate prefix: {syntax.immediate_prefix}")
+print(f"Case sensitive: {syntax.case_sensitive}")
 ```
 
-## Core Functions
+### `AddressSpace`
 
-### `load_isa_definition(file_path: str) -> ISADefinition`
+Represents address space configuration.
 
-Loads an ISA definition from a JSON file.
+**Attributes:**
+- `default_code_start`: Default code section start address (integer)
+- `default_data_start`: Default data section start address (integer)
+- `default_stack_start`: Default stack start address (integer)
+- `memory_layout`: Dictionary defining memory layout (Dict)
+- `alignment_requirements`: Dictionary defining alignment requirements (Dict)
 
-**Parameters:**
-- `file_path`: Path to the JSON file containing the ISA definition
+## ZX16 ISA Definition Example
 
-**Returns:**
-- `ISADefinition`: Loaded ISA definition object
-
-**Raises:**
-- `FileNotFoundError`: If the specified file does not exist
-- `JSONDecodeError`: If the JSON file is malformed
-- `ValidationError`: If the ISA definition is invalid
-
-**Example:**
-```python
-from isa_xform.core.isa_loader import load_isa_definition
-
-try:
-    # Load ISA definition
-    isa_def = load_isa_definition("my_custom_isa.json")
-    print(f"Successfully loaded ISA: {isa_def.name}")
-except FileNotFoundError:
-    print("ISA definition file not found")
-except ValidationError as e:
-    print(f"ISA validation failed: {e}")
-```
-
-### `validate_isa_definition(isa_def: ISADefinition) -> bool`
-
-Validates an ISA definition for completeness and correctness.
-
-**Parameters:**
-- `isa_def`: The ISA definition to validate
-
-**Returns:**
-- `bool`: True if valid, False otherwise
-
-**Raises:**
-- `ValidationError`: If validation fails with detailed error information
-
-**Example:**
-```python
-from isa_xform.core.isa_loader import validate_isa_definition
-
-try:
-    is_valid = validate_isa_definition(isa_def)
-    if is_valid:
-        print("ISA definition is valid")
-    else:
-        print("ISA definition has validation issues")
-except ValidationError as e:
-    print(f"Validation error: {e}")
-```
-
-## ISA Definition Format
-
-### JSON Structure
-
-ISA definitions use a structured JSON format:
+### Complete ZX16 Definition Structure
 
 ```json
 {
-    "name": "SimpleRISC",
-    "description": "A simple RISC-style instruction set for educational purposes",
-    "word_size": 32,
-    "endianness": "little",
-    "registers": {
-        "r0": {
-            "name": "r0",
-            "bits": 32,
-            "description": "Zero register (always contains 0)"
-        },
-        "r1": {
-            "name": "r1",
-            "bits": 32,
-            "description": "General purpose register 1"
-        }
-    },
-    "instructions": {
-        "add": {
-            "name": "add",
-            "opcode": 0,
-            "format": "R",
-            "operands": [
-                {
-                    "name": "rd",
-                    "type": "register",
-                    "bits": 4,
-                    "position": 0,
-                    "addressing_mode": "register"
-                },
-                {
-                    "name": "rs1",
-                    "type": "register",
-                    "bits": 4,
-                    "position": 4,
-                    "addressing_mode": "register"
-                },
-                {
-                    "name": "rs2",
-                    "type": "register",
-                    "bits": 4,
-                    "position": 8,
-                    "addressing_mode": "register"
-                }
-            ],
-            "encoding": {
-                "opcode": 0,
-                "funct": 0
-            },
-            "description": "Add two registers and store result in destination register"
-        }
-    },
-    "addressing_modes": {
-        "register": {
-            "name": "register",
-            "description": "Register addressing mode",
-            "format": "R"
-        },
-        "immediate": {
-            "name": "immediate",
-            "description": "Immediate addressing mode",
-            "format": "I"
-        }
+  "name": "ZX16",
+  "version": "1.0",
+  "description": "ZX16 16-bit RISC-V inspired ISA",
+  "instruction_size": 16,
+  "word_size": 16,
+  "endianness": "little",
+  "address_space": {
+    "size": 65536,
+    "default_code_start": 32
+  },
+  "registers": {
+    "general_purpose": [
+      {
+        "name": "x0",
+        "size": 16,
+        "alias": ["t0"],
+        "description": "Temporary (caller-saved)"
+      },
+      {
+        "name": "x6",
+        "size": 16,
+        "alias": ["a0"],
+        "description": "Argument 0/Return value"
+      },
+      {
+        "name": "x7",
+        "size": 16,
+        "alias": ["a1"],
+        "description": "Argument 1"
+      }
+    ]
+  },
+  "instructions": [
+    {
+      "mnemonic": "ADD",
+      "format": "R-type",
+      "description": "Add registers (two-operand)",
+      "syntax": "ADD rd, rs2",
+      "semantics": "rd = rd + rs2",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0000"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
     }
+  ],
+  "assembly_syntax": {
+    "comment_char": ";",
+    "register_prefix": "",
+    "immediate_prefix": "",
+    "case_sensitive": false,
+    "operand_separators": [",", " "]
+  }
 }
 ```
 
-### Required Fields
+### Loading and Using ZX16
 
-The following fields are required in an ISA definition:
+```python
+from isa_xform.core.isa_loader import ISALoader
 
-- **name**: Unique identifier for the ISA
-- **word_size**: Size of a word in bits (typically 16, 32, or 64)
-- **endianness**: Byte order ("little" or "big")
-- **registers**: Dictionary of register definitions
-- **instructions**: Dictionary of instruction definitions
-- **addressing_modes**: Dictionary of addressing mode definitions
+# Create loader
+loader = ISALoader()
 
-### Optional Fields
+# Load ZX16 ISA
+isa_def = loader.load_isa("zx16")
 
-- **description**: Human-readable description of the ISA
-- **version**: Version information for the ISA definition
-- **author**: Author or organization that created the ISA
-- **license**: License information for the ISA definition
+# Access ZX16 properties
+print(f"ISA: {isa_def.name} v{isa_def.version}")
+print(f"Description: {isa_def.description}")
+print(f"Word size: {isa_def.word_size} bits")
+print(f"Instruction size: {isa_def.instruction_size} bits")
 
-## Validation Rules
+# Access ZX16 registers
+registers = isa_def.registers["general_purpose"]
+print(f"Number of registers: {len(registers)}")
+for reg in registers:
+    print(f"  {reg.name} ({', '.join(reg.alias)}): {reg.description}")
 
-### Structure Validation
-
-The loader validates the JSON structure:
-
-1. **Required Fields**: All required fields must be present
-2. **Data Types**: Fields must have the correct data types
-3. **Nested Structure**: Nested objects must have the correct structure
-4. **Array Contents**: Arrays must contain valid objects
-
-### Content Validation
-
-The loader validates ISA content:
-
-1. **Register Validation**:
-   - Register names must be unique
-   - Register sizes must be positive integers
-   - Register sizes must not exceed word size
-
-2. **Instruction Validation**:
-   - Instruction names must be unique
-   - Opcodes must be non-negative integers
-   - Operand counts must match instruction definitions
-   - Operand types must be valid
-
-3. **Addressing Mode Validation**:
-   - Addressing mode names must be unique
-   - Referenced addressing modes must exist
-
-4. **Encoding Validation**:
-   - Bit field positions must not overlap
-   - Total bit usage must not exceed instruction size
-   - Encoding values must be within valid ranges
+# Access ZX16 instructions
+print(f"Number of instructions: {len(isa_def.instructions)}")
+for instr in isa_def.instructions[:5]:  # Show first 5 instructions
+    print(f"  {instr.mnemonic}: {instr.description}")
+```
 
 ## Error Handling
 
 ### Error Types
 
-The ISA loader handles several types of errors:
+The ISA loader provides comprehensive error handling:
 
-1. **File Errors**: Missing files, permission issues, or invalid file formats
-2. **JSON Errors**: Malformed JSON syntax or structure
-3. **Validation Errors**: Invalid ISA content or relationships
-4. **System Errors**: Memory or resource limitations
+- **ISALoadError**: General ISA loading errors
+- **ISAValidationError**: ISA definition validation errors
+- **FileNotFoundError**: ISA definition file not found
+- **JSONDecodeError**: Malformed JSON in ISA definition
 
-### Error Reporting
+### Error Context
 
-Errors include detailed information:
+All errors include:
+- Detailed error messages with specific issues
+- File path and line information where applicable
+- Suggestions for resolution
+- Validation context for complex errors
+
+### Example Error Handling
 
 ```python
-# Example error messages
-ValidationError: Missing required field 'instructions' in ISA definition
-ValidationError: Invalid opcode value in instruction 'add': must be non-negative
-ValidationError: Duplicate register name 'r1' in register definitions
-ValidationError: Unknown addressing mode 'invalid_mode' referenced in instruction 'add'
+from isa_xform.core.isa_loader import ISALoader
+from isa_xform.utils.error_handling import ISALoadError
+
+loader = ISALoader()
+
+try:
+    # Load ISA definition
+    isa_def = loader.load_isa("zx16")
+    print(f"Successfully loaded {isa_def.name}")
+except ISALoadError as e:
+    print(f"Failed to load ISA: {e}")
+except FileNotFoundError:
+    print("ISA definition file not found")
 ```
 
-### Error Recovery
+## Built-in ISA Definitions
 
-The loader implements graceful error recovery:
+The project includes several built-in ISA definitions:
 
-- **Partial Loading**: Load valid portions of ISA definitions when possible
-- **Error Collection**: Collect multiple errors for comprehensive reporting
-- **Default Values**: Use sensible defaults for optional fields when appropriate
+### ZX16
+- **Description**: 16-bit RISC-V inspired instruction set
+- **Features**: 8 registers, 16-bit instructions, comprehensive instruction set
+- **Use Case**: Primary demonstration ISA with complete toolchain support
+
+### Simple RISC
+- **Description**: Basic RISC-style instruction set for educational purposes
+- **Features**: Simple instruction formats, basic operations
+- **Use Case**: Learning and educational demonstrations
+
+### RISC-V RV32I
+- **Description**: Base integer instruction set for RISC-V 32-bit processors
+- **Features**: Standard RISC-V instruction set, 32-bit operations
+- **Use Case**: RISC-V compatibility and reference implementation
+
+### Modular Example
+- **Description**: Demonstrates modular ISA design patterns
+- **Features**: Modular instruction encoding, extensible design
+- **Use Case**: Advanced ISA design examples
+
+### Crazy ISA
+- **Description**: Experimental instruction set for testing edge cases
+- **Features**: Unusual instruction formats, complex encoding
+- **Use Case**: Testing and validation of toolchain robustness
 
 ## Performance Considerations
 
 ### Caching
 
-The ISA loader implements caching for performance:
+The ISA loader implements efficient caching:
 
 ```python
-# ISA definitions are cached after loading
-isa_def1 = load_isa_definition("simple_risc.json")  # Load from file
-isa_def2 = load_isa_definition("simple_risc.json")  # Load from cache
+# ISA definitions are cached after first load
+isa_def1 = loader.load_isa("zx16")  # Loads from file
+isa_def2 = loader.load_isa("zx16")  # Loads from cache
 assert isa_def1 is isa_def2  # Same object instance
 ```
 
-### Memory Efficiency
+### Memory Usage
 
-- **Lazy Loading**: Load ISA definitions only when needed
-- **Object Reuse**: Reuse objects where possible
-- **Efficient Storage**: Use memory-efficient data structures
+- ISA definitions are loaded once and cached
+- Efficient JSON parsing with minimal memory overhead
+- Register and instruction lookups use optimized data structures
 
-### Processing Speed
+### Loading Performance
 
-- **Early Validation**: Validate critical fields early in the process
-- **Optimized Parsing**: Use efficient JSON parsing libraries
-- **Parallel Processing**: Support for parallel validation of large ISAs
+- Fast file I/O with error handling
+- Efficient JSON parsing
+- Optimized object creation and validation
 
-## Usage Examples
+## Integration with Other Components
 
-### Basic ISA Loading
+### Assembler Integration
+
+The ISA loader works seamlessly with the assembler:
 
 ```python
-from isa_xform.core.isa_loader import load_isa_definition
+from isa_xform.core.assembler import Assembler
 
-# Load built-in ISA
-isa_def = load_isa_definition("simple_risc.json")
-
-# Access ISA information
-print(f"ISA Name: {isa_def.name}")
-print(f"Word Size: {isa_def.word_size} bits")
-print(f"Endianness: {isa_def.endianness}")
-print(f"Number of Instructions: {len(isa_def.instructions)}")
-print(f"Number of Registers: {len(isa_def.registers)}")
+# Load ISA and create assembler
+isa_def = loader.load_isa("zx16")
+assembler = Assembler(isa_def)
 ```
 
-### Instruction Analysis
+### Parser Integration
+
+The ISA loader provides ISA definitions for the parser:
 
 ```python
-# Analyze instructions
-for inst_name, instruction in isa_def.instructions.items():
-    print(f"\nInstruction: {inst_name}")
-    print(f"  Opcode: {instruction.opcode}")
-    print(f"  Format: {instruction.format}")
-    print(f"  Description: {instruction.description}")
-    
-    print("  Operands:")
-    for operand in instruction.operands:
-        print(f"    {operand.name}: {operand.type} ({operand.bits} bits)")
+from isa_xform.core.parser import Parser
+
+# Load ISA and create parser
+isa_def = loader.load_isa("zx16")
+parser = Parser(isa_def)
 ```
 
-### Register Analysis
+### Disassembler Integration
+
+The ISA loader supports disassembler creation:
 
 ```python
-# Analyze registers
-print("Registers:")
-for reg_name, register in isa_def.registers.items():
-    print(f"  {reg_name}: {register.bits} bits - {register.description}")
+from isa_xform.core.disassembler import Disassembler
+
+# Load ISA and create disassembler
+isa_def = loader.load_isa("zx16")
+disassembler = Disassembler(isa_def)
 ```
 
-### Custom ISA Creation
+## Best Practices
 
-```python
-# Create a custom ISA definition
-custom_isa = {
-    "name": "MyCustomISA",
-    "description": "A custom instruction set for my project",
-    "word_size": 16,
-    "endianness": "little",
-    "registers": {
-        "r0": {"name": "r0", "bits": 16, "description": "General purpose register 0"},
-        "r1": {"name": "r1", "bits": 16, "description": "General purpose register 1"}
-    },
-    "instructions": {
-        "add": {
-            "name": "add",
-            "opcode": 0,
-            "format": "R",
-            "operands": [
-                {"name": "rd", "type": "register", "bits": 3, "position": 0, "addressing_mode": "register"},
-                {"name": "rs", "type": "register", "bits": 3, "position": 3, "addressing_mode": "register"}
-            ],
-            "encoding": {"opcode": 0},
-            "description": "Add two registers"
-        }
-    },
-    "addressing_modes": {
-        "register": {"name": "register", "description": "Register addressing", "format": "R"}
-    }
+### ISA Definition Structure
+
+Organize ISA definitions with clear structure:
+
+```json
+{
+  "name": "CustomISA",
+  "version": "1.0",
+  "description": "Clear description of the ISA",
+  "instruction_size": 16,
+  "word_size": 16,
+  "endianness": "little",
+  "registers": {
+    "general_purpose": [...]
+  },
+  "instructions": [...],
+  "assembly_syntax": {...},
+  "address_space": {...}
 }
-
-# Save to file and load
-import json
-with open("my_custom_isa.json", "w") as f:
-    json.dump(custom_isa, f, indent=2)
-
-# Load the custom ISA
-loaded_isa = load_isa_definition("my_custom_isa.json")
 ```
 
-## Conclusion
+### Register Definitions
 
-The ISA loader module provides a robust, flexible, and efficient foundation for working with instruction set architecture definitions in py-isa-xform. Its comprehensive validation, error handling, and extensible design make it suitable for both educational use and professional development workflows.
+Define registers with clear aliases and descriptions:
 
-The module's clean architecture and integration capabilities ensure seamless operation with other components while providing the flexibility needed for custom ISA features and validation rules. The comprehensive error handling and validation systems ensure reliable operation across a wide range of use cases. 
+```json
+{
+  "name": "x6",
+  "size": 16,
+  "alias": ["a0"],
+  "description": "Argument 0/Return value"
+}
+```
+
+### Instruction Definitions
+
+Define instructions with complete information:
+
+```json
+{
+  "mnemonic": "ADD",
+  "format": "R-type",
+  "description": "Add registers (two-operand)",
+  "syntax": "ADD rd, rs2",
+  "semantics": "rd = rd + rs2",
+  "encoding": {
+    "fields": [...]
+  }
+}
+```
+
+This ISA loader provides professional-grade ISA definition management with comprehensive validation, efficient caching, and seamless integration with other components, making it suitable for educational, research, and development applications. 

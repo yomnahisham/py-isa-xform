@@ -1,0 +1,156 @@
+{
+  "name": "CustomISA",
+  "version": "1.0",
+  "description": "Example ISA with custom instruction implementations",
+  "instruction_size": 16,
+  "word_size": 16,
+  "endianness": "little",
+  "address_space": {
+    "size": 65536,
+    "default_code_start": 32
+  },
+  "registers": {
+    "general_purpose": [
+      {"name": "x0", "size": 16, "alias": ["zero"], "description": "Always zero"},
+      {"name": "x1", "size": 16, "alias": ["ra"], "description": "Return address"},
+      {"name": "x2", "size": 16, "alias": ["sp"], "description": "Stack pointer"},
+      {"name": "x3", "size": 16, "alias": ["s0"], "description": "Saved/Frame pointer"},
+      {"name": "x4", "size": 16, "alias": ["s1"], "description": "Saved"},
+      {"name": "x5", "size": 16, "alias": ["t1"], "description": "Temporary"},
+      {"name": "x6", "size": 16, "alias": ["a0"], "description": "Argument 0/Return value"},
+      {"name": "x7", "size": 16, "alias": ["a1"], "description": "Argument 1"}
+    ]
+  },
+  "instructions": [
+    {
+      "mnemonic": "LI",
+      "format": "I-type",
+      "description": "Load immediate value",
+      "syntax": "LI rd, imm",
+      "semantics": "rd = imm",
+      "implementation": "# Load immediate instruction\nimm_val = operands['imm']\ntruncated_val = imm_val & 0xFFFF\nwrite_register(operands['rd'], truncated_val)\n# Set flags\nset_flag('Z', truncated_val == 0)\nset_flag('N', (truncated_val & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0010"},
+          {"name": "imm", "bits": "11:6", "type": "immediate", "signed": true},
+          {"name": "rd", "bits": "5:3", "type": "register"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "ADD",
+      "format": "R-type",
+      "description": "Add registers (two-operand)",
+      "syntax": "ADD rd, rs2",
+      "semantics": "rd = rd + rs2",
+      "implementation": "# Custom implementation for ADD instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val + rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)\nset_flag('C', (rd_val + rs2_val) > 0xFFFF)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0000"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "MULT",
+      "format": "R-type",
+      "description": "Multiply registers (custom instruction)",
+      "syntax": "MULT rd, rs2",
+      "semantics": "rd = rd * rs2 (16-bit result)",
+      "implementation": "# Custom multiplication instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val * rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1111"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SWAP",
+      "format": "R-type",
+      "description": "Swap register values (custom instruction)",
+      "syntax": "SWAP rd, rs2",
+      "semantics": "temp = rd; rd = rs2; rs2 = temp",
+      "implementation": "# Custom swap instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nwrite_register(operands['rd'], rs2_val)\nwrite_register(operands['rs2'], rd_val)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1110"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "MEMCPY",
+      "format": "R-type",
+      "description": "Memory copy instruction (custom)",
+      "syntax": "MEMCPY rd, rs2",
+      "semantics": "Copy 16 bytes from address in rs2 to address in rd",
+      "implementation": "# Custom memory copy instruction\nsrc_addr = read_register(operands['rs2'])\ndst_addr = read_register(operands['rd'])\nfor i in range(16):\n    if src_addr + i < len(memory) and dst_addr + i < len(memory):\n        value = memory[src_addr + i]\n        memory[dst_addr + i] = value",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1101"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "CRC16",
+      "format": "R-type",
+      "description": "Calculate CRC16 (custom instruction)",
+      "syntax": "CRC16 rd, rs2",
+      "semantics": "rd = CRC16(rd, rs2)",
+      "implementation": "# Custom CRC16 instruction\ndef crc16_update(crc, byte):\n    crc ^= byte\n    for _ in range(8):\n        if crc & 1:\n            crc = (crc >> 1) ^ 0xA001\n        else:\n            crc >>= 1\n    return crc\n\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = crc16_update(rd_val, rs2_val & 0xFF)\nwrite_register(operands['rd'], result)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1100"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    }
+  ],
+  "directives": [
+    {
+      "name": ".magic",
+      "description": "Custom directive that creates magic data",
+      "action": "custom_magic",
+      "argument_types": ["number"],
+      "syntax": ".magic value",
+      "examples": [".magic 42"],
+      "implementation": "# Custom magic directive implementation\n# Creates a special pattern based on the input value\nvalue = int(args[0]) if args else 0\nmagic_pattern = value ^ 0xDEADBEEF\n# Create 4 bytes of magic data\nresult = []\nfor i in range(4):\n    result.append((magic_pattern >> (i * 8)) & 0xFF)\nresult = bytes(result)\n# Update current address\ncontext.current_address += len(result)\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)"
+    },
+    {
+      "name": ".repeat",
+      "description": "Custom directive that repeats a value multiple times",
+      "action": "custom_repeat", 
+      "argument_types": ["number", "number"],
+      "syntax": ".repeat value count",
+      "examples": [".repeat 0xFF 4"],
+      "implementation": "# Custom repeat directive implementation\n# Repeats a value a specified number of times\nif len(args) >= 2:\n    # Handle hex values\n    value_str = args[0]\n    if value_str.startswith('0x'):\n        value = int(value_str, 16) & 0xFF\n    else:\n        value = int(value_str) & 0xFF\n    count = int(args[1])\n    result = bytes([value] * count)\n    # Update current address\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)\nelse:\n    result = bytes()"
+    }
+  ],
+  "assembly_syntax": {
+    "comment_char": ";",
+    "label_suffix": ":",
+    "register_prefix": "",
+    "immediate_prefix": "#",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "case_sensitive": false
+  }
+} 
