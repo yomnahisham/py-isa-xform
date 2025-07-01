@@ -394,6 +394,9 @@ class Assembler:
                     elif field_name in ["imm2", "svc"] and len(operands) > 2:
                         # Additional immediate fields (third operand)
                         mapping[field_name] = operands[2]
+                    # Fix: map first operand to 'svc' if that's the only operand
+                    elif field_name == "svc" and len(operands) > 0:
+                        mapping[field_name] = operands[0]
         
         return mapping
     

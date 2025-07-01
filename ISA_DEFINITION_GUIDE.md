@@ -65,7 +65,7 @@ Each instruction is an object in the `instructions` array:
   }
 }
 ```
-- `implementation` is **optional**. If present, it must be valid Python code as a string.
+- `implementation` is **required** and must be valid Python code as a string.
 - Use helper functions: `read_register`, `write_register`, `set_flag`, etc.
 
 ---
@@ -82,7 +82,7 @@ Each directive is an object in the `directives` array:
   "implementation": "# Python code (optional)\nvalue = int(args[0])\nresult = bytes([value ^ 0xAB, value & 0xFF])\ncontext.current_address += len(result)\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)"
 }
 ```
-- `implementation` is **optional**. If present, it must be valid Python code as a string.
+- `implementation` is **required** and must be valid Python code as a string.
 - Use: `args`, `assembler`, `context`, etc.
 
 ---

@@ -253,6 +253,10 @@ class Disassembler:
             if field.get("name") == "opcode":
                 continue  # Skip opcode field
             
+            # Skip fields that have a fixed value (like unused bits)
+            if "value" in field and "type" not in field:
+                continue
+            
             bits = field.get("bits", "")
             field_type = field.get("type", "")
             
@@ -433,7 +437,7 @@ class Disassembler:
             # Format based on type
             if field_name.startswith('r') or field_name in ('rd', 'rs1', 'rs2'):
                 operands.append(self._format_register(value, register_prefix))
-            elif field_name in ('immediate', 'imm', 'offset'):
+            elif field_name in ('immediate', 'imm', 'offset', 'svc'):
                 if value > 255 or value < -255:
                     operands.append(f"{immediate_prefix}0x{value:X}")
                 else:
