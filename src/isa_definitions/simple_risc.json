@@ -54,6 +54,7 @@
       },
       "syntax": "NOP",
       "semantics": "No operation",
+      "implementation": "# No operation implementation\n# Do nothing",
       "flags_affected": []
     },
     {
@@ -71,8 +72,8 @@
       },
       "syntax": "ADD $rd, $rs1, $rs2",
       "semantics": "$rd = $rs1 + $rs2",
+      "implementation": "# Add instruction implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = (rs1_val + rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)\nset_flag('C', (rs1_val + rs2_val) > 0xFFFF)\nset_flag('V', ((rs1_val & 0x8000) == (rs2_val & 0x8000)) and ((result & 0x8000) != (rs1_val & 0x8000)))",
       "flags_affected": ["Z", "N", "C", "V"]
-      
     },
     {
 
@@ -90,6 +91,7 @@
       },
       "syntax": "SUB $rd, $rs1, $rs2",
       "semantics": "$rd = $rs1 - $rs2",
+      "implementation": "# Subtract instruction implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = (rs1_val - rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)\nset_flag('C', rs1_val >= rs2_val)\nset_flag('V', ((rs1_val & 0x8000) != (rs2_val & 0x8000)) and ((result & 0x8000) == (rs2_val & 0x8000)))",
       "flags_affected": ["Z", "N", "C", "V"]
     },
     {
@@ -107,6 +109,7 @@
       },
       "syntax": "AND $rd, $rs1, $rs2",
       "semantics": "$rd = $rs1 & $rs2",
+      "implementation": "# Bitwise AND implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = (rs1_val & rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
       "flags_affected": ["Z", "N"]
     },
     {
@@ -124,6 +127,7 @@
       },
       "syntax": "OR $rd, $rs1, $rs2",
       "semantics": "$rd = $rs1 | $rs2",
+      "implementation": "# Bitwise OR implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = (rs1_val | rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
       "flags_affected": ["Z", "N"]
     },
     {
@@ -140,6 +144,7 @@
       },
       "syntax": "LDI $rd, #imm",
       "semantics": "$rd = imm",
+      "implementation": "# Load immediate implementation\nimm_val = operands['immediate']\nresult = imm_val & 0xFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
       "flags_affected": ["Z", "N"]
     },
     {
@@ -157,6 +162,7 @@
       },
       "syntax": "LD $rd, offset($rs1)",
       "semantics": "$rd = Memory[$rs1 + offset]",
+      "implementation": "# Load from memory implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['offset']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Load 16-bit word (little endian)\nif addr + 1 < len(memory):\n    result = memory[addr] | (memory[addr + 1] << 8)\n    write_register(operands['rd'], result)\n    # Set flags\n    set_flag('Z', result == 0)\n    set_flag('N', (result & 0x8000) != 0)",
       "flags_affected": ["Z", "N"]
     },
     {
@@ -174,6 +180,7 @@
       },
       "syntax": "ST $rs2, offset($rs1)",
       "semantics": "Memory[$rs1 + offset] = $rs2",
+      "implementation": "# Store to memory implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['offset']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store 16-bit word (little endian)\nif addr + 1 < len(memory):\n    memory[addr] = rs2_val & 0xFF\n    memory[addr + 1] = (rs2_val >> 8) & 0xFF",
       "flags_affected": []
     },
     {
@@ -189,6 +196,7 @@
       },
       "syntax": "JMP address",
       "semantics": "PC = address",
+      "implementation": "# Unconditional jump implementation\naddr = operands['address']\ncontext.pc = addr & 0xFFFF",
       "flags_affected": []
     },
     {
@@ -204,6 +212,7 @@
       },
       "syntax": "JZ address",
       "semantics": "if (Z) PC = address",
+      "implementation": "# Jump if zero implementation\naddr = operands['address']\nif get_flag('Z'):\n    context.pc = addr & 0xFFFF",
       "flags_affected": []
     },
     {
@@ -219,6 +228,7 @@
       },
       "syntax": "JNZ address",
       "semantics": "if (!Z) PC = address",
+      "implementation": "# Jump if not zero implementation\naddr = operands['address']\nif not get_flag('Z'):\n    context.pc = addr & 0xFFFF",
       "flags_affected": []
     },
     {
@@ -234,6 +244,7 @@
       },
       "syntax": "CALL address",
       "semantics": "SP = SP - 2; Memory[SP] = PC; PC = address",
+      "implementation": "# Call subroutine implementation\naddr = operands['address']\nsp_val = read_register('SP')\n# Push return address\nsp_val = (sp_val - 2) & 0xFFFF\nif sp_val + 1 < len(memory):\n    memory[sp_val] = context.pc & 0xFF\n    memory[sp_val + 1] = (context.pc >> 8) & 0xFF\nwrite_register('SP', sp_val)\n# Jump to address\ncontext.pc = addr & 0xFFFF",
       "flags_affected": []
     },
     {
@@ -249,6 +260,7 @@
       },
       "syntax": "RET",
       "semantics": "PC = Memory[SP]; SP = SP + 2",
+      "implementation": "# Return from subroutine implementation\nsp_val = read_register('SP')\n# Pop return address\nif sp_val + 1 < len(memory):\n    return_addr = memory[sp_val] | (memory[sp_val + 1] << 8)\n    context.pc = return_addr & 0xFFFF\nsp_val = (sp_val + 2) & 0xFFFF\nwrite_register('SP', sp_val)",
       "flags_affected": []
     }
   ],
@@ -279,36 +291,42 @@
       "name": ".org",
       "description": "Set origin address",
       "action": "set_origin",
+      "implementation": "# Set origin directive implementation\nif args:\n    addr = int(args[0], 0)  # Parse as hex/decimal\n    context.current_address = addr\n    assembler.context.current_address = addr\n    assembler.symbol_table.set_current_address(addr)",
       "argument_types": ["number"]
     },
     {
       "name": ".word",
       "description": "Define word data",
       "action": "allocate_bytes",
+      "implementation": "# Define word directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    # Little endian 16-bit word\n    result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += 2\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
       "argument_types": ["number"]
     },
     {
       "name": ".byte",
       "description": "Define byte data",
       "action": "allocate_bytes",
+      "implementation": "# Define byte directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    result.append(value & 0xFF)\n    context.current_address += 1\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
       "argument_types": ["number"]
     },
     {
       "name": ".space",
       "description": "Reserve space",
       "action": "allocate_space",
+      "implementation": "# Reserve space directive implementation\nif args:\n    size = int(args[0])\n    result = bytearray([0] * size)\n    context.current_address += size\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
       "argument_types": ["number"]
     },
     {
       "name": ".ascii",
       "description": "Define ASCII string",
       "action": "allocate_string",
+      "implementation": "# Define ASCII string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
       "argument_types": ["string"]
     },
     {
       "name": ".asciiz",
       "description": "Define null-terminated ASCII string",
       "action": "allocate_string",
+      "implementation": "# Define null-terminated ASCII string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii') + b'\\x00')\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
       "argument_types": ["string"]
     }
   ],

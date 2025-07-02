@@ -5,17 +5,11 @@ ISA Loader: Loads and validates instruction set architecture definitions
 import json
 import os
 import sys
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field
 from jsonschema import validate, ValidationError
 
-from isa_xform.utils.error_handling import ISALoadError, ISAValidationError
-from isa_xform.utils.bit_utils import (
-    extract_bits, set_bits, sign_extend, parse_bit_range,
-    create_mask, bytes_to_int, int_to_bytes
-)
 from isa_xform.utils.error_handling import ISALoadError, ISAValidationError
 from isa_xform.utils.bit_utils import (
     extract_bits, set_bits, sign_extend, parse_bit_range,
@@ -181,6 +175,7 @@ class ISALoader:
             raise ISALoadError(f"ISA file not found: {file_path}")
         
         return self._load_from_file(file_path)
+        return self._load_from_file(file_path)
     
     def _find_isa_file(self, isa_name: str) -> Optional[Path]:
         """Find an ISA file by name"""
@@ -239,6 +234,7 @@ class ISALoader:
                 syntax=instr_data["syntax"],
                 semantics=instr_data["semantics"],
                 flags_affected=instr_data.get("flags_affected", [])
+                flags_affected=instr_data.get("flags_affected", [])
             )
             instructions.append(instruction)
 
@@ -265,6 +261,7 @@ class ISALoader:
                     handler=directive_data.get("handler"),
                     syntax=directive_data.get("syntax", ""),
                     examples=directive_data.get("examples", []),
+                    validation_rules=directive_data.get("validation_rules", {})
                     validation_rules=directive_data.get("validation_rules", {})
                 )
                 directives[directive.name] = directive

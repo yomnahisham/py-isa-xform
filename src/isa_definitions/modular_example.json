@@ -146,21 +146,22 @@
       "examples": ["JMP @1000", "CALL @main"]
     }
   },
-  "directives": {
-    ".custom": {
+  "directives": [
+    {
       "name": ".custom",
       "description": "Custom directive for this ISA",
       "action": "Define custom behavior",
+      "implementation": "# Custom directive implementation\nif len(args) >= 2:\n    name = args[0]\n    value = int(args[1], 0)\n    # Store custom value in symbol table\n    assembler.symbol_table.define_symbol(name, value)\n    result = bytearray()\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
       "argument_types": ["string", "number"],
       "handler": "custom",
       "syntax": ".custom name value",
       "examples": [".custom magic 0xDEADBEEF"],
       "validation_rules": {
         "name_pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
-        "value_range": [0, 0xFFFFFFFF]
+        "value_range": [0, 4294967295]
       }
     }
-  },
+  ],
   "instructions": [
     {
       "mnemonic": "NOP",
@@ -175,6 +176,7 @@
       },
       "syntax": "NOP",
       "semantics": "No operation",
+      "implementation": "# No operation implementation\n# Do nothing",
       "flags_affected": []
     },
     {
@@ -193,6 +195,7 @@
       },
       "syntax": "ADD $rd, $rs1, $rs2",
       "semantics": "$rd = $rs1 + $rs2",
+      "implementation": "# Add instruction implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = (rs1_val + rs2_val) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x80000000) != 0)\nset_flag('C', (rs1_val + rs2_val) > 0xFFFFFFFF)\nset_flag('V', ((rs1_val & 0x80000000) == (rs2_val & 0x80000000)) and ((result & 0x80000000) != (rs1_val & 0x80000000)))",
       "flags_affected": ["Z", "N", "C", "V"]
     },
     {
@@ -210,6 +213,7 @@
       },
       "syntax": "ADDI $rd, $rs1, #imm",
       "semantics": "$rd = $rs1 + imm",
+      "implementation": "# Add immediate implementation\nrs1_val = read_register(operands['rs1'])\nimm_val = operands['immediate']\n# Sign extend 16-bit immediate\nif imm_val & 0x8000:\n    imm_val = imm_val | 0xFFFF0000\nresult = (rs1_val + imm_val) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x80000000) != 0)",
       "flags_affected": ["Z", "N", "C", "V"]
     },
     {
@@ -225,6 +229,7 @@
       },
       "syntax": "JMP @address",
       "semantics": "PC = address",
+      "implementation": "# Unconditional jump implementation\naddr = operands['address']\ncontext.pc = addr & 0xFFFFFFFF",
       "flags_affected": []
     },
     {
@@ -242,6 +247,7 @@
       },
       "syntax": "LOAD $rd, offset($rs1)",
       "semantics": "$rd = Memory[$rs1 + offset]",
+      "implementation": "# Load from memory implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['offset']\n# Sign extend 16-bit offset\nif offset & 0x8000:\n    offset = offset | 0xFFFF0000\naddr = (rs1_val + offset) & 0xFFFFFFFF\n# Load 32-bit word (little endian)\nif addr + 3 < len(memory):\n    result = memory[addr] | (memory[addr + 1] << 8) | (memory[addr + 2] << 16) | (memory[addr + 3] << 24)\n    write_register(operands['rd'], result)\n    # Set flags\n    set_flag('Z', result == 0)\n    set_flag('N', (result & 0x80000000) != 0)",
       "flags_affected": ["Z", "N"]
     },
     {
@@ -259,6 +265,7 @@
       },
       "syntax": "STORE $rs2, offset($rs1)",
       "semantics": "Memory[$rs1 + offset] = $rs2",
+      "implementation": "# Store to memory implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['offset']\n# Sign extend 16-bit offset\nif offset & 0x8000:\n    offset = offset | 0xFFFF0000\naddr = (rs1_val + offset) & 0xFFFFFFFF\n# Store 32-bit word (little endian)\nif addr + 3 < len(memory):\n    memory[addr] = rs2_val & 0xFF\n    memory[addr + 1] = (rs2_val >> 8) & 0xFF\n    memory[addr + 2] = (rs2_val >> 16) & 0xFF\n    memory[addr + 3] = (rs2_val >> 24) & 0xFF",
       "flags_affected": []
     }
   ],

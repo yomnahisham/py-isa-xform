@@ -28,6 +28,7 @@ py-isa-xform/
 │   │   ├── core/
 │   │   │   ├── __init__.py
 │   │   │   ├── isa_loader.py          # Loads ISA definitions
+│   │   │   ├── isa_scaffold.py        # ISA scaffold generator
 │   │   │   ├── parser.py              # Parses assembly text
 │   │   │   ├── assembler.py           # Assembly engine
 │   │   │   ├── disassembler.py        # Disassembly engine
@@ -98,6 +99,27 @@ python3 -m isa_xform.cli list-isas
 - **Modular Example**: Demonstrates modular ISA design patterns
 - **ZX16**: Open-Source ISA by Dr. Mohamed Shalan (Professor @ AUC), which initially inspired this project.
 
+### Creating Your Own ISA
+
+We provide a powerful tool to help you create custom ISAs:
+
+#### ISA Scaffold Generator
+Automatically generates boilerplate ISA definitions with implementations for common instruction types:
+
+```bash
+# Generate a basic ISA
+python3 -m isa_xform.core.isa_scaffold --name "MY_ISA" --instructions "ADD,SUB,LI,J,ECALL" --directives ".org,.word,.byte"
+
+# Generate a comprehensive ISA
+python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
+  --instructions "ADD,SUB,AND,OR,XOR,ADDI,ANDI,ORI,XORI,LI,J,JAL,BEQ,BNE,LW,SW,ECALL" \
+  --directives ".org,.word,.byte,.ascii,.align" \
+  --word-size 16 \
+  --instruction-size 16
+```
+
+**See the [ISA Creation Guide](docs/isa-creation-guide.md) for detailed instructions and examples!**
+
 ## Key Features
 
 ### Assembly Engine
@@ -133,6 +155,7 @@ Comprehensive documentation is available in the `docs/` directory. The following
 
 - **[Architecture Overview](docs/architecture.md)** - System design and component interaction
 - **[Custom ISA Definition Guide](ISA_DEFINITION_GUIDE.md)** - Step-by-step instructions for writing your own ISA JSON
+- **[ISA Creation Guide](docs/isa-creation-guide.md)** - Using the scaffold generator and standard template
 - **[CLI Reference](docs/cli.md)** - Command-line interface usage
 - **[Testing Guide](docs/testing.md)** - Testing framework and examples
 - **[API Reference](docs/api-reference.md)** - Complete programming interface documentation

@@ -28,6 +28,7 @@
         "description": "Add registers (two-operand)",
         "syntax": "ADD rd, rs2",
         "semantics": "rd = rd + rs2",
+        "implementation": "# Add instruction implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val + rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)\nset_flag('C', (rd_val + rs2_val) > 0xFFFF)\nset_flag('V', ((rd_val & 0x8000) == (rs2_val & 0x8000)) and ((result & 0x8000) != (rd_val & 0x8000)))",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "0000"},
@@ -44,6 +45,7 @@
         "description": "Subtract registers (two-operand)",
         "syntax": "SUB rd, rs2",
         "semantics": "rd = rd - rs2",
+        "implementation": "# Subtract instruction implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val - rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)\nset_flag('C', rd_val >= rs2_val)\nset_flag('V', ((rd_val & 0x8000) != (rs2_val & 0x8000)) and ((result & 0x8000) == (rs2_val & 0x8000)))",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "0001"},
@@ -60,6 +62,7 @@
         "description": "Set if less than (signed)",
         "syntax": "SLT rd, rs2",
         "semantics": "rd = (rd < rs2) ? 1 : 0",
+        "implementation": "# Set if less than (signed) implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\n# Sign extend to 32 bits for comparison\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nresult = 1 if rd_signed < rs2_signed else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "0010"},
@@ -76,6 +79,7 @@
         "description": "Set if less than (unsigned)",
         "syntax": "SLTU rd, rs2",
         "semantics": "rd = (unsigned rd < unsigned rs2) ? 1 : 0",
+        "implementation": "# Set if less than (unsigned) implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = 1 if rd_val < rs2_val else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "0011"},
@@ -92,6 +96,7 @@
         "description": "Shift left logical",
         "syntax": "SLL rd, rs2",
         "semantics": "rd = rd << (rs2 & 0xF)",
+        "implementation": "# Shift left logical implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0xF\nresult = (rd_val << shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "0100"},
@@ -108,6 +113,7 @@
         "description": "Shift right logical",
         "syntax": "SRL rd, rs2",
         "semantics": "rd = rd >> (rs2 & 0xF)",
+        "implementation": "# Shift right logical implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0xF\nresult = (rd_val >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "0101"},
@@ -124,6 +130,7 @@
         "description": "Shift right arithmetic",
         "syntax": "SRA rd, rs2",
         "semantics": "rd = rd >> (rs2 & 0xF)",
+        "implementation": "# Shift right arithmetic implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "0110"},
@@ -140,6 +147,7 @@
         "description": "Bitwise OR",
         "syntax": "OR rd, rs2",
         "semantics": "rd = rd | rs2",
+        "implementation": "# Bitwise OR implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val | rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "0111"},
@@ -156,6 +164,7 @@
         "description": "Bitwise AND",
         "syntax": "AND rd, rs2",
         "semantics": "rd = rd & rs2",
+        "implementation": "# Bitwise AND implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val & rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "1000"},
@@ -172,6 +181,7 @@
         "description": "Bitwise XOR",
         "syntax": "XOR rd, rs2",
         "semantics": "rd = rd ^ rs2",
+        "implementation": "# Bitwise XOR implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val ^ rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "1001"},
@@ -188,6 +198,7 @@
         "description": "Move register",
         "syntax": "MV rd, rs2",
         "semantics": "rd = rs2",
+        "implementation": "# Move register implementation\nrs2_val = read_register(operands['rs2'])\nwrite_register(operands['rd'], rs2_val)",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "1010"},
@@ -204,6 +215,7 @@
         "description": "Jump register",
         "syntax": "JR rd",
         "semantics": "PC = rd",
+        "implementation": "# Jump register implementation\nrd_val = read_register(operands['rd'])\n# Set PC to register value\ncontext.pc = rd_val & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "1011"},
@@ -220,6 +232,7 @@
         "description": "Jump and link register",
         "syntax": "JALR rd, rs2",
         "semantics": "rd = PC + 2; PC = rs2",
+        "implementation": "# Jump and link register implementation\nrs2_val = read_register(operands['rs2'])\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Set PC to register value\ncontext.pc = rs2_val & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "funct4", "bits": "15:12", "value": "1100"},
@@ -236,6 +249,7 @@
         "description": "Add immediate",
         "syntax": "ADDI rd, imm",
         "semantics": "rd = rd + sign_extend(imm)",
+        "implementation": "# Add immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val + imm_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
@@ -251,6 +265,7 @@
         "description": "Set if less than immediate (signed)",
         "syntax": "SLTI rd, imm",
         "semantics": "rd = (rd < sign_extend(imm)) ? 1 : 0",
+        "implementation": "# Set if less than immediate (signed) implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\n# Sign extend to 32 bits for comparison\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nimm_signed = imm_val if (imm_val & 0x8000) == 0 else imm_val - 0x10000\nresult = 1 if rd_signed < imm_signed else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
@@ -266,6 +281,7 @@
         "description": "Set if less than immediate (unsigned)",
         "syntax": "SLTUI rd, imm",
         "semantics": "rd = (unsigned rd < unsigned sign_extend(imm)) ? 1 : 0",
+        "implementation": "# Set if less than immediate (unsigned) implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\n# Treat as unsigned comparison\nresult = 1 if rd_val < (imm_val & 0xFFFF) else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
@@ -281,6 +297,7 @@
         "description": "Shift left logical immediate",
         "syntax": "SLLI rd, imm",
         "semantics": "rd = rd << imm[3:0]",
+        "implementation": "# Shift left logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val << shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
@@ -296,6 +313,7 @@
         "description": "Shift right logical immediate",
         "syntax": "SRLI rd, imm",
         "semantics": "rd = rd >> imm[3:0]",
+        "implementation": "# Shift right logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
@@ -311,6 +329,7 @@
         "description": "Shift right arithmetic immediate",
         "syntax": "SRAI rd, imm",
         "semantics": "rd = rd >> imm[3:0]",
+        "implementation": "# Shift right arithmetic immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
@@ -326,6 +345,7 @@
         "description": "OR immediate",
         "syntax": "ORI rd, imm",
         "semantics": "rd = rd | sign_extend(imm)",
+        "implementation": "# OR immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val | (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
@@ -341,6 +361,7 @@
         "description": "AND immediate",
         "syntax": "ANDI rd, imm",
         "semantics": "rd = rd & sign_extend(imm)",
+        "implementation": "# AND immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val & (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
@@ -356,6 +377,7 @@
         "description": "XOR immediate",
         "syntax": "XORI rd, imm",
         "semantics": "rd = rd ^ sign_extend(imm)",
+        "implementation": "# XOR immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val ^ (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
@@ -371,6 +393,7 @@
         "description": "Load immediate",
         "syntax": "LI rd, imm",
         "semantics": "rd = sign_extend(imm)",
+        "implementation": "# Load immediate implementation\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = imm_val & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
@@ -386,6 +409,7 @@
         "description": "Branch if equal",
         "syntax": "BEQ rs1, rs2, offset",
         "semantics": "if rs1 == rs2: PC = PC + offset",
+        "implementation": "# Branch if equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val == rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -402,6 +426,7 @@
         "description": "Branch if not equal",
         "syntax": "BNE rs1, rs2, offset",
         "semantics": "if rs1 != rs2: PC = PC + offset",
+        "implementation": "# Branch if not equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val != rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -418,6 +443,7 @@
         "description": "Branch if zero",
         "syntax": "BZ rs1, offset",
         "semantics": "if rs1 == 0: PC = PC + offset",
+        "implementation": "# Branch if zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val == 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -434,6 +460,7 @@
         "description": "Branch if not zero",
         "syntax": "BNZ rs1, offset",
         "semantics": "if rs1 != 0: PC = PC + offset",
+        "implementation": "# Branch if not zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val != 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -450,6 +477,7 @@
         "description": "Branch if less than (signed)",
         "syntax": "BLT rs1, rs2, offset",
         "semantics": "if rs1 < rs2: PC = PC + offset",
+        "implementation": "# Branch if less than (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed < rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -466,6 +494,7 @@
         "description": "Branch if greater or equal (signed)",
         "syntax": "BGE rs1, rs2, offset",
         "semantics": "if rs1 >= rs2: PC = PC + offset",
+        "implementation": "# Branch if greater or equal (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed >= rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -482,6 +511,7 @@
         "description": "Branch if less than (unsigned)",
         "syntax": "BLTU rs1, rs2, offset",
         "semantics": "if unsigned rs1 < unsigned rs2: PC = PC + offset",
+        "implementation": "# Branch if less than (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val < rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -498,6 +528,7 @@
         "description": "Branch if greater or equal (unsigned)",
         "syntax": "BGEU rs1, rs2, offset",
         "semantics": "if unsigned rs1 >= unsigned rs2: PC = PC + offset",
+        "implementation": "# Branch if greater or equal (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val >= rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -514,6 +545,7 @@
         "description": "Store byte",
         "syntax": "SB rs2, offset(rs1)",
         "semantics": "mem[rs1 + sign_extend(offset)] = rs2[7:0]",
+        "implementation": "# Store byte implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store low byte\nif addr < len(memory):\n    memory[addr] = rs2_val & 0xFF",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -530,6 +562,7 @@
         "description": "Store word",
         "syntax": "SW rs2, offset(rs1)",
         "semantics": "mem[rs1 + sign_extend(offset)] = rs2",
+        "implementation": "# Store word implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store 16-bit word (little endian)\nif addr + 1 < len(memory):\n    memory[addr] = rs2_val & 0xFF\n    memory[addr + 1] = (rs2_val >> 8) & 0xFF",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -546,6 +579,7 @@
         "description": "Load byte",
         "syntax": "LB rd, offset(rs2)",
         "semantics": "rd = sign_extend(mem[rs2 + sign_extend(offset)][7:0])",
+        "implementation": "# Load byte implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load byte and sign extend\nif addr < len(memory):\n    byte_val = memory[addr]\n    # Sign extend 8-bit to 16-bit\n    if byte_val & 0x80:\n        result = byte_val | 0xFF00\n    else:\n        result = byte_val\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -562,6 +596,7 @@
         "description": "Load word",
         "syntax": "LW rd, offset(rs2)",
         "semantics": "rd = mem[rs2 + sign_extend(offset)]",
+        "implementation": "# Load word implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load 16-bit word (little endian)\nif addr + 1 < len(memory):\n    result = memory[addr] | (memory[addr + 1] << 8)\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -578,6 +613,7 @@
         "description": "Load byte unsigned",
         "syntax": "LBU rd, offset(rs2)",
         "semantics": "rd = zero_extend(mem[rs2 + sign_extend(offset)][7:0])",
+        "implementation": "# Load byte unsigned implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load byte and zero extend\nif addr < len(memory):\n    result = memory[addr] & 0xFF\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
@@ -594,6 +630,7 @@
         "description": "Jump",
         "syntax": "J offset",
         "semantics": "PC = PC + offset",
+        "implementation": "# Jump implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFE00\ncontext.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "link", "bits": "15:15", "value": "0"},
@@ -610,6 +647,7 @@
         "description": "Jump and link",
         "syntax": "JAL rd, offset",
         "semantics": "rd = PC + 2; PC = PC + offset",
+        "implementation": "# Jump and link implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFE00\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Jump\ncontext.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "link", "bits": "15:15", "value": "1"},
@@ -626,6 +664,7 @@
         "description": "Load upper immediate",
         "syntax": "LUI rd, imm",
         "semantics": "rd = (imm << 7)",
+        "implementation": "# Load upper immediate implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits\nresult = (imm << 7) & 0xFFFF\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
             {"name": "flag", "bits": "15:15", "value": "0"},
@@ -642,6 +681,7 @@
         "description": "Add upper immediate to PC",
         "syntax": "AUIPC rd, imm",
         "semantics": "rd = PC + (imm << 7)",
+        "implementation": "# Add upper immediate to PC implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits and add to PC\nresult = (context.pc + (imm << 7)) & 0xFFFF\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
             {"name": "flag", "bits": "15:15", "value": "1"},
@@ -658,6 +698,7 @@
         "description": "Environment call",
         "syntax": "ECALL svc",
         "semantics": "Trap to service number",
+        "implementation": "# Environment call implementation\nsvc = operands['svc']\n# Handle system call based on service number\n# This is a placeholder - actual implementation would depend on system services\n# For now, just store the service number in a special register or flag\nset_flag('SVC', svc)\n# Could also trigger an interrupt or system call handler here",
         "encoding": {
           "fields": [
             {"name": "svc", "bits": "15:6", "type": "immediate", "signed": false},
@@ -665,6 +706,53 @@
             {"name": "opcode", "bits": "2:0", "value": "111"}
           ]
         }
+      }
+    ],
+    "directives": [
+      {
+        "name": ".org",
+        "description": "Set origin address",
+        "action": "set_origin",
+        "implementation": "# Set origin directive implementation\nif args:\n    addr = int(args[0], 0)  # Parse as hex/decimal\n    context.current_address = addr\n    assembler.context.current_address = addr\n    assembler.symbol_table.set_current_address(addr)",
+        "argument_types": ["number"],
+        "syntax": ".org address",
+        "examples": [".org 0x1000", ".org 4096"]
+      },
+      {
+        "name": ".word",
+        "description": "Define word data",
+        "action": "define_word",
+        "implementation": "# Define word directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    # Little endian 16-bit word\n    result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += 2\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number"],
+        "syntax": ".word value1, value2, ...",
+        "examples": [".word 0x1234", ".word 42, 0xABCD"]
+      },
+      {
+        "name": ".byte",
+        "description": "Define byte data",
+        "action": "define_byte",
+        "implementation": "# Define byte directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    result.append(value & 0xFF)\n    context.current_address += 1\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number"],
+        "syntax": ".byte value1, value2, ...",
+        "examples": [".byte 0x12", ".byte 65, 66, 67"]
+      },
+      {
+        "name": ".ascii",
+        "description": "Define ASCII string",
+        "action": "define_ascii",
+        "implementation": "# Define ASCII string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["string"],
+        "syntax": ".ascii \"string\"",
+        "examples": [".ascii \"Hello, World!\""]
+      },
+      {
+        "name": ".align",
+        "description": "Align to boundary",
+        "action": "align",
+        "implementation": "# Align directive implementation\nif args:\n    alignment = int(args[0])\n    padding = (alignment - (context.current_address % alignment)) % alignment\n    if padding > 0:\n        result = bytearray([0] * padding)\n        context.current_address += padding\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number"],
+        "syntax": ".align boundary",
+        "examples": [".align 4", ".align 16"]
       }
     ],
     "pseudo_instructions": [
