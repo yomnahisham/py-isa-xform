@@ -7,6 +7,8 @@ by simulating the 16-bit RISC-V inspired processor architecture.
 
 import sys
 import struct
+import keyboard
+from pynput import keyboard
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
@@ -48,7 +50,6 @@ class ZX16Simulator:
                         self.memory[i] = byte
                 
                 print(f"Loaded {len(data)} bytes into memory")
-                print("DONE")
                 return data
                 
         except FileNotFoundError:
@@ -174,7 +175,7 @@ class ZX16Simulator:
             rs2 = (inst >> 9) & 0x7
             rs1 = (inst >> 6) & 0x7
             funct3 = (inst >> 3) & 0x7
-            offset = self.sign_extend(imm, 4) * 2
+            offset = self.sign_extend(imm, 16) * 2
             
             branch_taken = False
             if funct3 == 0x0:  # BEQ
@@ -195,6 +196,8 @@ class ZX16Simulator:
                 branch_taken = self.regs[rs1] >= self.regs[rs2]
             
             if branch_taken:
+                print("PC: " + str(self.pc))
+                print("Offset: " + str(offset))
                 self.pc = (self.pc + offset) & 0xFFFF
                 pc_updated = True
                 
@@ -259,19 +262,19 @@ class ZX16Simulator:
                 
         elif opcode == 0x7:  # System (ECALL)
             svc = (inst >> 6) & 0x3FF
-            if svc == 0:  # Print char
+            if svc == 0x0:  # Print char
                 print(chr(self.memory[self.regs[6]])) # a0 register
             elif svc == 1: # Read char
                 self.regs[6] = input() # a0 register
-            elif svc == 2:  # Print string
+            elif svc == 0x2:  # Print string
                 addr = self.regs[6]  # a0 register
                 string = ""
                 while addr < len(self.memory) and self.memory[addr] != 0:
                     string += chr(self.memory[addr])
                     addr += 1
-                print(string, end='')
-            elif svc == 3:  # Terminate
-                print(inst)
+                print(string)
+            elif svc == 0x3FF:  # Terminate
+                print("Program Terminated")
                 return False
         
         if not pc_updated:
@@ -280,11 +283,9 @@ class ZX16Simulator:
         return True
     
     def run(self) -> None:
-
-        print(f"Registers before execution: {self.regs}") 
-    
+        key = "c"
         instruction_count = 0
-        while self.pc < len(self.memory) and instruction_count < 1000:  # Add safety limit
+        while self.pc < len(self.memory) and instruction_count < 1000 and key != "q":  # Add safety limit
             # Fetch a 16-bit instruction from memory (little-endian)
             inst = self.memory[self.pc] | (self.memory[self.pc + 1] << 8)
             
@@ -308,6 +309,9 @@ class ZX16Simulator:
             if self.pc >= len(self.memory):
                 print("PC out of bounds, stopping")
                 break
+            print(f"Registers: {self.regs}") 
+            q = input()
+
         print(f"Execution completed after {instruction_count} instructions")
-        print(f"Registers after execution: {self.regs}") 
+        
 

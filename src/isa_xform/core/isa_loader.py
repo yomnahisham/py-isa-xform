@@ -234,7 +234,6 @@ class ISALoader:
                 syntax=instr_data["syntax"],
                 semantics=instr_data["semantics"],
                 flags_affected=instr_data.get("flags_affected", [])
-                flags_affected=instr_data.get("flags_affected", [])
             )
             instructions.append(instruction)
 
@@ -262,9 +261,7 @@ class ISALoader:
                     syntax=directive_data.get("syntax", ""),
                     examples=directive_data.get("examples", []),
                     validation_rules=directive_data.get("validation_rules", {})
-                    validation_rules=directive_data.get("validation_rules", {})
                 )
-                directives[directive.name] = directive
 
         # Parse addressing modes
         addressing_modes = []
