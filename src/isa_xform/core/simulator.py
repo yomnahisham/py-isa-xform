@@ -23,6 +23,7 @@ class ZX16Simulator:
         
         # Registers: 8 x 16-bit registers
         self.regs = [0] * 8
+
         
         # Program counter
         self.pc = 0
@@ -88,11 +89,40 @@ class ZX16Simulator:
             return 0
         return self.memory[self.pc] | (self.memory[self.pc + 1] << 8)
     
+    def read_memory_byte(self, address: int) -> int:
+        """Read a byte from memory at specified address"""
+        if address < 0 or address >= len(self.memory):
+            raise ValueError("Memory address out of bounds")
+        return self.memory[address]
+    
+    def write_memory_byte(self, address: int, value: int) -> None:
+        """Write a byte to memory at specified address"""
+        if address < 0 or address >= len(self.memory):
+            raise ValueError("Memory address out of bounds")
+        self.memory[address] = value & 0xFF
+
+    def read_memory_word(self, address: int) -> int:
+        """Read a 16-bit word from memory at specified address"""
+        if address < 0 or address >= len(self.memory) - 1:
+            raise ValueError("Memory address out of bounds")
+        return self.memory[address] | (self.memory[address + 1] << 8)
+    
+    def write_memory_word(self, address: int, value: int) -> None:
+        """Write a 16-bit word to memory at specified address"""
+        if address < 0 or address >= len(self.memory) - 1:
+            raise ValueError("Memory address out of bounds")
+        self.memory[address] = value
+        self.memory[address + 1] = (value >> 8)
+
+
+    
     def sign_extend(self, value: int, bits: int) -> int:
         """Sign extend a value from specified number of bits to 16 bits"""
         if value & (1 << (bits - 1)):
-            return value | (0xFFFF << bits)
+            mask = (1 << bits) - 1
+            return value | (~mask)
         return value & ((1 << bits) - 1)
+
     
     def execute_instruction(self, inst: int) -> bool:
         """Execute instruction and return True to continue, False to halt"""
@@ -106,29 +136,29 @@ class ZX16Simulator:
             funct3 = (inst >> 3) & 0x7
             
             if funct4 == 0x0 and funct3 == 0x0:  # ADD
-                self.regs[rd] = (self.regs[rd] + self.regs[rs2]) & 0xFFFF
+                self.regs[rd] = (self.regs[rd] + self.regs[rs2])
             elif funct4 == 0x1 and funct3 == 0x0:  # SUB
-                self.regs[rd] = (self.regs[rd] - self.regs[rs2]) & 0xFFFF
+                self.regs[rd] = (self.regs[rd] - self.regs[rs2])
             elif funct4 == 0x2 and funct3 == 0x1:  # SLT
                 self.regs[rd] = 1 if self.sign_extend(self.regs[rd], 16) < self.sign_extend(self.regs[rs2], 16) else 0
             elif funct4 == 0x3 and funct3 == 0x2:  # SLTU
                 self.regs[rd] = 1 if self.regs[rd] < self.regs[rs2] else 0
             elif funct4 == 0x4 and funct3 == 0x3:  # SLL
                 shift = self.regs[rs2] & 0xF
-                self.regs[rd] = (self.regs[rd] << shift) & 0xFFFF
+                self.regs[rd] = (self.regs[rd] << shift)
             elif funct4 == 0x5 and funct3 == 0x3:  # SRL
                 shift = self.regs[rs2] & 0xF
                 self.regs[rd] = self.regs[rd] >> shift
             elif funct4 == 0x6 and funct3 == 0x3:  # SRA
                 shift = self.regs[rs2] & 0xF
                 val = self.sign_extend(self.regs[rd], 16)
-                self.regs[rd] = (val >> shift) & 0xFFFF
+                self.regs[rd] = (val >> shift)
             elif funct4 == 0x7 and funct3 == 0x4:  # OR
-                self.regs[rd] = (self.regs[rd] | self.regs[rs2]) & 0xFFFF
+                self.regs[rd] = (self.sign_extend(self.regs[rd], 16) | self.sign_extend(self.regs[rs2], 16))
             elif funct4 == 0x8 and funct3 == 0x5:  # AND
-                self.regs[rd] = (self.regs[rd] & self.regs[rs2]) & 0xFFFF
+                self.regs[rd] = (self.sign_extend(self.regs[rd], 16) & self.sign_extend(self.regs[rs2], 16))
             elif funct4 == 0x9 and funct3 == 0x6:  # XOR
-                self.regs[rd] = (self.regs[rd] ^ self.regs[rs2]) & 0xFFFF
+                self.regs[rd] = (self.sign_extend(self.regs[rd], 16) ^ self.sign_extend(self.regs[rs2], 16))
             elif funct4 == 0xA and funct3 == 0x7:  # MV
                 self.regs[rd] = self.regs[rs2]
             elif funct4 == 0xB and funct3 == 0x0:  # JR
@@ -147,28 +177,29 @@ class ZX16Simulator:
             simm = self.sign_extend(imm, 7)
             
             if funct3 == 0x0:  # ADDI
-                self.regs[rd] = (self.regs[rd] + simm) & 0xFFFF
+                self.regs[rd] = (self.regs[rd] + simm)
             elif funct3 == 0x1:  # SLTI
                 self.regs[rd] = 1 if self.sign_extend(self.regs[rd], 16) < simm else 0
             elif funct3 == 0x2:  # SLTUI
-                self.regs[rd] = 1 if self.regs[rd] < (simm & 0xFFFF) else 0
+                self.regs[rd] = 1 if self.regs[rd] < (simm) else 0
             elif funct3 == 0x3:  # SLLI/SRLI/SRAI
                 shift = imm & 0xF
                 if (imm >> 6) == 0:  # SLLI
-                    self.regs[rd] = (self.regs[rd] << shift) & 0xFFFF
+                    self.regs[rd] = (self.regs[rd] << shift) 
                 elif (imm >> 6) == 1:  # SRLI
                     self.regs[rd] = self.regs[rd] >> shift
                 else:  # SRAI
                     val = self.sign_extend(self.regs[rd], 16)
-                    self.regs[rd] = (val >> shift) & 0xFFFF
+                    self.regs[rd] = (val >> shift) 
             elif funct3 == 0x4:  # ORI
-                self.regs[rd] = (self.regs[rd] | simm) & 0xFFFF
+                self.regs[rd] = (self.regs[rd] | simm)
             elif funct3 == 0x5:  # ANDI
-                self.regs[rd] = (self.regs[rd] & simm) & 0xFFFF
+                self.regs[rd] = (self.regs[rd] & simm)
             elif funct3 == 0x6:  # XORI
-                self.regs[rd] = (self.regs[rd] ^ simm) & 0xFFFF
+                self.regs[rd] = (self.regs[rd] ^ simm)
             elif funct3 == 0x7:  # LI
-                self.regs[rd] = simm & 0xFFFF
+                print(simm)
+                self.regs[rd] = simm
                 
         elif opcode == 0x2:  # B-type
             imm = (inst >> 12) & 0xF
@@ -198,7 +229,7 @@ class ZX16Simulator:
             if branch_taken:
                 print("PC: " + str(self.pc))
                 print("Offset: " + str(offset))
-                self.pc = (self.pc + offset) & 0xFFFF
+                self.pc = (self.pc + offset)
                 pc_updated = True
                 
         elif opcode == 0x3:  # S-type (Store)
@@ -207,7 +238,7 @@ class ZX16Simulator:
             rs1 = (inst >> 6) & 0x7
             funct3 = (inst >> 3) & 0x7
             offset = self.sign_extend(imm, 4)
-            address = (self.regs[rs1] + offset) & 0xFFFF
+            address = (self.regs[rs1] + offset)
             
             if funct3 == 0x0:  # SB
                 self.write_memory_byte(address, self.regs[rs2])
@@ -220,11 +251,11 @@ class ZX16Simulator:
             rd = (inst >> 6) & 0x7
             funct3 = (inst >> 3) & 0x7
             offset = self.sign_extend(imm, 4)
-            address = (self.regs[rs2] + offset) & 0xFFFF
+            address = (self.regs[rs2] + offset)
             
             if funct3 == 0x0:  # LB
                 val = self.read_memory_byte(address)
-                self.regs[rd] = self.sign_extend(val, 8) & 0xFFFF
+                self.regs[rd] = self.sign_extend(val, 8)
             elif funct3 == 0x1:  # LW
                 self.regs[rd] = self.read_memory_word(address)
             elif funct3 == 0x4:  # LBU
@@ -240,10 +271,10 @@ class ZX16Simulator:
             offset = self.sign_extend((imm1 << 3) | imm2, 9) * 2
             
             if link == 0:  # J
-                self.pc = (self.pc + offset) & 0xFFFF
+                self.pc = (self.pc + offset)
             else:  # JAL
-                self.regs[rd] = (self.pc + 2) & 0xFFFF
-                self.pc = (self.pc + offset) & 0xFFFF
+                self.regs[rd] = (self.pc + 2)
+                self.pc = (self.pc + offset)
             pc_updated = True
             
         elif opcode == 0x6:  # U-type
@@ -256,9 +287,9 @@ class ZX16Simulator:
             imm = (imm1 << 3) | imm2
             
             if flag == 0:  # LUI
-                self.regs[rd] = (imm << 7) & 0xFFFF
+                self.regs[rd] = (imm << 7)
             else:  # AUIPC
-                self.regs[rd] = (self.pc + (imm << 7)) & 0xFFFF
+                self.regs[rd] = (self.pc + (imm << 7))
                 
         elif opcode == 0x7:  # System (ECALL)
             svc = (inst >> 6) & 0x3FF
@@ -278,7 +309,7 @@ class ZX16Simulator:
                 return False
         
         if not pc_updated:
-            self.pc = (self.pc + 2) & 0xFFFF
+            self.pc = (self.pc + 2)
             
         return True
     
@@ -296,7 +327,7 @@ class ZX16Simulator:
             
             # Use advanced disassembler
             disasm = self.disassemble_instruction(inst, self.pc)
-            print(f"0x{self.pc:04X}: {inst:04X} {disasm}")
+            print(f"0x{self.pc:04X}: {bin(inst)} {disasm}")
             
             # Execute instruction
             if not self.execute_instruction(inst):
@@ -310,6 +341,8 @@ class ZX16Simulator:
                 print("PC out of bounds, stopping")
                 break
             print(f"Registers: {self.regs}") 
+            # for num in self.regs:
+            #     print(bin(num))
             q = input()
 
         print(f"Execution completed after {instruction_count} instructions")
