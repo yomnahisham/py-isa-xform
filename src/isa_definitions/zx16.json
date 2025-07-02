@@ -717,52 +717,205 @@
       }
     ],
     "directives": [
-      {
-        "name": ".org",
-        "description": "Set origin address",
-        "action": "set_origin",
-        "implementation": "# Set origin directive implementation\nif args:\n    addr = int(args[0], 0)  # Parse as hex/decimal\n    context.current_address = addr\n    assembler.context.current_address = addr\n    assembler.symbol_table.set_current_address(addr)",
-        "argument_types": ["number"],
-        "syntax": ".org address",
-        "examples": [".org 0x1000", ".org 4096"]
-      },
-      {
-        "name": ".word",
-        "description": "Define word data",
-        "action": "define_word",
-        "implementation": "# Define word directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    # Little endian 16-bit word\n    result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += 2\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
-        "argument_types": ["number"],
-        "syntax": ".word value1, value2, ...",
-        "examples": [".word 0x1234", ".word 42, 0xABCD"]
-      },
-      {
-        "name": ".byte",
-        "description": "Define byte data",
-        "action": "define_byte",
-        "implementation": "# Define byte directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    result.append(value & 0xFF)\n    context.current_address += 1\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
-        "argument_types": ["number"],
-        "syntax": ".byte value1, value2, ...",
-        "examples": [".byte 0x12", ".byte 65, 66, 67"]
-      },
-      {
-        "name": ".ascii",
-        "description": "Define ASCII string",
-        "action": "define_ascii",
-        "implementation": "# Define ASCII string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
-        "argument_types": ["string"],
-        "syntax": ".ascii \"string\"",
-        "examples": [".ascii \"Hello, World!\""]
-      },
-      {
-        "name": ".align",
-        "description": "Align to boundary",
-        "action": "align",
-        "implementation": "# Align directive implementation\nif args:\n    alignment = int(args[0])\n    padding = (alignment - (context.current_address % alignment)) % alignment\n    if padding > 0:\n        result = bytearray([0] * padding)\n        context.current_address += padding\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)",
-        "argument_types": ["number"],
-        "syntax": ".align boundary",
-        "examples": [".align 4", ".align 16"]
-      }
-    ],
+    {
+      "name": ".org",
+      "description": "Set origin address",
+      "action": "set_origin",
+      "implementation": "# Set origin directive implementation\nif args:\n    addr = int(args[0], 0)  # Parse as hex/decimal\n    context.current_address = addr\n    assembler.context.current_address = addr\n    assembler.symbol_table.set_current_address(addr)",
+      "argument_types": ["number"],
+      "syntax": ".org address",
+      "examples": [".org 0x1000", ".org 4096"]
+    },
+    {
+      "name": ".word",
+      "description": "Define word data",
+      "action": "define_word",
+      "implementation": "# Define word directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    # Little endian 16-bit word\n    result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += 2\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["number"],
+      "syntax": ".word value1, value2, ...",
+      "examples": [".word 0x1234", ".word 42, 0xABCD"]
+    },
+    {
+      "name": ".byte",
+      "description": "Define byte data",
+      "action": "define_byte",
+      "implementation": "# Define byte directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    result.append(value & 0xFF)\n    context.current_address += 1\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["number"],
+      "syntax": ".byte value1, value2, ...",
+      "examples": [".byte 0x12", ".byte 65, 66, 67", ".byte 'A'"]
+    },
+    {
+      "name": ".ascii",
+      "description": "Define ASCII string",
+      "action": "define_ascii",
+      "implementation": "# Define ASCII string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["string"],
+      "syntax": ".ascii \"string\"",
+      "examples": [".ascii \"Hello, World!\"", ".ascii \"Hello\""]
+    },
+    {
+      "name": ".align",
+      "description": "Align to boundary",
+      "action": "align",
+      "implementation": "# Align directive implementation\nif args:\n    alignment = int(args[0])\n    padding = (alignment - (context.current_address % alignment)) % alignment\n    if padding > 0:\n        result = bytearray([0] * padding)\n        context.current_address += padding\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["number"],
+      "syntax": ".align boundary",
+      "examples": [".align 4", ".align 16", ".align 2"]
+    },
+    {
+      "name": ".text",
+      "description": "Code section (default)",
+      "action": "set_section",
+      "implementation": "# Text section directive implementation\ncontext.current_section = 'text'\nassembler.context.current_section = 'text'\n# Set default code start address if not already set\nif context.current_address == 0:\n    context.current_address = 32\n    assembler.context.current_address = 32",
+      "argument_types": [],
+      "syntax": ".text",
+      "examples": [".text"]
+    },
+    {
+      "name": ".data",
+      "description": "Data section",
+      "action": "set_section",
+      "implementation": "# Data section directive implementation\ncontext.current_section = 'data'\nassembler.context.current_section = 'data'\n# Set default data start address if not already set\nif context.current_address < 0x1000:\n    context.current_address = 0x1000\n    assembler.context.current_address = 0x1000",
+      "argument_types": [],
+      "syntax": ".data",
+      "examples": [".data"]
+    },
+    {
+      "name": ".bss",
+      "description": "Uninitialized data section",
+      "action": "set_section",
+      "implementation": "# BSS section directive implementation\ncontext.current_section = 'bss'\nassembler.context.current_section = 'bss'\n# Set default BSS start address if not already set\nif context.current_address < 0x2000:\n    context.current_address = 0x2000\n    assembler.context.current_address = 0x2000",
+      "argument_types": [],
+      "syntax": ".bss",
+      "examples": [".bss"]
+    },
+    {
+      "name": ".string",
+      "description": "Null-terminated string",
+      "action": "define_string",
+      "implementation": "# Define string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    # Process escape sequences\n    string = string.replace('\\\\n', '\\n').replace('\\\\t', '\\t').replace('\\\\r', '\\r')\n    result = bytearray(string.encode('ascii'))\n    result.append(0)  # Add null terminator\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["string"],
+      "syntax": ".string \"string\"",
+      "examples": [".string \"Hello\\n\"", ".string \"World\""]
+    },
+    {
+      "name": ".space",
+      "description": "Reserve bytes (zero-filled)",
+      "action": "reserve_space",
+      "implementation": "# Reserve space directive implementation\nif args:\n    size = int(args[0], 0)\n    result = bytearray([0] * size)\n    context.current_address += size\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["number"],
+      "syntax": ".space size",
+      "examples": [".space 10", ".space 0x100"]
+    },
+    {
+      "name": ".fill",
+      "description": "Fill items with value",
+      "action": "fill_data",
+      "implementation": "# Fill directive implementation\nif len(args) >= 3:\n    count = int(args[0], 0)\n    size = int(args[1], 0)\n    value = int(args[2], 0)\n    result = bytearray()\n    for i in range(count):\n        if size == 1:\n            result.append(value & 0xFF)\n        elif size == 2:\n            result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+      "argument_types": ["number", "number", "number"],
+      "syntax": ".fill count, size, value",
+      "examples": [".fill 5, 2, 0xFFFF", ".fill 10, 1, 0x42"]
+    },
+    {
+      "name": ".equ",
+      "description": "Define constant",
+      "action": "define_constant",
+      "implementation": "# Define constant directive implementation\nif len(args) >= 2:\n    symbol = args[0]\n    value = int(args[1], 0)\n    assembler.symbol_table.define_symbol(symbol, value)\n    context.constants[symbol] = value",
+      "argument_types": ["symbol", "number"],
+      "syntax": ".equ symbol, value",
+      "examples": [".equ STACK_SIZE, 0x400", ".equ MAX_COUNT, 100"]
+    },
+    {
+      "name": ".set",
+      "description": "Define constant (same as .equ)",
+      "action": "define_constant",
+      "implementation": "# Define constant directive implementation (same as .equ)\nif len(args) >= 2:\n    symbol = args[0]\n    value = int(args[1], 0)\n    assembler.symbol_table.define_symbol(symbol, value)\n    context.constants[symbol] = value",
+      "argument_types": ["symbol", "number"],
+      "syntax": ".set symbol, value",
+      "examples": [".set MAX_COUNT, 100", ".set BUFFER_SIZE, 256"]
+    },
+    {
+      "name": ".global",
+      "description": "Export symbol",
+      "action": "export_symbol",
+      "implementation": "# Export symbol directive implementation\nif args:\n    symbol = args[0]\n    assembler.symbol_table.mark_global(symbol)\n    context.global_symbols.add(symbol)",
+      "argument_types": ["symbol"],
+      "syntax": ".global symbol",
+      "examples": [".global main", ".global _start"]
+    },
+    {
+      "name": ".extern",
+      "description": "Import external symbol",
+      "action": "import_symbol",
+      "implementation": "# Import external symbol directive implementation\nif args:\n    symbol = args[0]\n    assembler.symbol_table.mark_external(symbol)\n    context.external_symbols.add(symbol)",
+      "argument_types": ["symbol"],
+      "syntax": ".extern symbol",
+      "examples": [".extern external_func", ".extern printf"]
+    },
+    {
+      "name": ".ifdef",
+      "description": "Conditional assembly if defined",
+      "action": "conditional_ifdef",
+      "implementation": "# Conditional ifdef directive implementation\nif args:\n    symbol = args[0]\n    condition = symbol in context.constants or symbol in assembler.symbol_table.symbols\n    context.conditional_stack.append(('ifdef', condition))\n    context.skip_assembly = not condition",
+      "argument_types": ["symbol"],
+      "syntax": ".ifdef symbol",
+      "examples": [".ifdef DEBUG", ".ifdef RELEASE"]
+    },
+    {
+      "name": ".ifndef",
+      "description": "Conditional assembly if not defined",
+      "action": "conditional_ifndef",
+      "implementation": "# Conditional ifndef directive implementation\nif args:\n    symbol = args[0]\n    condition = symbol not in context.constants and symbol not in assembler.symbol_table.symbols\n    context.conditional_stack.append(('ifndef', condition))\n    context.skip_assembly = not condition",
+      "argument_types": ["symbol"],
+      "syntax": ".ifndef symbol",
+      "examples": [".ifndef RELEASE", ".ifndef DEBUG"]
+    },
+    {
+      "name": ".if",
+      "description": "Conditional assembly if expression true",
+      "action": "conditional_if",
+      "implementation": "# Conditional if directive implementation\nif args:\n    expression = ' '.join(args)\n    # Simple expression evaluation (would need full parser in real implementation)\n    try:\n        condition = eval(expression, {}, context.constants)\n        context.conditional_stack.append(('if', bool(condition)))\n        context.skip_assembly = not bool(condition)\n    except:\n        context.conditional_stack.append(('if', False))\n        context.skip_assembly = True",
+      "argument_types": ["expression"],
+      "syntax": ".if expression",
+      "examples": [".if STACK_SIZE > 0x200", ".if DEBUG == 1"]
+    },
+    {
+      "name": ".else",
+      "description": "Conditional assembly else clause",
+      "action": "conditional_else",
+      "implementation": "# Conditional else directive implementation\nif context.conditional_stack:\n    cond_type, prev_condition = context.conditional_stack[-1]\n    context.conditional_stack[-1] = (cond_type, not prev_condition)\n    context.skip_assembly = not context.conditional_stack[-1][1]",
+      "argument_types": [],
+      "syntax": ".else",
+      "examples": [".else"]
+    },
+    {
+      "name": ".endif",
+      "description": "End conditional assembly block",
+      "action": "conditional_endif",
+      "implementation": "# Conditional endif directive implementation\nif context.conditional_stack:\n    context.conditional_stack.pop()\n    # Restore previous conditional state\n    context.skip_assembly = any(not cond for _, cond in context.conditional_stack)",
+      "argument_types": [],
+      "syntax": ".endif",
+      "examples": [".endif"]
+    },
+    {
+      "name": ".include",
+      "description": "Include another file",
+      "action": "include_file",
+      "implementation": "# Include file directive implementation\nif args:\n    filename = args[0].strip('\"\\'')\n    try:\n        with open(filename, 'r') as f:\n            included_content = f.read()\n        # Process included file content\n        assembler.process_source(included_content, filename)\n    except FileNotFoundError:\n        raise AssemblerError(f'Include file not found: {filename}')",
+      "argument_types": ["string"],
+      "syntax": ".include \"filename\"",
+      "examples": [".include \"constants.asm\"", ".include \"macros.inc\""]
+    },
+    {
+      "name": ".incbin",
+      "description": "Include binary file",
+      "action": "include_binary",
+      "implementation": "# Include binary file directive implementation\nif args:\n    filename = args[0].strip('\"\\'')\n    try:\n        with open(filename, 'rb') as f:\n            binary_data = f.read()\n        result = bytearray(binary_data)\n        context.current_address += len(result)\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)\n    except FileNotFoundError:\n        raise AssemblerError(f'Binary file not found: {filename}')",
+      "argument_types": ["string"],
+      "syntax": ".incbin \"filename\"",
+      "examples": [".incbin \"data.bin\"", ".incbin \"image.raw\""]
+    }
+  ],
     "pseudo_instructions": [
       {
         "mnemonic": "NOP",
@@ -862,14 +1015,6 @@
       "MEM_SIZE": 65536
     },
     "ecall_services": {
-      "0x000": {
-        "name": "print_char",
-        "description": "Print character from a0 register",
-        "parameters": {
-          "a0": "Character to print"
-        },
-        "return": "None"
-      },
       "0x001": {
         "name": "read_string",
         "description": "Read string into buffer at a0, up to a1 bytes. Output: a0=string length",

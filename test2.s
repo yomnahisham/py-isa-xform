@@ -9,14 +9,15 @@
 # Set the origin address for the code. 32 is the default start.
 .org 32
 
+.data
+array: .space 100
+
 # -- Main Program --
-
-LI t0, 10           # Set t0 = 10
-
-loop_start:
-DEC t0              # t0 = t0 - 1
-BNZ t0, loop_start
-LI a0, 0            # Set exit code in a0
-ECALL 0x3FF         # Terminate the program
-
+.global main
+main:
+LA x6, array
+ECALL 1
+LA x6, array
+ECALL 3
+ECALL 0xA
 

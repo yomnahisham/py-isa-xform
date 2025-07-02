@@ -114,14 +114,16 @@ class ZX16Simulator:
         self.memory[address] = value
         self.memory[address + 1] = (value >> 8)
 
-
-    
     def sign_extend(self, value: int, bits: int) -> int:
         """Sign extend a value from specified number of bits to 16 bits"""
         if value & (1 << (bits - 1)):
             mask = (1 << bits) - 1
             return value | (~mask)
         return value & ((1 << bits) - 1)
+    
+    def keyboard_press(self, event):
+        """Handle keyboard press events"""
+        return event.scan_code
 
     
     def execute_instruction(self, inst: int) -> bool:
@@ -291,18 +293,59 @@ class ZX16Simulator:
                 
         elif opcode == 0x7:  # System (ECALL)
             svc = (inst >> 6) & 0x3FF
-            if svc == 0x0:  # Print char
-                print(chr(self.memory[self.regs[6]])) # a0 register
-            elif svc == 1: # Read char
-                self.regs[6] = input() # a0 register
-            elif svc == 0x2:  # Print string
+            if svc == 1: # Read string
+                addr = self.regs[6]  # a0 register
+                max_length = self.regs[7]  # a1 register
+                string = input("Enter a string: ")
+                if len(string) > max_length:
+                    print(f"Input exceeds maximum length of {max_length} characters")
+                    return True
+                for i, char in enumerate(string):
+                    if addr + i < len(self.memory):
+                        self.write_memory_byte(addr + i, ord(char))
+                self.write_memory_byte(addr + len(string), 0)  # Null-terminate the string
+                self.regs[6] = len(string)  # Store length in a0 register
+            elif svc == 0x2:  # Read integer
+                try:
+                    value = int(input("Enter an integer: "))
+                    self.regs[6] = value  # Store in a0 register
+                except ValueError:
+                    print("Invalid input, expected an integer")
+            elif svc == 0x3:  # Print string
                 addr = self.regs[6]  # a0 register
                 string = ""
                 while addr < len(self.memory) and self.memory[addr] != 0:
                     string += chr(self.memory[addr])
                     addr += 1
-                print(string)
-            elif svc == 0x3FF:  # Terminate
+                print("Print: " + string)
+            elif svc == 0x4:  # Play tone
+                frequency = self.regs[6]  # a0 register
+                duration_ms = self.regs[7]  # a1 register
+                print(f"Playing tone at {frequency}Hz for {duration_ms}ms")
+            elif svc == 0x5:  # Set audio volume
+                volume = self.regs[6]  # a0 register
+                if 0 <= volume <= 255:
+                    print(f"Setting audio volume to {volume}")
+                else:
+                    print("Volume must be between 0 and 255")
+            elif svc == 0x6:  # Stop audio playback
+                print("Audio playback stopped")
+            elif svc == 0x7:  # Read keyboard
+                key = keyboard.on_press(self.keyboard_press)
+                self.regs[6] = key  # Store key name in a0 register
+                print(f"Key pressed: {key}")
+            elif svc == 0x8:  #  Registers dump
+                print("Register dump:")
+                for i, reg in enumerate(self.regs):
+                    print(f"{self.reg_names[i]}: {reg}")
+            elif svc == 0x9:  # Memory dump
+                start = self.regs[6]  # a0 register
+                end = self.regs[7]  # a1 register
+                print("Memory dump:")
+                for addr in range(start, end + 1):
+                    if addr < len(self.memory):
+                        print(f"0x{addr:04X}: {self.read_memory_byte(addr)}")
+            elif svc == 0xA:  # Terminate
                 print("Program Terminated")
                 return False
         
