@@ -871,12 +871,21 @@
         "return": "None"
       },
       "0x001": {
-        "name": "read_char",
-        "description": "Read a character from user input into a0 register",
-        "parameters": {},
-        "return": "a0: Character read from input"
+        "name": "read_string",
+        "description": "Read string into buffer at a0, up to a1 bytes. Output: a0=string length",
+        "parameters": {
+          "a0": "Address of the string buffer (input/output)",
+          "a1": "Maximum length of string to read (input)"
+        },
+        "return": "a0: String length read"
       },
       "0x002": {
+        "name": "read_integer",
+        "description": "Read an integer from input. Output: a0=the read integer",
+        "parameters": {},
+        "return": "a0: The read integer"
+      },
+      "0x003": {
         "name": "print_string",
         "description": "Print string starting at address in a0 register",
         "parameters": {
@@ -884,7 +893,51 @@
         },
         "return": "None"
       },
-      "0x3FF": {
+      "0x004": {
+        "name": "play_tone",
+        "description": "Play tone with frequency and duration",
+        "parameters": {
+          "a0": "Frequency (Hz)",
+          "a1": "Duration (ms)"
+        },
+        "return": "None"
+      },
+      "0x005": {
+        "name": "set_audio_volume",
+        "description": "Set audio volume (0-255)",
+        "parameters": {
+          "a0": "Volume (0-255)"
+        },
+        "return": "None"
+      },
+      "0x006": {
+        "name": "stop_audio_playback",
+        "description": "Stop audio playback",
+        "parameters": {},
+        "return": "None"
+      },
+      "0x007": {
+        "name": "read_keyboard",
+        "description": "Read the keyboard: a0=key code, a1=1 if key pressed, 0 if not",
+        "parameters": {},
+        "return": "a0: Key code, a1: 1 if key pressed, 0 if not"
+      },
+      "0x008": {
+        "name": "registers_dump",
+        "description": "Prints the values of all registers",
+        "parameters": {},
+        "return": "None"
+      },
+      "0x009": {
+        "name": "memory_dump",
+        "description": "Prints the content of memory from address in a0 for number of bytes in a1",
+        "parameters": {
+          "a0": "Start address",
+          "a1": "Number of bytes"
+        },
+        "return": "None"
+      },
+      "0x00A": {
         "name": "exit",
         "description": "Exit program with code in a0 register",
         "parameters": {
