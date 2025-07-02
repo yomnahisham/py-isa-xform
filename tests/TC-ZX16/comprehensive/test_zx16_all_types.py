@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+
+import sys
+sys.path.append('../../../src')
+from isa_xform.core.isa_loader import ISALoader
+from isa_xform.core.assembler import Assembler
+from isa_xform.core.disassembler import Disassembler
+from isa_xform.core.parser import Parser
+
+def test_zx16_all_types():
+    """Test all ZX16 instruction types"""
+    loader = ISALoader()
+    isa = loader.load_isa('zx16')
+    program = '''
+.org 0x100
+LI a0, 42
+ADD a0, a1
+SUB a0, a1
+SLT a0, a1
+SLTU a0, a1
+SLL a0, a1
+SRL a0, a1
+SRA a0, a1
+OR a0, a1
+AND a0, a1
+XOR a0, a1
+MV a0, a1
+LW a0
+SW a1
+ADDI a0, 7
+SLTI a0, 8
+ANDI a0, 9
+ORI a0, 10
+XORI a0, 11
+SLLI a0, 2
+SRLI a0, 3
+SRAI a0, 4
+LUI a0, 5
+AUIPC a1, 6
+JAL a0, 0x120
+J 0x122
+BEQ a0, a1, 0x124
+BNE a0, a1, 0x126
+JR a1
+ECALL 0x1F
+'''
+    parser = Parser(isa)
+    nodes = parser.parse(program)
+    assembler = Assembler(isa)
+    result = assembler.assemble(nodes)
+    disassembler = Disassembler(isa)
+    dis_result = disassembler.disassemble(result.machine_code, 0x100)
+    print(disassembler.format_disassembly(dis_result, include_addresses=False))
+
+if __name__ == '__main__':
+    test_zx16_all_types() 

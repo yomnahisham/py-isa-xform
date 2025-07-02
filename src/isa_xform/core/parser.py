@@ -285,8 +285,14 @@ class Parser:
         
         for reg_list in self.isa_definition.registers.values():
             for reg in reg_list:
+                # Check main name
                 if hasattr(reg, 'name') and reg.name.upper() == name.upper():
                     return True
+                # Check aliases
+                if hasattr(reg, 'alias') and reg.alias:
+                    for alias in reg.alias:
+                        if alias.upper() == name.upper():
+                            return True
         return False
     
     def _is_instruction(self, name: str) -> bool:
