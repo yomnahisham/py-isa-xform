@@ -884,6 +884,14 @@
         },
         "return": "None"
       },
+      "0x003": {
+        "name": "print_decimal",
+        "description": "Print decimal number from a0 register",
+        "parameters": {
+          "a0": "Number to print as decimal"
+        },
+        "return": "None"
+      },
       "0x3FF": {
         "name": "exit",
         "description": "Exit program with code in a0 register",
