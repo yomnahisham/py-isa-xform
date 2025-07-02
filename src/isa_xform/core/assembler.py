@@ -191,8 +191,10 @@ class Assembler:
             for n in expanded_nodes:
                 code.extend(self._assemble_instruction(n))
             return code
+        # --- FIX: Capture the address of this instruction before encoding ---
+        instruction_address = int(self.context.current_address)
         # Encode the instruction based on its format
-        encoded = self._encode_instruction(instruction, node.operands)
+        encoded = self._encode_instruction(instruction, node.operands, instruction_address)
         
         # Convert to bytes using bit utilities
         endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
@@ -204,19 +206,19 @@ class Assembler:
         
         return bytearray(instruction_bytes)
     
-    def _encode_instruction(self, instruction: Instruction, operands: List[OperandNode]) -> int:
+    def _encode_instruction(self, instruction: Instruction, operands: List[OperandNode], instruction_address: int = 0) -> int:
         """Encode instruction with operands using only the ISA definition's encoding.fields"""
         encoding = instruction.encoding
         instruction_word = 0
 
         if isinstance(encoding, dict) and "fields" in encoding:
             # Use field-based encoding from ISA definition
-            instruction_word = self._encode_with_fields(encoding["fields"], operands, instruction)
+            instruction_word = self._encode_with_fields(encoding["fields"], operands, instruction, instruction_address)
         else:
             raise AssemblerError(f"Instruction '{instruction.mnemonic}' is missing 'encoding.fields' in the ISA definition. Modular encoding requires explicit field definitions.")
         return instruction_word
 
-    def _encode_with_fields(self, fields: List[Dict[str, Any]], operands: List[OperandNode], instruction: Instruction) -> int:
+    def _encode_with_fields(self, fields: List[Dict[str, Any]], operands: List[OperandNode], instruction: 'Instruction', instruction_address: int = 0) -> int:
         """Encode instruction using field-based encoding"""
         # Map operands to fields
         operand_mapping = self._map_operands_to_fields_modular(fields, operands, instruction)
@@ -237,8 +239,8 @@ class Assembler:
                 field_type = field.get("type", "immediate")
                 bit_width = self._get_bit_width(bits)
                 signed = field.get("signed", False)
-                
-                field_value = self._resolve_operand_value(operand, field_type, bit_width, signed)
+                # Pass field and instruction for modular offset calculation
+                field_value = self._resolve_operand_value(operand, field_type, bit_width, signed, instruction_address, field or {}, instruction)
             else:
                 # Field not provided - use default value
                 field_value = 0
@@ -270,28 +272,39 @@ class Assembler:
         for i, operand_node in enumerate(operands):
             if i < len(syntax_operands):
                 operand_name = syntax_operands[i]
-                # Find the field with this name
+                # Find the field with this name, or allow offset->imm mapping
                 for field in operand_fields:
-                    if field["name"] == operand_name:
-                        mapping[field["name"]] = operand_node
+                    field_name = field["name"]
+                    if field_name == operand_name or (operand_name == "offset" and field_name == "imm"):
+                        mapping[field_name] = operand_node
                         break
         return mapping
     
-    def _resolve_operand_value(self, operand: OperandNode, field_type: str, bit_width: int, signed: bool = False) -> int:
+    def _resolve_operand_value(self, operand: OperandNode, field_type: str, bit_width: int, signed: bool = False, instruction_address: int = 0, field: dict = {}, instruction: Optional['Instruction'] = None) -> int:
         """Resolve operand value based on field type"""
         if field_type == "register":
             return self._resolve_register_operand(operand)
         elif field_type == "immediate":
             # Check if this is actually a label (for branch/jump instructions)
             if operand.type == "label":
-                # For branch instructions, calculate relative offset from current instruction
+                # Modular offset calculation: get offset_base from field or encoding
+                offset_base = None
+                if field and "offset_base" in field:
+                    offset_base = field["offset_base"]
+                elif instruction and hasattr(instruction, "encoding") and isinstance(instruction.encoding, dict):
+                    offset_base = instruction.encoding.get("offset_base", "current")
+                else:
+                    offset_base = "current"
                 target_address = self._resolve_address_operand(operand)
-                current_address = self.context.current_address
-                offset = target_address - current_address
-                
-                # For branch instructions, the offset is relative to the instruction address
-                # For jump instructions, the offset is relative to the instruction address
-                # Both use PC-relative addressing
+                if offset_base == "current":
+                    offset = target_address - instruction_address
+                elif offset_base == "next":
+                    offset = target_address - (instruction_address + self.instruction_size_bytes)
+                elif isinstance(offset_base, int):
+                    offset = target_address - (instruction_address + offset_base)
+                else:
+                    # fallback to current
+                    offset = target_address - instruction_address
                 return offset
             else:
                 # Treat as literal immediate value

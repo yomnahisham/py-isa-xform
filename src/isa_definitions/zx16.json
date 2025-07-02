@@ -417,7 +417,8 @@
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "000"},
             {"name": "opcode", "bits": "2:0", "value": "010"}
-          ]
+          ],
+          "offset_base": "current"
         }
       },
       {
@@ -434,7 +435,8 @@
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "001"},
             {"name": "opcode", "bits": "2:0", "value": "010"}
-          ]
+          ],
+          "offset_base": "current"
         }
       },
       {
@@ -451,7 +453,8 @@
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "010"},
             {"name": "opcode", "bits": "2:0", "value": "010"}
-          ]
+          ],
+          "offset_base": "current"
         }
       },
       {
@@ -468,7 +471,8 @@
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "011"},
             {"name": "opcode", "bits": "2:0", "value": "010"}
-          ]
+          ],
+          "offset_base": "current"
         }
       },
       {
@@ -485,7 +489,8 @@
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "100"},
             {"name": "opcode", "bits": "2:0", "value": "010"}
-          ]
+          ],
+          "offset_base": "current"
         }
       },
       {
@@ -502,7 +507,8 @@
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "101"},
             {"name": "opcode", "bits": "2:0", "value": "010"}
-          ]
+          ],
+          "offset_base": "current"
         }
       },
       {
@@ -519,7 +525,8 @@
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "110"},
             {"name": "opcode", "bits": "2:0", "value": "010"}
-          ]
+          ],
+          "offset_base": "current"
         }
       },
       {
@@ -527,7 +534,7 @@
         "format": "B-type",
         "description": "Branch if greater or equal (unsigned)",
         "syntax": "BGEU rs1, rs2, offset",
-        "semantics": "if unsigned rs1 >= unsigned rs2: PC = PC + offset",
+        "semantics": "if unsigned rs1 >= rs2: PC = PC + offset",
         "implementation": "# Branch if greater or equal (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val >= rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -536,7 +543,8 @@
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "111"},
             {"name": "opcode", "bits": "2:0", "value": "010"}
-          ]
+          ],
+          "offset_base": "current"
         }
       },
       {
