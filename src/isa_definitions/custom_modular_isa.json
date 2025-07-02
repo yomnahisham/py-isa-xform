@@ -1,0 +1,63 @@
+{
+  "name": "CustomModularISA",
+  "version": "1.0",
+  "description": "A custom modular ISA for testing custom instructions and directives.",
+  "instruction_size": 16,
+  "word_size": 16,
+  "endianness": "little",
+  "address_space": {"size": 1024, "default_code_start": 0},
+  "registers": {
+    "general_purpose": [
+      {"name": "r0", "size": 16, "alias": ["zero"]},
+      {"name": "r1", "size": 16, "alias": ["one"]},
+      {"name": "r2", "size": 16, "alias": ["two"]},
+      {"name": "r3", "size": 16, "alias": ["three"]}
+    ]
+  },
+  "assembly_syntax": {
+    "register_prefix": "",
+    "immediate_prefix": "#",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "case_sensitive": false
+  },
+  "instructions": [
+    {
+      "mnemonic": "CUSTADD",
+      "format": "R-type",
+      "syntax": "CUSTADD rd, rs2",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "1010"},
+          {"name": "rs2", "bits": "11:10", "type": "register"},
+          {"name": "rd", "bits": "9:8", "type": "register"},
+          {"name": "unused", "bits": "7:0", "value": "00000000"}
+        ]
+      },
+      "description": "Custom add: rd = rd + rs2",
+      "semantics": "rd = rd + rs2",
+      "implementation": "# Custom add implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val + rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)"
+    },
+    {
+      "mnemonic": "CUSTIMM",
+      "format": "I-type",
+      "syntax": "CUSTIMM rd, imm",
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "15:12", "value": "1011"},
+          {"name": "rd", "bits": "11:10", "type": "register"},
+          {"name": "imm", "bits": "9:0", "type": "immediate", "signed": true}
+        ]
+      },
+      "description": "Custom immediate: rd = imm",
+      "semantics": "rd = imm",
+      "implementation": "# Custom immediate implementation\nwrite_register(operands['rd'], operands['imm'])"
+    }
+  ],
+  "directives": {
+    ".customdata": {
+      "action": "allocate_bytes",
+      "implementation": "def customdata(ctx, node):\n    # Each argument is a 16-bit word\n    data = bytearray()\n    for arg in node.arguments:\n        value = int(arg)\n        data.extend(value.to_bytes(2, 'little'))\n    return data\n"
+    }
+  }
+} 

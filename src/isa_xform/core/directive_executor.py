@@ -34,7 +34,7 @@ class DirectiveExecutor:
                 'issubclass': issubclass, 'iter': iter, 'len': len, 'list': list, 'map': map, 'max': max, 'min': min,
                 'next': next, 'oct': oct, 'ord': ord, 'pow': pow, 'print': print, 'range': range, 'repr': repr,
                 'reversed': reversed, 'round': round, 'set': set, 'slice': slice, 'sorted': sorted, 'str': str,
-                'sum': sum, 'tuple': tuple, 'type': type, 'zip': zip, 'bytes': bytes,
+                'sum': sum, 'tuple': tuple, 'type': type, 'zip': zip, 'bytes': bytes, 'bytearray': bytearray,
             }
         }
     def compile_implementation(self, name: str, implementation_code: str) -> bool:

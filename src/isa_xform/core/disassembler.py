@@ -152,7 +152,9 @@ class Disassembler:
         # Process the machine code in instruction-sized chunks
         i = 0
         consecutive_nops = 0
+        consecutive_invalid = 0
         in_data_section = False
+        last_instruction_was_return = False
         
         while i < len(machine_code):
             if i + self.instruction_size_bytes > len(machine_code):
@@ -167,7 +169,8 @@ class Disassembler:
             # Check if this looks like padding (all zeros)
             if all(b == 0 for b in instr_bytes):
                 consecutive_nops += 1
-                if consecutive_nops >= self.max_consecutive_nops and not in_data_section:
+                # Only switch to data mode after many consecutive NOPs (more conservative)
+                if consecutive_nops >= self.max_consecutive_nops * 3 and not in_data_section:
                     # Switch to data mode for large blocks of zeros
                     in_data_section = True
                     data_start = current_address - (consecutive_nops - 1) * self.instruction_size_bytes
@@ -185,7 +188,6 @@ class Disassembler:
             else:
                 # Reset consecutive NOP counter
                 consecutive_nops = 0
-                in_data_section = False
                 
                 # Decode the instruction
                 try:
@@ -195,12 +197,77 @@ class Disassembler:
                     decoded = self._disassemble_instruction(instr_word, instr_bytes, current_address)
                     if decoded:
                         instructions.append(decoded)
+                        consecutive_invalid = 0  # Reset invalid counter on successful decode
+                        in_data_section = False  # Reset data section flag
+                        
+                        # Check if this is a return instruction (JR, RET, etc.)
+                        if decoded.mnemonic in ['JR', 'RET', 'JALR'] and 'ra' in decoded.operands:
+                            last_instruction_was_return = True
+                        else:
+                            last_instruction_was_return = False
                     else:
-                        # Unknown instruction, treat as data
-                        data_sections[current_address] = instr_bytes
+                        # Unknown instruction - check if we should switch to data mode
+                        consecutive_invalid += 1
+                        
+                        # Switch to data mode if:
+                        # 1. We just had a return instruction, OR
+                        # 2. We have multiple consecutive invalid instructions
+                        should_switch_to_data = (
+                            last_instruction_was_return or 
+                            consecutive_invalid >= 1
+                        )
+                        
+                        if should_switch_to_data and not in_data_section:
+                            # Switch to data mode
+                            in_data_section = True
+                            # Add the current word to data section
+                            if current_address not in data_sections:
+                                data_sections[current_address] = bytearray()
+                            data_sections[current_address].extend(instr_bytes)
+                        elif not in_data_section:
+                            # Still try to decode as instruction, but mark as unknown
+                            instructions.append(DisassembledInstruction(
+                                address=current_address,
+                                machine_code=instr_bytes,
+                                mnemonic="UNKNOWN",
+                                operands=[],
+                                comment=f"0x{instr_word:04X}"
+                            ))
+                        else:
+                            # Already in data mode, add to data section
+                            if current_address not in data_sections:
+                                data_sections[current_address] = bytearray()
+                            data_sections[current_address].extend(instr_bytes)
                 except Exception as e:
-                    # Decoding failed, treat as data
-                    data_sections[current_address] = instr_bytes
+                    # Decoding failed - be very conservative
+                    consecutive_invalid += 1
+                    
+                    # Switch to data mode if we just had a return instruction
+                    should_switch_to_data = (
+                        last_instruction_was_return or 
+                        consecutive_invalid >= 1
+                    )
+                    
+                    if should_switch_to_data and not in_data_section:
+                        # Switch to data mode
+                        in_data_section = True
+                        if current_address not in data_sections:
+                            data_sections[current_address] = bytearray()
+                        data_sections[current_address].extend(instr_bytes)
+                    elif not in_data_section:
+                        # Still try to treat as instruction
+                        instructions.append(DisassembledInstruction(
+                            address=current_address,
+                            machine_code=instr_bytes,
+                            mnemonic="INVALID",
+                            operands=[],
+                            comment=f"Decode error: {e}"
+                        ))
+                    else:
+                        # Already in data mode, add to data section
+                        if current_address not in data_sections:
+                            data_sections[current_address] = bytearray()
+                        data_sections[current_address].extend(instr_bytes)
             
             i += self.instruction_size_bytes
             current_address += self.instruction_size_bytes
@@ -274,7 +341,8 @@ class Disassembler:
                 if field.get("signed", False) and (value & (1 << (bit_width - 1))):
                     value = sign_extend(value, bit_width)
                 
-                field_values[field.get("name", "")] = value
+                field_name = field.get("name", "")
+                field_values[field_name] = value
             except ValueError:
                 # Skip invalid bit ranges
                 continue
@@ -291,49 +359,30 @@ class Disassembler:
         )
     
     def _decode_simple_instruction(self, instr_word: int, instr_bytes: bytes, address: int, instruction: Instruction) -> DisassembledInstruction:
-        """Decode instruction using simple format"""
-        operands = []
-        
-        # Get ISA assembly syntax configuration
-        assembly_syntax = getattr(self.isa_definition, 'assembly_syntax', None)
-        if assembly_syntax:
-            register_prefix = getattr(assembly_syntax, 'register_prefix', '')
-            immediate_prefix = getattr(assembly_syntax, 'immediate_prefix', '')
-        else:
-            register_prefix = ''
-            immediate_prefix = ''
-        
-        # Create field definitions from instruction format for decoding
+        """Decode instruction using simple field-based approach"""
+        # Create fields from instruction format
         fields = self._create_fields_from_format(instruction)
-        field_values = {}
         
-        # Extract field values using the same field definitions
+        # Extract field values
+        field_values = {}
         for field in fields:
-            field_name = field.get("name", "")
-            bits = field.get("bits", "")
-            field_type = field.get("type", "")
+            field_name = field["name"]
+            bits = field["bits"]
             
             try:
                 high, low = parse_bit_range(bits)
-                bit_width = high - low + 1
-                value = extract_bits(instr_word, high, low)
-                
-                # Handle signed immediates
-                if field.get("signed", False) and (value & (1 << (bit_width - 1))):
-                    value = sign_extend(value, bit_width)
-                
-                field_values[field_name] = value
+                field_value = extract_bits(instr_word, high, low)
+                field_values[field_name] = field_value
             except ValueError:
-                # Skip invalid bit ranges
                 continue
         
-        # Format operands based on instruction syntax
+        # Format operands
         operands = self._format_operands(instruction, field_values)
         
         return DisassembledInstruction(
             address=address,
             machine_code=instr_bytes,
-            mnemonic=instruction.mnemonic.upper(),
+            mnemonic=instruction.mnemonic,
             operands=operands,
             instruction=instruction
         )
@@ -412,37 +461,41 @@ class Disassembler:
         register_prefix = getattr(assembly_syntax, 'register_prefix', '') if assembly_syntax else ''
         immediate_prefix = getattr(assembly_syntax, 'immediate_prefix', '') if assembly_syntax else ''
 
-        # Try to get operand order from the syntax string (e.g., 'ADD rd, rs2')
-        syntax_order = []
+        # Get operand names from syntax string (e.g., 'LI rd, imm')
+        syntax_operands = []
         if hasattr(instruction, 'syntax') and instruction.syntax:
-            # Extract operand names from syntax string
-            # e.g., 'ADD rd, rs2' -> ['rd', 'rs2']
             parts = instruction.syntax.split()
             if len(parts) > 1:
                 operand_part = ' '.join(parts[1:])
-                operand_names = [op.strip() for op in operand_part.split(',')]
-                syntax_order = [op for op in operand_names if op in field_values]
-        
-        # Fallback: use encoding field order
-        if not syntax_order:
-            encoding = getattr(instruction, 'encoding', None)
-            if encoding and isinstance(encoding, dict) and 'fields' in encoding:
-                for field in encoding['fields']:
-                    if 'type' in field and field['type'] not in ('fixed', 'funct', 'unused'):
-                        if field['name'] in field_values:
-                            syntax_order.append(field['name'])
-        # Fallback: use field_values order
-        if not syntax_order:
-            syntax_order = [k for k in field_values.keys() if k not in ('opcode', 'funct', 'unused')]
+                syntax_operands = [op.strip() for op in operand_part.split(',')]
 
-        for field_name in syntax_order:
+        # Map syntax operand names to field values
+        for syntax_op in syntax_operands:
+            field_name = syntax_op
+            # Special case: map 'offset' to 'imm' for branch instructions
+            if field_name == 'offset' and 'imm' in field_values:
+                field_name = 'imm'
             if field_name not in field_values:
-                continue
+                # Try to map aliases (e.g., key->imm, etc.)
+                if field_name == 'imm' and 'immediate' in field_values:
+                    field_name = 'immediate'
+                elif field_name == 'immediate' and 'imm' in field_values:
+                    field_name = 'imm'
+                elif field_name == 'key' and 'imm' in field_values:
+                    field_name = 'imm'
+                elif field_name == 'imm' and 'key' in field_values:
+                    field_name = 'key'
+                elif field_name == 'rd' and 'rs1' in field_values and 'rd' not in field_values:
+                    field_name = 'rs1'
+                elif field_name == 'rs1' and 'rd' in field_values and 'rs1' not in field_values:
+                    field_name = 'rd'
+                else:
+                    continue
             value = field_values[field_name]
             # Format based on type
             if field_name.startswith('r') or field_name in ('rd', 'rs1', 'rs2'):
                 operands.append(self._format_register(value, register_prefix))
-            elif field_name in ('immediate', 'imm', 'offset', 'svc'):
+            elif field_name in ('immediate', 'imm', 'offset', 'key', 'svc'):
                 if value > 255 or value < -255:
                     operands.append(f"{immediate_prefix}0x{value:X}")
                 else:
@@ -550,6 +603,48 @@ class Disassembler:
             lines.append("")
             lines.append("; Data sections:")
             for addr, data in sorted(result.data_sections.items()):
-                lines.append(f"    {addr:04X}: {' '.join(f'{b:02X}' for b in data)}")
+                # Process data in chunks, trying to detect ASCII strings
+                i = 0
+                while i < len(data):
+                    # Try to find ASCII string (4+ printable characters)
+                    ascii_start = i
+                    ascii_length = 0
+                    while (i + ascii_length < len(data) and 
+                           ascii_length < 64 and  # Limit string length
+                           data[i + ascii_length] >= 32 and 
+                           data[i + ascii_length] <= 126):
+                        ascii_length += 1
+                    
+                    if ascii_length >= 4:
+                        # Found ASCII string
+                        ascii_data = data[ascii_start:ascii_start + ascii_length]
+                        ascii_str = ascii_data.decode('ascii', errors='replace')
+                        if include_addresses:
+                            lines.append(f"    {addr + ascii_start:04X}: .ascii \"{ascii_str}\"")
+                        else:
+                            lines.append(f"    .ascii \"{ascii_str}\"")
+                        i += ascii_length
+                    else:
+                        # Not ASCII, check if we can output as word
+                        word_size = self.isa_definition.word_size // 8
+                        if i + word_size <= len(data):
+                            # Output as word
+                            chunk = data[i:i+word_size]
+                            endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+                            value = int.from_bytes(chunk, endianness)
+                            if include_addresses:
+                                lines.append(f"    {addr + i:04X}: .word 0x{value:04X}")
+                            else:
+                                lines.append(f"    .word 0x{value:04X}")
+                            i += word_size
+                        else:
+                            # Output remaining bytes
+                            chunk = data[i:]
+                            hex_bytes = ', '.join(f'0x{b:02X}' for b in chunk)
+                            if include_addresses:
+                                lines.append(f"    {addr + i:04X}: .byte {hex_bytes}")
+                            else:
+                                lines.append(f"    .byte {hex_bytes}")
+                            i += len(chunk)
         
         return "\n".join(lines) 

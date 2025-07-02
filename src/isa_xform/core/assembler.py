@@ -51,6 +51,9 @@ class Assembler:
         
         # Build directive handlers
         self._build_directive_handlers()
+        
+        # Compile custom directive implementations
+        self._compile_directive_implementations()
     
     def _build_instruction_lookup(self):
         """Build fast instruction lookup tables"""
@@ -76,6 +79,11 @@ class Assembler:
             '.equ': self._handle_equ_directive,
             '.align': self._handle_align_directive
         }
+    
+    def _compile_directive_implementations(self):
+        """Compile custom directive implementations from ISA definition"""
+        from .directive_executor import compile_directive_implementations
+        compile_directive_implementations(self.isa_definition)
     
     def assemble(self, nodes: List[ASTNode], two_pass: bool = True) -> AssembledCode:
         """
@@ -197,207 +205,76 @@ class Assembler:
         return bytearray(instruction_bytes)
     
     def _encode_instruction(self, instruction: Instruction, operands: List[OperandNode]) -> int:
-        """Encode instruction with operands"""
+        """Encode instruction with operands using only the ISA definition's encoding.fields"""
         encoding = instruction.encoding
         instruction_word = 0
-        
+
         if isinstance(encoding, dict) and "fields" in encoding:
-            # Modern field-based encoding
-            instruction_word = self._encode_with_fields(encoding["fields"], operands)
+            # Use field-based encoding from ISA definition
+            instruction_word = self._encode_with_fields(encoding["fields"], operands, instruction)
         else:
-            # Create field-based encoding from instruction format if no fields defined
-            fields = self._create_fields_from_format(instruction, operands)
-            instruction_word = self._encode_with_fields(fields, operands)
-        
+            raise AssemblerError(f"Instruction '{instruction.mnemonic}' is missing 'encoding.fields' in the ISA definition. Modular encoding requires explicit field definitions.")
         return instruction_word
-    
-    def _create_fields_from_format(self, instruction: Instruction, operands: List[OperandNode]) -> List[Dict[str, Any]]:
-        """Create field definitions from instruction format when not explicitly defined"""
-        fields = []
-        instruction_size = self.isa_definition.instruction_size
+
+    def _encode_with_fields(self, fields: List[Dict[str, Any]], operands: List[OperandNode], instruction: Instruction) -> int:
+        """Encode instruction using field-based encoding"""
+        # Map operands to fields
+        operand_mapping = self._map_operands_to_fields_modular(fields, operands, instruction)
         
-        # Try to extract opcode from instruction
-        opcode = 0
-        if hasattr(instruction, 'opcode') and instruction.opcode:
-            try:
-                opcode = int(instruction.opcode, 2)
-            except ValueError:
-                opcode = 0
-        
-        # Create fields based on instruction format
-        if instruction.format == "R-type":
-            # R-type: opcode | rd | rs1 | rs2
-            if instruction_size == 16:
-                fields = [
-                    {"name": "opcode", "bits": "15:12", "value": opcode},
-                    {"name": "rd", "bits": "11:8", "type": "register"},
-                    {"name": "rs1", "bits": "7:4", "type": "register"},
-                    {"name": "rs2", "bits": "3:0", "type": "register"}
-                ]
-            else:  # 32-bit
-                fields = [
-                    {"name": "opcode", "bits": "31:26", "value": opcode},
-                    {"name": "rd", "bits": "25:21", "type": "register"},
-                    {"name": "rs1", "bits": "20:16", "type": "register"},
-                    {"name": "rs2", "bits": "15:11", "type": "register"},
-                    {"name": "funct", "bits": "10:0", "value": 0}
-                ]
-        elif instruction.format == "I-type":
-            # I-type: opcode | rd | rs1 | immediate
-            if instruction_size == 16:
-                fields = [
-                    {"name": "opcode", "bits": "15:12", "value": opcode},
-                    {"name": "rd", "bits": "11:8", "type": "register"},
-                    {"name": "rs1", "bits": "7:4", "type": "register"},
-                    {"name": "immediate", "bits": "3:0", "type": "immediate", "signed": True}
-                ]
-            else:  # 32-bit
-                fields = [
-                    {"name": "opcode", "bits": "31:26", "value": opcode},
-                    {"name": "rd", "bits": "25:21", "type": "register"},
-                    {"name": "rs1", "bits": "20:16", "type": "register"},
-                    {"name": "immediate", "bits": "15:0", "type": "immediate", "signed": True}
-                ]
-        elif instruction.format == "J-type":
-            # J-type: opcode | address
-            if instruction_size == 16:
-                fields = [
-                    {"name": "opcode", "bits": "15:12", "value": opcode},
-                    {"name": "address", "bits": "11:0", "type": "address"}
-                ]
-            else:  # 32-bit
-                fields = [
-                    {"name": "opcode", "bits": "31:26", "value": opcode},
-                    {"name": "address", "bits": "25:0", "type": "address"}
-                ]
-        else:
-            # Unknown format - create a simple field structure
-            fields = [
-                {"name": "opcode", "bits": f"{instruction_size-1}:0", "value": opcode}
-            ]
-        
-        return fields
-    
-    def _encode_with_fields(self, fields: List[Dict[str, Any]], operands: List[OperandNode]) -> int:
-        """Encode instruction using field definitions"""
+        # Build the instruction word
         instruction_word = 0
         
-        # Map operands to fields based on instruction syntax and field names
-        field_values = {}
-        operand_mapping = self._map_operands_to_fields(fields, operands)
-        
         for field in fields:
-            field_name = field.get("name", "")
-            bits = field.get("bits", "")
-            field_type = field.get("type", "")
+            field_name = field["name"]
+            bits = field["bits"]
             
-            try:
-                # Parse bit range using bit utilities
-                high, low = parse_bit_range(bits)
-                bit_width = high - low + 1
+            if "value" in field:
+                # Fixed value field
+                field_value = int(field["value"], 2) if isinstance(field["value"], str) else field["value"]
+            elif field_name in operand_mapping:
+                # Operand field
+                operand = operand_mapping[field_name]
+                field_type = field.get("type", "immediate")
+                bit_width = self._get_bit_width(bits)
+                signed = field.get("signed", False)
                 
-                # Get field value
-                if "value" in field:
-                    # Fixed value field (like opcode)
-                    value = field["value"]
-                    if isinstance(value, str):
-                        field_value = int(value, 2) if value else 0
-                    else:
-                        field_value = int(value)
-                    field_values[field_name] = field_value
-                else:
-                    # Variable field (operand) - get from mapping
-                    if field_name in operand_mapping:
-                        operand = operand_mapping[field_name]
-                        field_value = self._resolve_operand_value(operand, field_type, bit_width, field.get("signed", False))
-                        field_values[field_name] = field_value
-                    else:
-                        field_values[field_name] = 0
-                
-                # Set bits using bit utilities
-                instruction_word = set_bits(instruction_word, high, low, field_values[field_name])
-            except ValueError:
-                # Skip invalid bit ranges
-                continue
+                field_value = self._resolve_operand_value(operand, field_type, bit_width, signed)
+            else:
+                # Field not provided - use default value
+                field_value = 0
+            
+            # Insert field value into instruction word
+            instruction_word = self._insert_field(instruction_word, bits, field_value)
         
         return instruction_word
-    
-    def _map_operands_to_fields(self, fields: List[Dict[str, Any]], operands: List[OperandNode]) -> Dict[str, OperandNode]:
-        """Map operands to field names based on instruction syntax"""
+
+    def _map_operands_to_fields_modular(self, fields: List[Dict[str, Any]], operands: List[OperandNode], instruction: Instruction) -> Dict[str, OperandNode]:
+        """Map operands to field names based on the order in the instruction's syntax field"""
         mapping = {}
-        
-        # Get field names that expect operands
+
+        # Parse operand names from the syntax string
+        syntax_operands = []
+        if hasattr(instruction, 'syntax') and instruction.syntax:
+            # Extract operand names from syntax, e.g., 'ADD rd, rs2' -> ['rd', 'rs2']
+            syntax_str = instruction.syntax
+            # Remove mnemonic and split by commas
+            parts = syntax_str.split(None, 1)
+            if len(parts) > 1:
+                operand_str = parts[1]
+                syntax_operands = [s.strip() for s in operand_str.split(',')]
+
+        # Get operand fields (fields that expect operands, not fixed values)
         operand_fields = [f for f in fields if "type" in f and f.get("name") != "opcode"]
-        
-        # For memory instructions, we need to map operands to specific fields
-        # based on the instruction syntax and field names
-        if len(operands) == 2 and any(op.type == "mem" for op in operands):
-            # This is likely a memory instruction like ST or LD
-            for field in operand_fields:
-                field_name = field.get("name", "")
-                field_type = field.get("type", "")
-                
-                if field_name == "rd" and len(operands) > 0:
-                    # First operand is the register (for LD)
-                    mapping[field_name] = operands[0]
-                elif field_name == "rs2" and len(operands) > 0:
-                    # First operand is the value to store (for ST)
-                    mapping[field_name] = operands[0]
-                elif field_name in ["rs1", "offset"] and len(operands) > 1:
-                    # Second operand is the memory operand
-                    mem_operand = operands[1]
-                    if mem_operand.type == "mem":
-                        offset_node, reg_node = mem_operand.value
-                        if field_name == "rs1":
-                            mapping[field_name] = reg_node
-                        elif field_name == "offset":
-                            mapping[field_name] = offset_node
-        else:
-            # Handle different instruction formats
-            # Check if this is a B-type instruction (3 operands: rs1, rs2, offset)
-            if len(operands) == 3 and any(f.get("name") == "imm" for f in operand_fields):
-                # B-type instruction: BEQ rs1, rs2, offset
+
+        # Map operands to fields by syntax order
+        for i, operand_node in enumerate(operands):
+            if i < len(syntax_operands):
+                operand_name = syntax_operands[i]
+                # Find the field with this name
                 for field in operand_fields:
-                    field_name = field.get("name", "")
-                    if field_name == "rs1" and len(operands) > 0:
-                        mapping[field_name] = operands[0]  # First operand
-                    elif field_name == "rs2" and len(operands) > 1:
-                        mapping[field_name] = operands[1]  # Second operand
-                    elif field_name == "imm" and len(operands) > 2:
-                        mapping[field_name] = operands[2]  # Third operand
-            else:
-                # Handle ZX16 two-operand format: rd = rd op rs2
-                # For R-type instructions: ADD rd, rs2 -> rd = rd + rs2
-                # For I-type instructions: ADDI rd, imm -> rd = rd + imm
-                
-                # Map operands based on field names and instruction format
-                for field in operand_fields:
-                    field_name = field.get("name", "")
-                    field_type = field.get("type", "")
-                    
-                    if field_name == "rd" and len(operands) > 0:
-                        # First operand is destination register
-                        mapping[field_name] = operands[0]
-                    elif field_name == "rs1" and len(operands) > 0:
-                        # For ZX16, rs1 is the same as rd (two-operand format)
-                        # Use the same operand as rd
-                        if "rd" in mapping:
-                            mapping[field_name] = mapping["rd"]
-                        else:
-                            mapping[field_name] = operands[0]
-                    elif field_name == "rs2" and len(operands) > 1:
-                        # Second operand is source register
-                        mapping[field_name] = operands[1]
-                    elif field_name in ["imm", "offset"] and len(operands) > 1:
-                        # Second operand is immediate or offset
-                        mapping[field_name] = operands[1]
-                    elif field_name in ["imm2", "svc"] and len(operands) > 2:
-                        # Additional immediate fields (third operand)
-                        mapping[field_name] = operands[2]
-                    # Fix: map first operand to 'svc' if that's the only operand
-                    elif field_name == "svc" and len(operands) > 0:
-                        mapping[field_name] = operands[0]
-        
+                    if field["name"] == operand_name:
+                        mapping[field["name"]] = operand_node
+                        break
         return mapping
     
     def _resolve_operand_value(self, operand: OperandNode, field_type: str, bit_width: int, signed: bool = False) -> int:
@@ -465,11 +342,18 @@ class Assembler:
     
     def _resolve_immediate_operand(self, operand: OperandNode) -> int:
         """Resolve immediate operand to integer value"""
-        value_str = operand.value
+        # Handle memory operands (tuples of immediate and register)
+        if isinstance(operand.value, tuple):
+            # This is a memory operand like (offset, register)
+            offset_node, _ = operand.value
+            value_str = offset_node.value
+        else:
+            value_str = operand.value
+            
         syntax = self.isa_definition.assembly_syntax
         
         # Remove immediate prefix if present
-        if value_str.startswith(syntax.immediate_prefix):
+        if isinstance(value_str, str) and value_str.startswith(syntax.immediate_prefix):
             value_str = value_str[len(syntax.immediate_prefix):]
         
         return self._parse_number(value_str)
@@ -868,3 +752,19 @@ class Assembler:
                     else:
                         nodes.append(n)
         return nodes
+
+    def _get_bit_width(self, bits: str) -> int:
+        """Get bit width from bit range string like '15:12'"""
+        try:
+            high, low = parse_bit_range(bits)
+            return high - low + 1
+        except ValueError:
+            return 0
+    
+    def _insert_field(self, instruction_word: int, bits: str, field_value: int) -> int:
+        """Insert field value into instruction word at specified bit positions"""
+        try:
+            high, low = parse_bit_range(bits)
+            return set_bits(instruction_word, high, low, field_value)
+        except ValueError:
+            return instruction_word

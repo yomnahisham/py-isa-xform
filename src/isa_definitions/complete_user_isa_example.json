@@ -1,0 +1,179 @@
+{
+  "name": "UserCompleteISA",
+  "version": "1.0",
+  "description": "A complete user-defined ISA demonstrating custom instructions, standard instructions, and custom directives working together",
+  "instruction_size": 16,
+  "word_size": 16,
+  "endianness": "little",
+  "address_space": {
+    "size": 65536,
+    "default_code_start": 32
+  },
+  "registers": {
+    "general_purpose": [
+      {"name": "r0", "size": 16, "alias": ["zero"], "description": "Always zero"},
+      {"name": "r1", "size": 16, "alias": ["ra"], "description": "Return address"},
+      {"name": "r2", "size": 16, "alias": ["sp"], "description": "Stack pointer"},
+      {"name": "r3", "size": 16, "alias": ["s0"], "description": "Saved/Frame pointer"},
+      {"name": "r4", "size": 16, "alias": ["s1"], "description": "Saved"},
+      {"name": "r5", "size": 16, "alias": ["t1"], "description": "Temporary"},
+      {"name": "r6", "size": 16, "alias": ["a0"], "description": "Argument 0/Return value"},
+      {"name": "r7", "size": 16, "alias": ["a1"], "description": "Argument 1"}
+    ]
+  },
+  "instructions": [
+    {
+      "mnemonic": "ADD",
+      "format": "R-type",
+      "description": "Add registers",
+      "syntax": "ADD rd, rs2",
+      "semantics": "rd = rd + rs2",
+      "implementation": "# Standard ADD instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val + rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0000"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SUB",
+      "format": "R-type",
+      "description": "Subtract registers",
+      "syntax": "SUB rd, rs2",
+      "semantics": "rd = rd - rs2",
+      "implementation": "# Standard SUB instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val - rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0001"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "LI",
+      "format": "I-type",
+      "description": "Load immediate",
+      "syntax": "LI rd, imm",
+      "semantics": "rd = imm",
+      "implementation": "# Load immediate instruction\nimm = operands['imm']\nwrite_register(operands['rd'], imm)\n# Set flags\nset_flag('Z', imm == 0)\nset_flag('N', (imm & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0010"},
+          {"name": "rd", "bits": "11:9", "type": "register"},
+          {"name": "imm", "bits": "8:1", "type": "immediate", "signed": false},
+          {"name": "opcode", "bits": "0:0", "value": "1"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "J",
+      "format": "J-type",
+      "description": "Jump",
+      "syntax": "J offset",
+      "semantics": "PC = PC + offset",
+      "implementation": "# Jump instruction\noffset = operands['offset']\ncontext.pc = (context.pc + offset) & 0xFFFF",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0011"},
+          {"name": "offset", "bits": "11:1", "type": "immediate", "signed": true},
+          {"name": "opcode", "bits": "0:0", "value": "0"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "CUSTOM_MATH",
+      "format": "R-type",
+      "description": "Custom mathematical operation (user-defined)",
+      "syntax": "CUSTOM_MATH rd, rs2",
+      "semantics": "rd = custom_math_function(rd, rs2)",
+      "implementation": "# Custom mathematical instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\n# Custom operation: multiply and add 42\nresult = ((rd_val * rs2_val) + 42) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0100"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "CUSTOM_CRYPTO",
+      "format": "I-type",
+      "description": "Custom cryptographic operation (user-defined)",
+      "syntax": "CUSTOM_CRYPTO rd, key",
+      "semantics": "rd = encrypt(rd, key)",
+      "implementation": "# Custom cryptographic instruction\nrd_val = read_register(operands['rd'])\nkey = operands['key']\n# Custom encryption: XOR with key and rotate\nencrypted = (rd_val ^ key) & 0xFFFF\n# Rotate left by 3 bits\nfor i in range(3):\n    msb = (encrypted & 0x8000) >> 15\n    encrypted = ((encrypted << 1) | msb) & 0xFFFF\nwrite_register(operands['rd'], encrypted)\n# Set flags\nset_flag('Z', encrypted == 0)\nset_flag('N', (encrypted & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0101"},
+          {"name": "rd", "bits": "11:9", "type": "register"},
+          {"name": "key", "bits": "8:1", "type": "immediate", "signed": false},
+          {"name": "opcode", "bits": "0:0", "value": "1"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "CUSTOM_DSP",
+      "format": "R-type",
+      "description": "Custom DSP operation (user-defined)",
+      "syntax": "CUSTOM_DSP rd, rs2",
+      "semantics": "rd = dsp_filter(rd, rs2)",
+      "implementation": "# Custom DSP instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\n# Custom DSP filter: weighted average\nfiltered = ((rd_val * 3 + rs2_val * 1) >> 2) & 0xFFFF\nwrite_register(operands['rd'], filtered)\n# Set flags\nset_flag('Z', filtered == 0)\nset_flag('N', (filtered & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0110"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    }
+  ],
+  "directives": [
+    {
+      "name": ".user_data",
+      "description": "User-defined data directive that creates special data patterns",
+      "action": "custom_user_data",
+      "argument_types": ["number", "number"],
+      "syntax": ".user_data pattern count",
+      "examples": [".user_data 0xAA 8"],
+      "implementation": "# User-defined data directive\n# Creates a special pattern repeated count times\nif len(args) >= 2:\n    pattern = int(args[0], 0) & 0xFF  # Handle hex values\n    count = int(args[1])\n    result = bytearray()\n    for i in range(count):\n        result.append(pattern)\n    # Update current address\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)\nelse:\n    result = bytearray()"
+    },
+    {
+      "name": ".user_checksum",
+      "description": "User-defined checksum directive",
+      "action": "custom_user_checksum",
+      "argument_types": ["string"],
+      "syntax": ".user_checksum label",
+      "examples": [".user_checksum data_start"],
+      "implementation": "# User-defined checksum directive\n# Calculates a custom checksum of data starting at label\nif len(args) >= 1:\n    label = args[0]\n    # Get symbol address\n    symbol = assembler.symbol_table.get_symbol(label)\n    if symbol and symbol.defined:\n        start_addr = symbol.value\n        # Calculate custom checksum (XOR of all bytes)\n        checksum = 0\n        for i in range(16):\n            if start_addr + i < len(memory):\n                checksum ^= memory[start_addr + i]\n        result = bytearray([checksum])\n        context.current_address += len(result)\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)\n    else:\n        result = bytearray([0])\nelse:\n    result = bytearray()"
+    },
+    {
+      "name": ".user_transform",
+      "description": "User-defined data transformation directive",
+      "action": "custom_user_transform",
+      "argument_types": ["number"],
+      "syntax": ".user_transform key",
+      "examples": [".user_transform 0x42"],
+      "implementation": "# User-defined transformation directive\n# Transforms the next 4 bytes with a custom algorithm\nif len(args) >= 1:\n    key_str = args[0]\n    # Handle hex values\n    if key_str.startswith('0x'):\n        key = int(key_str, 16) & 0xFF\n    else:\n        key = int(key_str) & 0xFF\n    # Transform next 4 bytes with custom algorithm\n    transformed = bytearray()\n    for i in range(4):\n        if context.current_address + i < len(memory):\n            # Custom transformation: XOR with key, then add position\n            transformed_byte = (memory[context.current_address + i] ^ key + i) & 0xFF\n            transformed.append(transformed_byte)\n        else:\n            transformed.append(0)\n    result = transformed\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)\nelse:\n    result = bytearray()"
+    }
+  ],
+  "assembly_syntax": {
+    "comment_char": ";",
+    "label_suffix": ":",
+    "register_prefix": "",
+    "immediate_prefix": "#",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "case_sensitive": false
+  }
+} 

@@ -1,0 +1,166 @@
+{
+  "name": "UserCustomISA",
+  "version": "1.0",
+  "description": "A completely custom ISA with user-defined instructions and directives",
+  "instruction_size": 16,
+  "word_size": 16,
+  "endianness": "little",
+  "address_space": {
+    "size": 65536,
+    "default_code_start": 32
+  },
+  "registers": {
+    "general_purpose": [
+      {"name": "r0", "size": 16, "alias": ["zero"], "description": "Always zero"},
+      {"name": "r1", "size": 16, "alias": ["ra"], "description": "Return address"},
+      {"name": "r2", "size": 16, "alias": ["sp"], "description": "Stack pointer"},
+      {"name": "r3", "size": 16, "alias": ["s0"], "description": "Saved/Frame pointer"},
+      {"name": "r4", "size": 16, "alias": ["s1"], "description": "Saved"},
+      {"name": "r5", "size": 16, "alias": ["t1"], "description": "Temporary"},
+      {"name": "r6", "size": 16, "alias": ["a0"], "description": "Argument 0/Return value"},
+      {"name": "r7", "size": 16, "alias": ["a1"], "description": "Argument 1"}
+    ]
+  },
+  "instructions": [
+    {
+      "mnemonic": "ADD",
+      "format": "R-type",
+      "description": "Add registers",
+      "syntax": "ADD rd, rs2",
+      "semantics": "rd = rd + rs2",
+      "implementation": "# Standard ADD instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val + rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0000"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "SUB",
+      "format": "R-type",
+      "description": "Subtract registers",
+      "syntax": "SUB rd, rs2",
+      "semantics": "rd = rd - rs2",
+      "implementation": "# Standard SUB instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val - rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "0001"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "BITROT",
+      "format": "R-type",
+      "description": "Custom bit rotation instruction",
+      "syntax": "BITROT rd, rs2",
+      "semantics": "rd = rotate_right(rd, rs2[3:0])",
+      "implementation": "# Custom bit rotation instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0x0F  # Use only 4 bits\n# Rotate right by shift_amount\nfor i in range(shift_amount):\n    lsb = rd_val & 1\n    rd_val = (rd_val >> 1) | (lsb << 15)\nresult = rd_val & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1010"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "CRYPTO",
+      "format": "I-type",
+      "description": "Custom cryptographic operation",
+      "syntax": "CRYPTO rd, magic",
+      "semantics": "rd = crypto_transform(rd, magic)",
+      "implementation": "# Custom cryptographic instruction\nrd_val = read_register(operands['rd'])\nmagic = operands['magic']\n# Simple XOR-based crypto transform\nresult = (rd_val ^ magic ^ 0xDEAD) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1011"},
+          {"name": "magic", "bits": "11:9", "type": "immediate", "signed": false},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "DSP_FILT",
+      "format": "R-type",
+      "description": "Custom DSP filter instruction",
+      "syntax": "DSP_FILT rd, rs2",
+      "semantics": "rd = dsp_filter(rd, rs2)",
+      "implementation": "# Custom DSP filter instruction\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\n# Simple low-pass filter: output = (input + previous) / 2\nfiltered = ((rd_val + rs2_val) >> 1) & 0xFFFF\nwrite_register(operands['rd'], filtered)\n# Set flags\nset_flag('Z', filtered == 0)\nset_flag('N', (filtered & 0x8000) != 0)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1100"},
+          {"name": "rs2", "bits": "11:9", "type": "register"},
+          {"name": "rd", "bits": "8:6", "type": "register"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "BLOCK_COPY",
+      "format": "I-type",
+      "description": "Custom block copy instruction",
+      "syntax": "BLOCK_COPY count",
+      "semantics": "Copy count bytes from source to destination",
+      "implementation": "# Custom block copy instruction\ncount = operands['count']\nsource_addr = read_register('r6')  # Use r6 as source\ndest_addr = read_register('r7')    # Use r7 as destination\n# Copy count bytes\nfor i in range(count):\n    if source_addr + i < len(memory) and dest_addr + i < len(memory):\n        memory[source_addr + i] = memory[dest_addr + i]\n# Update source and destination pointers\nwrite_register('r6', (source_addr + count) & 0xFFFF)\nwrite_register('r7', (dest_addr + count) & 0xFFFF)",
+      "encoding": {
+        "fields": [
+          {"name": "funct4", "bits": "15:12", "value": "1101"},
+          {"name": "count", "bits": "11:9", "type": "immediate", "signed": false},
+          {"name": "unused", "bits": "8:6", "value": "000"},
+          {"name": "func3", "bits": "5:3", "value": "000"},
+          {"name": "opcode", "bits": "2:0", "value": "001"}
+        ]
+      }
+    }
+  ],
+  "directives": [
+    {
+      "name": ".pattern",
+      "description": "Custom directive that creates a repeating pattern",
+      "action": "custom_pattern",
+      "argument_types": ["number", "number", "number"],
+      "syntax": ".pattern start end step",
+      "examples": [".pattern 0 255 16"],
+      "implementation": "# Custom pattern directive implementation\n# Creates a pattern from start to end with step\nif len(args) >= 3:\n    start = int(args[0])\n    end = int(args[1])\n    step = int(args[2])\n    result = bytearray()\n    for i in range(start, end + 1, step):\n        result.append(i & 0xFF)\n    # Update current address\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)\nelse:\n    result = bytearray()"
+    },
+    {
+      "name": ".checksum",
+      "description": "Custom directive that calculates and stores a checksum",
+      "action": "custom_checksum",
+      "argument_types": ["string"],
+      "syntax": ".checksum label",
+      "examples": [".checksum data_start"],
+      "implementation": "# Custom checksum directive implementation\n# Calculates checksum of data starting at label\nif len(args) >= 1:\n    label = args[0]\n    # Get symbol address\n    symbol = assembler.symbol_table.get_symbol(label)\n    if symbol and symbol.defined:\n        start_addr = symbol.value\n        # Calculate simple checksum of next 16 bytes\n        checksum = 0\n        for i in range(16):\n            if start_addr + i < len(memory):\n                checksum = (checksum + memory[start_addr + i]) & 0xFF\n        result = bytearray([checksum])\n        context.current_address += len(result)\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)\n    else:\n        result = bytearray([0])\nelse:\n    result = bytearray()"
+    },
+    {
+      "name": ".encrypt",
+      "description": "Custom directive that encrypts data",
+      "action": "custom_encrypt",
+      "argument_types": ["number"],
+      "syntax": ".encrypt key",
+      "examples": [".encrypt 0x42"],
+      "implementation": "# Custom encryption directive implementation\n# Encrypts the next 4 bytes with the given key\nif len(args) >= 1:\n    key_str = args[0]\n    # Handle hex values\n    if key_str.startswith('0x'):\n        key = int(key_str, 16) & 0xFF\n    else:\n        key = int(key_str) & 0xFF\n    # Get the next 4 bytes and encrypt them\n    encrypted = bytearray()\n    for i in range(4):\n        if context.current_address + i < len(memory):\n            encrypted_byte = (memory[context.current_address + i] ^ key ^ 0xDEAD) & 0xFF\n            encrypted.append(encrypted_byte)\n        else:\n            encrypted.append(0)\n    result = encrypted\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)\nelse:\n    result = bytearray()"
+    }
+  ],
+  "assembly_syntax": {
+    "comment_char": ";",
+    "label_suffix": ":",
+    "register_prefix": "",
+    "immediate_prefix": "#",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "case_sensitive": false
+  }
+} 
