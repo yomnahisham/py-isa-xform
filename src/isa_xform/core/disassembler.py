@@ -598,24 +598,48 @@ class Disassembler:
             lines.append("")
             lines.append("; Data sections:")
             for addr, data in sorted(result.data_sections.items()):
-                # Format as .word directives for 16-bit words
-                word_size = self.isa_definition.word_size // 8
-                for i in range(0, len(data), word_size):
-                    chunk = data[i:i+word_size]
-                    if len(chunk) == word_size:
-                        # Convert to integer based on endianness
-                        endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
-                        value = int.from_bytes(chunk, endianness)
+                # Process data in chunks, trying to detect ASCII strings
+                i = 0
+                while i < len(data):
+                    # Try to find ASCII string (4+ printable characters)
+                    ascii_start = i
+                    ascii_length = 0
+                    while (i + ascii_length < len(data) and 
+                           ascii_length < 64 and  # Limit string length
+                           data[i + ascii_length] >= 32 and 
+                           data[i + ascii_length] <= 126):
+                        ascii_length += 1
+                    
+                    if ascii_length >= 4:
+                        # Found ASCII string
+                        ascii_data = data[ascii_start:ascii_start + ascii_length]
+                        ascii_str = ascii_data.decode('ascii', errors='replace')
                         if include_addresses:
-                            lines.append(f"    {addr + i:04X}: .word 0x{value:04X}")
+                            lines.append(f"    {addr + ascii_start:04X}: .ascii \"{ascii_str}\"")
                         else:
-                            lines.append(f"    .word 0x{value:04X}")
+                            lines.append(f"    .ascii \"{ascii_str}\"")
+                        i += ascii_length
                     else:
-                        # Handle partial words
-                        hex_bytes = ' '.join(f'{b:02X}' for b in chunk)
-                        if include_addresses:
-                            lines.append(f"    {addr + i:04X}: {hex_bytes}")
+                        # Not ASCII, check if we can output as word
+                        word_size = self.isa_definition.word_size // 8
+                        if i + word_size <= len(data):
+                            # Output as word
+                            chunk = data[i:i+word_size]
+                            endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+                            value = int.from_bytes(chunk, endianness)
+                            if include_addresses:
+                                lines.append(f"    {addr + i:04X}: .word 0x{value:04X}")
+                            else:
+                                lines.append(f"    .word 0x{value:04X}")
+                            i += word_size
                         else:
-                            lines.append(f"    {hex_bytes}")
+                            # Output remaining bytes
+                            chunk = data[i:]
+                            hex_bytes = ', '.join(f'0x{b:02X}' for b in chunk)
+                            if include_addresses:
+                                lines.append(f"    {addr + i:04X}: .byte {hex_bytes}")
+                            else:
+                                lines.append(f"    .byte {hex_bytes}")
+                            i += len(chunk)
         
         return "\n".join(lines) 
