@@ -455,7 +455,7 @@ class Disassembler:
         return fields
     
     def _format_operands(self, instruction: Instruction, field_values: Dict[str, int]) -> List[str]:
-        """Format operands based on instruction syntax order and field values"""
+        """Format operands based on instruction syntax order and field values, supporting offset(base) style."""
         operands = []
         assembly_syntax = getattr(self.isa_definition, 'assembly_syntax', None)
         register_prefix = getattr(assembly_syntax, 'register_prefix', '') if assembly_syntax else ''
@@ -469,8 +469,48 @@ class Disassembler:
                 operand_part = ' '.join(parts[1:])
                 syntax_operands = [op.strip() for op in operand_part.split(',')]
 
-        # Map syntax operand names to field values
         for syntax_op in syntax_operands:
+            # Special handling for offset(base) or imm(base) patterns
+            if '(' in syntax_op and syntax_op.endswith(')'):
+                # Example: offset(rs1) or imm(rs2)
+                before_paren = syntax_op[:syntax_op.index('(')].strip()
+                inside_paren = syntax_op[syntax_op.index('(')+1:-1].strip()
+                # Map aliases as in the original code
+                field_name_imm = before_paren
+                field_name_reg = inside_paren
+                # Alias resolution for immediate/offset
+                if field_name_imm == 'offset' and 'imm' in field_values:
+                    field_name_imm = 'imm'
+                if field_name_imm not in field_values:
+                    if field_name_imm == 'imm' and 'immediate' in field_values:
+                        field_name_imm = 'immediate'
+                    elif field_name_imm == 'immediate' and 'imm' in field_values:
+                        field_name_imm = 'imm'
+                # Alias resolution for register
+                if field_name_reg not in field_values:
+                    if field_name_reg == 'rs1' and 'rd' in field_values:
+                        field_name_reg = 'rd'
+                    elif field_name_reg == 'rd' and 'rs1' in field_values:
+                        field_name_reg = 'rs1'
+                # Format
+                if field_name_imm in field_values and field_name_reg in field_values:
+                    imm_val = field_values[field_name_imm]
+                    reg_val = field_values[field_name_reg]
+                    # Format immediate
+                    if imm_val > 255 or imm_val < -255:
+                        imm_str = f"{immediate_prefix}0x{imm_val:X}"
+                    else:
+                        imm_str = f"{immediate_prefix}{imm_val}"
+                    reg_str = self._format_register(reg_val, register_prefix)
+                    operands.append(f"{imm_str}({reg_str})")
+                else:
+                    # Fallback: just output what we can
+                    if field_name_imm in field_values:
+                        operands.append(str(field_values[field_name_imm]))
+                    if field_name_reg in field_values:
+                        operands.append(self._format_register(field_values[field_name_reg], register_prefix))
+                continue
+            # Normal operand (not offset(base))
             field_name = syntax_op
             # Special case: map 'offset' to 'imm' for branch instructions
             if field_name == 'offset' and 'imm' in field_values:
