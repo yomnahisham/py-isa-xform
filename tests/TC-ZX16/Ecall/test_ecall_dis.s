@@ -6,14 +6,14 @@
     ECALL 0
     LI x6, 10
     ECALL 0
-    ECALL 0
+    ECALL 1
     ECALL 0
     LI x6, 10
     ECALL 0
     LI x6, 42
-    ECALL 0
+    ECALL 0x3FF
 
 ; Data sections:
-    0034: 48 65
-    0036: 6C 6C
-    0038: 6F 00
+    .word 0x6548
+    .word 0x6C6C
+    .word 0x006F

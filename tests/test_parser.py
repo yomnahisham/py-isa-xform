@@ -24,10 +24,10 @@ class TestParser:
         }
         
         instructions = [
-            Instruction("NOP", "0000", "R-type", "No operation", {}, "NOP", "No operation"),
-            Instruction("ADD", "0001", "R-type", "Add two registers", {}, "ADD $rd, $rs1, $rs2", "$rd = $rs1 + $rs2"),
-            Instruction("LDI", "0101", "I-type", "Load immediate", {}, "LDI $rd, #imm", "$rd = imm"),
-            Instruction("JMP", "1000", "J-type", "Jump", {}, "JMP address", "PC = address")
+            Instruction("NOP", "0000", "R-type", "No operation", {}, "NOP", "No operation", "# NOP implementation"),
+            Instruction("ADD", "0001", "R-type", "Add two registers", {}, "ADD $rd, $rs1, $rs2", "$rd = $rs1 + $rs2", "# ADD implementation"),
+            Instruction("LDI", "0101", "I-type", "Load immediate", {}, "LDI $rd, #imm", "$rd = imm", "# LDI implementation"),
+            Instruction("JMP", "1000", "J-type", "Jump", {}, "JMP address", "PC = address", "# JMP implementation")
         ]
         
         self.isa_def = ISADefinition(

@@ -13,7 +13,7 @@ def test_zx16_all_types():
     isa = loader.load_isa('zx16')
     program = '''
 .org 0x100
-LI a0, 42
+LI a0, 7
 ADD a0, a1
 SUB a0, a1
 SLT a0, a1
@@ -28,19 +28,19 @@ MV a0, a1
 LW a0
 SW a1
 ADDI a0, 7
-SLTI a0, 8
-ANDI a0, 9
-ORI a0, 10
-XORI a0, 11
-SLLI a0, 2
-SRLI a0, 3
-SRAI a0, 4
+SLTI a0, -8
+ANDI a0, 7
+ORI a0, -8
+XORI a0, 7
+SLLI a0, 3
+SRLI a0, 4
+SRAI a0, 2
 LUI a0, 5
 AUIPC a1, 6
-JAL a0, 0x120
-J 0x122
-BEQ a0, a1, 0x124
-BNE a0, a1, 0x126
+JAL a0, 0x6
+J 0x4
+BEQ a0, a1, 0x2
+BNE a0, a1, 0
 JR a1
 ECALL 0x1F
 '''

@@ -713,7 +713,7 @@
             {"name": "unused", "bits": "5:3", "value": "000"},
             {"name": "opcode", "bits": "2:0", "value": "111"}
           ]
-        }
+                }
       }
     ],
     "directives": [
@@ -822,13 +822,13 @@
         "mnemonic": "LI16",
         "description": "Load 16-bit immediate",
         "syntax": "LI16 rd, imm",
-        "expansion": "LUI rd, imm[15:9]; ORI rd, rd, imm[8:0]"
+        "expansion": "LUI rd, imm[15:9]; ORI rd, imm[8:0]"
       },
       {
         "mnemonic": "LA",
         "description": "Load address",
         "syntax": "LA rd, label",
-        "expansion": "AUIPC rd, label[15:9]; ADDI rd, rd, label[8:0]"
+        "expansion": "AUIPC rd, label[15:9]; ADDI rd, label[8:0]"
       },
       {
         "mnemonic": "PUSH",
