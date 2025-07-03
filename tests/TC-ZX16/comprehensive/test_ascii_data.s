@@ -1,3 +1,28 @@
+# Test ASCII data detection
+.text
+.globl main
+
+main:
+    LI a0, 45          # ASCII 'A' (fits in 7-bit signed range)
+    ECALL 0            # Print character
+    
+    LI a0, 10          # ASCII newline
+    ECALL 0            # Print character
+    
+    LI a0, 46          # ASCII 'B' (fits in 7-bit signed range)
+    ECALL 0            # Print character
+    
+    LI a0, 10          # ASCII newline
+    ECALL 0            # Print character
+    
+    LI a0, 42          # Exit code
+    ECALL 0x3F         # Exit program (fits in 10-bit field)
+
+.data
+hello_str:
+    .ascii "Hello, World!\n"
+    .byte 0
+
 ; Test ASCII string detection in disassembler
 .org 0x100
 

@@ -50,6 +50,7 @@ class TestISALoader:
                     },
                     "syntax": "NOP",
                     "semantics": "No operation",
+                    "implementation": "# NOP implementation\n# No operation performed",
                     "flags_affected": []
                 },
                 {
@@ -67,6 +68,7 @@ class TestISALoader:
                     },
                     "syntax": "ADD $rd, $rs1, $rs2",
                     "semantics": "$rd = $rs1 + $rs2",
+                    "implementation": "# ADD implementation\nrd_val = read_register(operands['rd'])\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = (rs1_val + rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)",
                     "flags_affected": ["Z", "N", "C", "V"]
                 }
             ]
@@ -240,7 +242,7 @@ class TestISADefinition:
         }
         
         instructions = [
-            Instruction("NOP", "0000", "R-type", "No operation", {}, "NOP", "No operation")
+            Instruction("NOP", "0000", "R-type", "No operation", {}, "NOP", "No operation", "# NOP implementation")
         ]
         
         isa_def = ISADefinition(
@@ -299,6 +301,7 @@ class TestInstruction:
             encoding={"fields": []},
             syntax="ADD $rd, $rs1, $rs2",
             semantics="$rd = $rs1 + $rs2",
+            implementation="# ADD implementation",
             flags_affected=["Z", "N", "C", "V"]
         )
         
@@ -320,7 +323,8 @@ class TestInstruction:
             description="No operation",
             encoding={},
             syntax="NOP",
-            semantics="No operation"
+            semantics="No operation",
+            implementation="# NOP implementation"
         )
         
         assert instr.mnemonic == "NOP"

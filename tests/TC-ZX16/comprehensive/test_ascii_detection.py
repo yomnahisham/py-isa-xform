@@ -13,7 +13,7 @@ def test_ascii_detection():
     isa = loader.load_isa('zx16')
     
     # Read the test file
-    with open('test_ascii_data.s', 'r') as f:
+    with open('tests/TC-ZX16/comprehensive/test_ascii_data.s', 'r') as f:
         program = f.read()
     
     print("Original assembly:")

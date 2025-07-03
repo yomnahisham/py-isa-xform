@@ -255,23 +255,28 @@ class Assembler:
         mapping = {}
 
         # Parse operand names from the syntax string
-        syntax_operands = []
-        if hasattr(instruction, 'syntax') and instruction.syntax:
-            # Extract operand names from syntax, e.g., 'ADD rd, rs2' -> ['rd', 'rs2']
-            syntax_str = instruction.syntax
-            # Remove mnemonic and split by commas
-            parts = syntax_str.split(None, 1)
-            if len(parts) > 1:
-                operand_str = parts[1]
-                syntax_operands = [s.strip() for s in operand_str.split(',')]
-
+        syntax_parts = instruction.syntax.split()
+        if len(syntax_parts) > 1:
+            # Remove the mnemonic and join the rest, then split by comma
+            operand_str = ' '.join(syntax_parts[1:])
+            operand_names = [part.strip() for part in operand_str.split(',') if part.strip()]
+            for i, (op, name) in enumerate(zip(operands, operand_names)):
+                mapping[f"${name}"] = op
+                mapping[name] = op
+                # Also add generic names for this operand
+                mapping[f"$op{i+1}"] = op
+                mapping[f"op{i+1}"] = op
+                mapping[f"${i+1}"] = op
+                if str(i+1) not in ["1", "2", "3", "4", "5", "6", "7", "8", "9"]:
+                    mapping[f"{i+1}"] = op
+        
         # Get operand fields (fields that expect operands, not fixed values)
         operand_fields = [f for f in fields if "type" in f and f.get("name") != "opcode"]
 
         # Map operands to fields by syntax order
         for i, operand_node in enumerate(operands):
-            if i < len(syntax_operands):
-                operand_name = syntax_operands[i]
+            if i < len(operand_names):
+                operand_name = operand_names[i]
                 # Find the field with this name, or allow offset->imm mapping
                 for field in operand_fields:
                     field_name = field["name"]
@@ -354,7 +359,7 @@ class Assembler:
         raise AssemblerError(f"Unknown register: {operand.value}")
     
     def _resolve_immediate_operand(self, operand: OperandNode) -> int:
-        """Resolve immediate operand to integer value"""
+        """Resolve immediate operand to integer value, supporting label bitfield extraction (e.g., label[15:9])"""
         # Handle memory operands (tuples of immediate and register)
         if isinstance(operand.value, tuple):
             # This is a memory operand like (offset, register)
@@ -362,13 +367,35 @@ class Assembler:
             value_str = offset_node.value
         else:
             value_str = operand.value
-            
+        
         syntax = self.isa_definition.assembly_syntax
         
         # Remove immediate prefix if present
         if isinstance(value_str, str) and value_str.startswith(syntax.immediate_prefix):
             value_str = value_str[len(syntax.immediate_prefix):]
         
+        # --- PATCH: Support label bitfield extraction ---
+        if isinstance(value_str, str):
+            # Match pattern like 'label[15:9]'
+            m = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+):(\d+)\]$", value_str)
+            if m:
+                label = m.group(1)
+                high = int(m.group(2))
+                low = int(m.group(3))
+                # Resolve label address
+                symbol = self.symbol_table.get_symbol(label)
+                if symbol and symbol.defined:
+                    address = symbol.value
+                else:
+                    # Forward reference: use 0 for first pass, error for second pass
+                    if self.context.pass_number == 2:
+                        raise AssemblerError(f"Undefined symbol: {label}")
+                    address = 0
+                # Extract bits
+                width = high - low + 1
+                mask = (1 << width) - 1
+                return (address >> low) & mask
+        # --- END PATCH ---
         return self._parse_number(value_str)
     
     def _resolve_address_operand(self, operand: OperandNode) -> int:
@@ -679,81 +706,74 @@ class Assembler:
         if not expansion:
             raise AssemblerError(f"Pseudo-instruction '{node.mnemonic}' has no expansion defined")
         
+        # Build operand map based on pseudo-instruction syntax
         operand_map = {}
-        for i, op in enumerate(node.operands):
-            # Map $rd, $rs, $imm, $1, $2, ... and also plain rd, rs, imm
-            # But avoid mapping literal numbers that might appear in expansions
-            if i == 0:
-                operand_map["$rd"] = str(op.value)
-                operand_map["rd"] = str(op.value)
-            elif i == 1:
-                # For pseudo-instructions like LI16, the second operand should be 'imm'
-                # For regular instructions, it should be 'rs'
-                if node.mnemonic.upper() in ["LI16", "LA"]:
-                    operand_map["$imm"] = str(op.value)
-                    operand_map["imm"] = str(op.value)
-                else:
-                    operand_map["$rs"] = str(op.value)
-                    operand_map["rs"] = str(op.value)
-            elif i == 2:
-                operand_map["$imm"] = str(op.value)
-                operand_map["imm"] = str(op.value)
-            operand_map[f"$op{i+1}"] = str(op.value)
-            operand_map[f"op{i+1}"] = str(op.value)
-            operand_map[f"${i+1}"] = str(op.value)
-            # Don't map plain numbers like "1", "2" as they might be literal values
-            # Only map them if they're explicitly used as placeholders
-            if str(i+1) not in ["1", "2", "3", "4", "5", "6", "7", "8", "9"]:
-                operand_map[f"{i+1}"] = str(op.value)
         
-        # Handle bit field extractions like imm[15:9] and imm[8:0] BEFORE operand mapping
+        # Parse the syntax to understand operand names
+        syntax_parts = pseudo.syntax.split()
+        if len(syntax_parts) > 1:
+            # Remove the mnemonic and join the rest, then split by comma
+            operand_str = ' '.join(syntax_parts[1:])
+            operand_names = [part.strip() for part in operand_str.split(',') if part.strip()]
+            for i, (op, name) in enumerate(zip(node.operands, operand_names)):
+                operand_map[f"${name}"] = str(op.value)
+                operand_map[name] = str(op.value)
+                # Also add generic names for this operand
+                operand_map[f"$op{i+1}"] = str(op.value)
+                operand_map[f"op{i+1}"] = str(op.value)
+                operand_map[f"${i+1}"] = str(op.value)
+                if str(i+1) not in ["1", "2", "3", "4", "5", "6", "7", "8", "9"]:
+                    operand_map[f"{i+1}"] = str(op.value)
+        
+        # Handle bit field extractions generically based on expansion patterns
         expanded_text = expansion
-        for k, v in operand_map.items():
-            if k == "imm" or k == "$imm":
-                # Parse the immediate value
-                try:
-                    imm_value = self._parse_number(v)
-                    
-                    # Replace bit field extractions with calculated values
-                    # imm[15:9] -> upper 7 bits
-                    upper_bits = (imm_value >> 9) & 0x7F  # 7 bits
-                    expanded_text = expanded_text.replace(f"{k}[15:9]", str(upper_bits))
-                    
-                    # imm[8:0] -> lower 9 bits  
-                    lower_bits = imm_value & 0x1FF  # 9 bits
-                    expanded_text = expanded_text.replace(f"{k}[8:0]", str(lower_bits))
-                    
-                    # Also handle other common bit field patterns
-                    # imm[15:7] -> upper 9 bits
-                    upper_9 = (imm_value >> 7) & 0x1FF  # 9 bits
-                    expanded_text = expanded_text.replace(f"{k}[15:7]", str(upper_9))
-                    
-                    # imm[6:0] -> lower 7 bits
-                    lower_7 = imm_value & 0x7F  # 7 bits
-                    expanded_text = expanded_text.replace(f"{k}[6:0]", str(lower_7))
-                    
-                except (ValueError, TypeError) as e:
-                    # If we can't parse the immediate, just replace the placeholder
-                    pass
-        
-        # Use word boundary replacement to avoid replacing literal register references
-        for k, v in operand_map.items():
-            # Use word boundary matching to only replace actual placeholders
-            # This prevents replacing literal register references like x2 in "ADDI x2, -2"
-            # and literal numbers like -1 in "XORI rd, -1"
-            if k.startswith('$'):
-                # For $placeholders, replace with word boundaries
-                pattern = r'\b' + re.escape(k) + r'\b'
-                expanded_text = re.sub(pattern, v, expanded_text)
-            else:
-                # For plain placeholders (rd, rs, imm), be more careful
-                # Only replace if they appear as standalone words and are not part of numbers
-                # This prevents replacing "1" in "-1" or "x1" in "x2"
-                pattern = r'(?<![a-zA-Z0-9_-])' + re.escape(k) + r'(?![a-zA-Z0-9_-])'
-                expanded_text = re.sub(pattern, v, expanded_text)
-        
+        import re
+        bitfield_pattern = re.compile(r'(\w+)\[(\d+):(\d+)\]')
+
+        # Replace all bitfield patterns in the expansion string
+        def bitfield_replacer(match):
+            operand_name, high_str, low_str = match.group(1), match.group(2), match.group(3)
+            key = f"${operand_name}" if f"${operand_name}" in operand_map else operand_name
+            if key not in operand_map:
+                return match.group(0)  # leave as is if not found
+            v = operand_map[key]
+            try:
+                high = int(high_str)
+                low = int(low_str)
+                width = high - low + 1
+                mask = (1 << width) - 1
+                # Only perform extraction in the second pass
+                if self.context.pass_number == 2:
+                    if operand_name == "label":
+                        try:
+                            symbol = self.symbol_table.get_symbol(v)
+                            value = self._resolve_address_operand(OperandNode(v, "label"))
+                        except Exception:
+                            value = 0
+                    else:
+                        try:
+                            value = self._parse_number(v)
+                        except Exception:
+                            return match.group(0)
+                    bitfield_value = (value >> low) & mask
+                    return str(bitfield_value)
+                else:
+                    return match.group(0)
+            except Exception:
+                return match.group(0)
+
+        # Replace all bitfield patterns first
+        expanded_text = bitfield_pattern.sub(bitfield_replacer, expanded_text)
+
+        # Remove any remaining bitfield patterns (if not replaced)
+        expanded_text = bitfield_pattern.sub('', expanded_text)
+
+        # Now do operand substitution only for standalone placeholders
+        for k, v in sorted(operand_map.items(), key=lambda x: -len(x[0])):
+            pattern = r'(?<![\w.])' + re.escape(k) + r'(?![\w.])'
+            expanded_text = re.sub(pattern, v, expanded_text)
+
         expanded_instrs = [s.strip() for s in expanded_text.split(';') if s.strip()]
-        
         parser = Parser(self.isa_definition)
         nodes = []
         for instr in expanded_instrs:
