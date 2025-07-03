@@ -251,7 +251,7 @@ class Assembler:
         return instruction_word
 
     def _map_operands_to_fields_modular(self, fields: List[Dict[str, Any]], operands: List[OperandNode], instruction: Instruction) -> Dict[str, OperandNode]:
-        """Map operands to field names based on the order in the instruction's syntax field"""
+        """Map operands to field names based on the order in the instruction's syntax field, handling mem operands."""
         mapping = {}
 
         # Parse operand names from the syntax string
@@ -260,7 +260,28 @@ class Assembler:
             # Remove the mnemonic and join the rest, then split by comma
             operand_str = ' '.join(syntax_parts[1:])
             operand_names = [part.strip() for part in operand_str.split(',') if part.strip()]
+            
+            # Map operands to syntax names
             for i, (op, name) in enumerate(zip(operands, operand_names)):
+                # Special handling for mem operands (offset(base))
+                if op.type == "mem" and '(' in name and name.endswith(')'):
+                    before_paren = name[:name.index('(')].strip()
+                    inside_paren = name[name.index('(')+1:-1].strip()
+                    offset_node, reg_node = op.value
+                    # Map offset to immediate/offset/imm field
+                    mapping[before_paren] = offset_node
+                    # Map base register
+                    mapping[inside_paren] = reg_node
+                    # Also add with $ prefix for compatibility
+                    mapping[f"${before_paren}"] = offset_node
+                    mapping[f"${inside_paren}"] = reg_node
+                    # Add alias mapping for field resolution
+                    if before_paren == "offset":
+                        mapping["imm"] = offset_node
+                        mapping["immediate"] = offset_node
+                    continue
+                
+                # Regular operand mapping
                 mapping[f"${name}"] = op
                 mapping[name] = op
                 # Also add generic names for this operand
