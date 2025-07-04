@@ -31,7 +31,7 @@ setup(
     author="Group 6 Team", 
     author_email="",
     url="https://github.com/yomnahisham/py-isa-xform",
-    license="MIT",
+    license="Apache-2.0",
     
     packages=find_packages(where="src"),
     package_dir={"": "src"},
@@ -72,7 +72,7 @@ setup(
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
         "Intended Audience :: Education",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9", 
