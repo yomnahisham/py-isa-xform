@@ -228,6 +228,70 @@ class TestISALoader:
         # This test depends on the actual built-in ISAs
         pass
 
+    def test_load_isa_basic(self):
+        """Test basic ISA loading"""
+        isa_def = self.loader.load_isa("zx16")
+        
+        assert isa_def.name == "ZX16"
+        assert isa_def.version == "1.0"
+        assert isa_def.word_size == 16
+        assert isa_def.endianness == "little"
+        assert len(isa_def.instructions) > 0
+        assert len(isa_def.registers) > 0
+
+    def test_load_isa_with_constants_and_ecall_services(self):
+        """Test that constants and ecall services are properly loaded"""
+        isa_def = self.loader.load_isa("zx16")
+        
+        # Test constants
+        assert "constants" in isa_def.__dict__
+        assert isinstance(isa_def.constants, dict)
+        assert len(isa_def.constants) > 0
+        
+        # Check some expected constants
+        expected_constants = ["RESET_VECTOR", "CODE_START", "MMIO_BASE", "STACK_TOP", "MEM_SIZE"]
+        for const_name in expected_constants:
+            assert const_name in isa_def.constants
+            assert hasattr(isa_def.constants[const_name], 'value')
+            assert hasattr(isa_def.constants[const_name], 'name')
+        
+        # Test ecall services
+        assert "ecall_services" in isa_def.__dict__
+        assert isinstance(isa_def.ecall_services, dict)
+        assert len(isa_def.ecall_services) > 0
+        
+        # Check some expected ecall services
+        expected_services = ["0x000", "0x00A"]  # print_char and exit
+        for service_id in expected_services:
+            assert service_id in isa_def.ecall_services
+            service = isa_def.ecall_services[service_id]
+            assert hasattr(service, 'name')
+            assert hasattr(service, 'description')
+            assert hasattr(service, 'parameters')
+            assert hasattr(service, 'return_value')
+        
+        # Verify specific service details
+        print_char_service = isa_def.ecall_services["0x000"]
+        assert print_char_service.name == "print_char"
+        assert "a0" in print_char_service.parameters
+        
+        exit_service = isa_def.ecall_services["0x00A"]
+        assert exit_service.name == "exit"
+        assert "a0" in exit_service.parameters
+
+    def test_isa_without_constants_or_ecall_services(self):
+        """Test loading ISA that doesn't have constants or ecall services"""
+        # This test would need an ISA without these fields
+        # For now, we'll just verify the fields exist as empty dicts
+        try:
+            isa_def = self.loader.load_isa("riscv_rv32i")
+            # Should have empty dicts for missing fields
+            assert isinstance(isa_def.constants, dict)
+            assert isinstance(isa_def.ecall_services, dict)
+        except ISALoadError:
+            # If RISC-V ISA doesn't exist, that's fine for this test
+            pass
+
 
 class TestISADefinition:
     """Test cases for ISADefinition"""
