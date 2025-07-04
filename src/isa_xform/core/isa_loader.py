@@ -91,6 +91,23 @@ class AddressingMode:
 
 
 @dataclass
+class ECallService:
+    """Represents an ecall service definition"""
+    name: str
+    description: str
+    parameters: Dict[str, str] = field(default_factory=dict)
+    return_value: str = "None"
+
+
+@dataclass
+class Constant:
+    """Represents a constant definition"""
+    name: str
+    value: int
+    description: Optional[str] = None
+
+
+@dataclass
 class AssemblySyntax:
     """Represents assembly syntax rules"""
     comment_char: str = ";"
@@ -142,6 +159,8 @@ class ISADefinition:
     addressing_modes: List[AddressingMode] = field(default_factory=list)
     assembly_syntax: AssemblySyntax = field(default_factory=AssemblySyntax)
     address_space: AddressSpace = field(default_factory=AddressSpace)
+    constants: Dict[str, Constant] = field(default_factory=dict)
+    ecall_services: Dict[str, ECallService] = field(default_factory=dict)
     validation_rules: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -308,6 +327,35 @@ class ISALoader:
             alignment_requirements=address_space_data.get("alignment_requirements", {})
         )
         
+        # Parse constants
+        constants = {}
+        for const_name, const_value in data.get("constants", {}).items():
+            if isinstance(const_value, dict):
+                # Handle constant with description
+                constant = Constant(
+                    name=const_name,
+                    value=const_value.get("value", const_value),
+                    description=const_value.get("description")
+                )
+            else:
+                # Handle simple constant value
+                constant = Constant(
+                    name=const_name,
+                    value=const_value
+                )
+            constants[const_name] = constant
+        
+        # Parse ecall services
+        ecall_services = {}
+        for service_id, service_data in data.get("ecall_services", {}).items():
+            ecall_service = ECallService(
+                name=service_data["name"],
+                description=service_data["description"],
+                parameters=service_data.get("parameters", {}),
+                return_value=service_data.get("return", "None")
+            )
+            ecall_services[service_id] = ecall_service
+        
         return ISADefinition(
             name=data["name"],
             version=data["version"],
@@ -324,6 +372,8 @@ class ISALoader:
             addressing_modes=addressing_modes,
             assembly_syntax=assembly_syntax,
             address_space=address_space,
+            constants=constants,
+            ecall_services=ecall_services,
             validation_rules={}
         )
     
