@@ -8,6 +8,8 @@ on:
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
     - name: Checkout code
@@ -83,28 +85,5 @@ jobs:
         generate_release_notes: true
         draft: false
         prerelease: false
-        tag_name: ${{ github.ref_name }}
-        name: Release ${{ github.ref_name }}
-        body: |
-          ## 🚀 Release ${{ github.ref_name }}
-          
-          ### 📦 Installation
-          ```bash
-          pip install git+https://github.com/yomnahisham/py-isa-xform.git@${{ github.ref_name }}
-          ```
-          
-          ### 📋 Changes
-          - ISA transformation toolkit with support for multiple architectures
-          - ECALL services and constants support
-          - Comprehensive assembly and disassembly capabilities
-          - CLI interface for easy usage
-          
-          ### 🔧 Features
-          - Load and validate ISA definitions
-          - Assemble assembly code to machine code
-          - Disassemble machine code to assembly
-          - Support for custom directives and pseudo-instructions
-          - Symbol table management
-          - Error handling and validation
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
