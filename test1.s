@@ -29,11 +29,11 @@ JALR x4, x1        # Jump to address in x1, save return address in x4
 LI x6, 1           # Load 1 into x6
 SLLI x6, 6         # Shift left by 6: x6 = 1 << 6 = 64
 ADDI x6, 1         # Add 1: x6 = 64 + 1 = 65 (ASCII 'A')
-ECALL 0x000        # System call to print character (10-bit service number)
+ECALL 0x001       # System call to print character (10-bit service number)
 
 # Exit program
 LI x6, 0           # Load exit code 0 into a0
-ECALL 0x3FF        # System call to exit (10-bit service number)
+ECALL 0xA       # System call to exit (10-bit service number)
 
 function:
 # Simple function that increments x0

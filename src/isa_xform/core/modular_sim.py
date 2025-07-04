@@ -139,19 +139,83 @@ class Simulator:
 
     
     def execute_instruction(self, disassembled_instruction: DisassemblyResult):
-        generic_syntax = disassembled_instruction.instructions[0].instruction.syntax
-        instruction = disassembled_instruction.instructions[0]
-        actual_syntax = f"{instruction.mnemonic}  {', '.join(instruction.operands)}"
-        semantics = disassembled_instruction.instructions[0].instruction.semantics
+        """Executes a disassembled instruction"""
+        if disassembled_instruction.instructions[0].instruction.mnemonic == "ECALL":
+            code = disassembled_instruction.instructions[0].operands[0]
+            code = f"0x{int(code):03X}"
+            name = self.isa_definition.ecall_services[code].name
+            if name == "exit":
+                print("Exiting simulation")
+                return False
+            elif name == "read_string":
+                addr = self.regs[6]  # a0 register
+                max_length = self.regs[7]  # a1 register
+                string = input()
+                if len(string) > max_length:
+                    print(f"Input exceeds maximum length of {max_length} characters")
+                    return True
+                for i, char in enumerate(string):
+                    if addr + i < len(self.memory):
+                        self.write_memory_byte(addr + i, ord(char))
+                self.write_memory_byte(addr + len(string), 0)  # Null-terminate the string
+                self.regs[6] = len(string)  # Store length in a0 register
+            elif name == "read_int":
+                try:
+                    value = int(input("Enter an integer: "))
+                    self.regs[6] = value  # Store in a0 register
+                except ValueError:
+                    print("Invalid input, expected an integer")
+            elif name == "print_string":
+                addr = self.regs[6]  # a0 register
+                string = ""
+                while addr < len(self.memory) and self.memory[addr] != 0:
+                    string += chr(self.memory[addr])
+                    addr += 1
+                print(string)
+            elif name == "print_int":
+                return
+            elif name == "play_tone":
+                frequency = self.regs[6]  # a0 register
+                duration_ms = self.regs[7]  # a1 register
+                print(f"Playing tone at {frequency}Hz for {duration_ms}ms")
+            elif name == "set_audio_volume":
+                volume = self.regs[6]  # a0 register
+                if 0 <= volume <= 255:
+                    print(f"Setting audio volume to {volume}")
+                else:
+                    print("Volume must be between 0 and 255")
+            elif name == "stop_audio_playback":
+                print("Audio playback stopped")
+            elif name == "read_keyboard": #TODO
+                return
+            elif name == "registers_dump":
+                for i, reg in enumerate(self.regs):
+                    print(f"{self.reg_names[i]}: {reg}")
+            elif name == "memory_dump":
+                start = self.regs[6]  # a0 register
+                end = self.regs[7]  # a1 register
+                for addr in range(start, end + 1):
+                    if addr < len(self.memory):
+                        print(f"0x{addr:04X}: {self.read_memory_byte(addr)}")
+            
+            print(f"Executing ECALL service: {name} with code {code}") 
+            return True
 
-        generic_parameters = self.extract_parameters(generic_syntax)
-        actual_parameters = self.extract_parameters(actual_syntax)
-        #operands_map = self.map_operands_to_registers(generic_parameters, actual_parameters)
-        semantics = self.generic_to_register_name(semantics, generic_parameters, actual_parameters)
-        executable_string = self.register_name_to_index(semantics, actual_parameters)
-        print(f"Executing: {executable_string}")
-        exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'unsigned': unsigned, 'sign_extend': sign_extend, 'read_memory_word': self.read_memory_word, 'write_memory_word': self.write_memory_word})
-        return True
+            
+        else:
+            generic_syntax = disassembled_instruction.instructions[0].instruction.syntax
+            instruction = disassembled_instruction.instructions[0]
+            actual_syntax = f"{instruction.mnemonic}  {', '.join(instruction.operands)}"
+            semantics = disassembled_instruction.instructions[0].instruction.semantics
+
+            generic_parameters = self.extract_parameters(generic_syntax)
+            actual_parameters = self.extract_parameters(actual_syntax)
+            #operands_map = self.map_operands_to_registers(generic_parameters, actual_parameters)
+            semantics = self.generic_to_register_name(semantics, generic_parameters, actual_parameters)
+            executable_string = self.register_name_to_index(semantics, actual_parameters)
+            print(f"Executing: {executable_string}")
+            exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'unsigned': unsigned, 'sign_extend': sign_extend, 'read_memory_word': self.read_memory_word, 'write_memory_word': self.write_memory_word})
+            return True
         
     
     def run(self):

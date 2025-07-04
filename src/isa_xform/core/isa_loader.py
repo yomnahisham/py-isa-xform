@@ -163,7 +163,7 @@ class ISADefinition:
     assembly_syntax: AssemblySyntax = field(default_factory=AssemblySyntax)
     address_space: AddressSpace = field(default_factory=AddressSpace)
     constants: Dict[str, Constant] = field(default_factory=dict)
-    ecall_services: Dict[str, ECallService] = field(default_factory=dict)
+    ecall_services: Dict[str, ECallService] = field(default_factory=dict) 
     validation_rules: Dict[str, Any] = field(default_factory=dict)
 
 
