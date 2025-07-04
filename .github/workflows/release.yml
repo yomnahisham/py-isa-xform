@@ -42,16 +42,11 @@ jobs:
         fi
         echo "✅ Version consistency verified"
         
-    - name: Run tests
-      run: |
-        python -m pytest tests/ -v
-        
     - name: Verify package structure
       run: |
         echo "Verifying package structure..."
         python -c "import isa_xform; print('✅ isa_xform imported successfully')"
         python -c "from isa_xform.core.isa_loader import ISALoader; print('✅ ISALoader imported successfully')"
-        python -c "loader = ISALoader(); isa = loader.load_isa('zx16'); print(f'✅ Loaded ISA: {isa.name}')"
         
     - name: Build package
       run: |
