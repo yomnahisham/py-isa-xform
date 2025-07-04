@@ -55,7 +55,7 @@ jobs:
     - name: Verify build artifacts
       run: |
         echo "Checking build artifacts..."
-        TAG_VERSION="${GITHUB_REF#refs/tags/}"
+        TAG_VERSION="${GITHUB_REF#refs/tags/v}"
         ls -la dist/
         if [ ! -f "dist/py_isa_xform-$TAG_VERSION-py3-none-any.whl" ]; then
           echo "❌ Wheel file not found!"
@@ -70,7 +70,7 @@ jobs:
     - name: Test installation
       run: |
         echo "Testing wheel installation..."
-        TAG_VERSION="${GITHUB_REF#refs/tags/}"
+        TAG_VERSION="${GITHUB_REF#refs/tags/v}"
         pip install dist/py_isa_xform-$TAG_VERSION-py3-none-any.whl --force-reinstall
         python -c "import isa_xform; print(f'Installed version: {isa_xform.__version__}')"
         
