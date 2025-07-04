@@ -30,7 +30,7 @@ jobs:
     - name: Verify version consistency
       run: |
         echo "Checking version consistency..."
-        TAG_VERSION="${GITHUB_REF#refs/tags/}"
+        TAG_VERSION="${GITHUB_REF#refs/tags/v}"
         PYTHON_VERSION=$(python -c "from isa_xform import __version__; print(__version__)")
         SETUP_VERSION=$(python -c "import re; content=open('setup.py').read(); match=re.search(r'version=\"([^\"]+)\"', content); print(match.group(1))")
         echo "Python version: $PYTHON_VERSION"
