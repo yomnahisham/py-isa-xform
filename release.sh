@@ -38,15 +38,15 @@ rm src/isa_xform/__init__.py.bak
 
 # Run tests
 echo "🧪 Running tests..."
-python -m pytest tests/ -v
+python3 -m pytest tests/ -v
 
 # Build package
 echo "📦 Building package..."
-python -m build
+python3 -m build
 
 # Test installation
 echo "🔧 Testing installation..."
-pip install dist/py_isa_xform-$VERSION-py3-none-any.whl --force-reinstall
+pip3 install dist/py_isa_xform-$VERSION-py3-none-any.whl --force-reinstall
 
 # Commit changes
 echo "💾 Committing changes..."
