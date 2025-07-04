@@ -6,7 +6,7 @@ import argparse
 import sys
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 import json
 
 from .core.isa_loader import ISALoader
@@ -15,6 +15,16 @@ from .core.assembler import Assembler
 from .core.disassembler import Disassembler
 from .core.symbol_table import SymbolTable
 from .utils.error_handling import ISAError, ErrorReporter, ISALoadError, ParseError, AssemblerError, DisassemblerError
+
+
+def load_isa_smart(isa_arg: str) -> Any:
+    """Load ISA definition, handling both file paths and names"""
+    loader = ISALoader()
+    isa_path = Path(isa_arg)
+    if isa_path.exists() or isa_path.is_absolute():
+        return loader.load_isa_from_file(isa_arg)
+    else:
+        return loader.load_isa(isa_arg)
 
 
 def main():
@@ -108,8 +118,7 @@ def assemble_command(args) -> int:
     
     try:
         # Load ISA definition
-        loader = ISALoader()
-        isa_definition = loader.load_isa(args.isa)
+        isa_definition = load_isa_smart(args.isa)
         if args.verbose:
             print(f"Loaded ISA: {isa_definition.name} v{isa_definition.version}")
         
@@ -176,8 +185,7 @@ def disassemble_command(args) -> int:
     
     try:
         # Load ISA definition
-        loader = ISALoader()
-        isa_definition = loader.load_isa(args.isa)
+        isa_definition = load_isa_smart(args.isa)
         if args.verbose:
             print(f"Loaded ISA: {isa_definition.name} v{isa_definition.version}")
         
@@ -257,8 +265,7 @@ def validate_command(args) -> int:
     
     try:
         # Load ISA definition
-        loader = ISALoader()
-        isa_definition = loader.load_isa(args.isa)
+        isa_definition = load_isa_smart(args.isa)
         
         print(f"✓ ISA Definition: {isa_definition.name} v{isa_definition.version}")
         print(f"✓ Word size: {isa_definition.word_size} bits")
@@ -295,8 +302,7 @@ def parse_command(args) -> int:
     
     try:
         # Load ISA definition
-        loader = ISALoader()
-        isa_definition = loader.load_isa(args.isa)
+        isa_definition = load_isa_smart(args.isa)
         if args.verbose:
             print(f"Loaded ISA: {isa_definition.name} v{isa_definition.version}")
         
