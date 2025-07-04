@@ -1,4 +1,4 @@
- #!/bin/bash
+#!/bin/bash
 
 # py-isa-xform Release Script
 # Usage: ./release.sh <version>
