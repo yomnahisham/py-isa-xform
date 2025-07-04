@@ -88,33 +88,11 @@ class Simulator:
             print(f"Error: Invalid syntax '{syntax}'", file=sys.stderr)
             return []
         
-        print(f"Debug - syntax: {syntax}")
         operand_string = ' '.join(parts[1:])  # Join everything after the mnemonic
-        print(f"Debug - operand_string: {operand_string}")
 
         operands = re.findall(r'\b[a-zA-Z]\w*|\d+', operand_string)
         operand_list = list(dict.fromkeys(operands))  # Remove duplicates while preserving order
-        print(f"Debug - operands: {operands}")
-        print(f"Extracted parameters: {operand_list}")
         return operand_list
-
-
-
-
-        # match = re.search(r'\b[A-Z]+\b', syntax)
-        # if not match:
-        #     return []
-        
-        # position = match.end()
-        # substring = syntax[position:].strip()
-
-        # operands = re.findall(r'\b[a-zA-Z]\w*|\d+', substring)
-        # operand_list = list(dict.fromkeys(operands))  # Remove duplicates while preserving order
-
-        # print(f"Debug - substring: {substring}")
-        # print(f"Debug - operands: {operands}")
-        # print(f"Extracted parameters: {operand_list}")
-        # return operand_list
     
     def generic_to_register_name(self, syntax: str, generic: List[str], operands: List[str]) -> str:
         """Converts generic operand names to actual register names in the syntax"""
@@ -139,6 +117,7 @@ class Simulator:
                 continue
             result = result.replace(operand, f"regs[{idx}]")
         result = result.replace("memory", "self.memory")
+        result = result.replace("PC", "self.pc")
         return result        
     
     def disassemble_instruction(self, instruction: int, pc: int) -> Optional[DisassembledInstruction]:
