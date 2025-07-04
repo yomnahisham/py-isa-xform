@@ -36,6 +36,24 @@ echo "📝 Updating version to $VERSION..."
 sed -i.bak "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/isa_xform/__init__.py
 rm src/isa_xform/__init__.py.bak
 
+# Update version in setup.py
+echo "📝 Updating version in setup.py..."
+sed -i.bak "s/version=['\"][^'\"]*['\"]/version='$VERSION'/" setup.py
+rm setup.py.bak
+
+# Verify version consistency
+echo "🔍 Verifying version consistency..."
+PYTHON_VERSION=$(python3 -c "import sys; sys.path.insert(0, 'src'); from isa_xform import __version__; print(__version__)")
+SETUP_VERSION=$(python3 -c "import re; content=open('setup.py').read(); match=re.search(r\"version=['\"]([^'\"]+)['\"]\", content); print(match.group(1))")
+if [ "$PYTHON_VERSION" != "$SETUP_VERSION" ] || [ "$PYTHON_VERSION" != "$VERSION" ]; then
+    echo "❌ Version mismatch detected!"
+    echo "Python version: $PYTHON_VERSION"
+    echo "Setup.py version: $SETUP_VERSION"
+    echo "Expected version: $VERSION"
+    exit 1
+fi
+echo "✅ Version consistency verified"
+
 # Run tests
 echo "🧪 Running tests..."
 python3 -m pytest tests/ -v
