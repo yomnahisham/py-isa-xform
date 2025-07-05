@@ -1,9 +1,8 @@
 import sys
 import struct
-import keyboard
 import re
 import numpy as np
-from pynput import keyboard
+import keyboard
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
@@ -21,7 +20,6 @@ def sign_extend(value: int, bits: int) -> int:
 def unsigned(value: int) -> int:
     unsigned = np.uint16(value)
     return unsigned
-
 class Simulator:
     def __init__(self, isa_definition: ISADefinition, symbol_table: Optional[SymbolTable] = None, disassembler: Optional[Disassembler] = None):
         self.isa_definition = isa_definition
@@ -33,6 +31,7 @@ class Simulator:
         self.pc_step = self.isa_definition.word_size // 8
         self.regs = [0] * len(self.isa_definition.registers['general_purpose'])  # Initialize registers
         self.reg_names = [reg for reg in self.isa_definition.registers]
+        self.key = "start"
 
 
     def load_memory_from_file(self, filename: str) -> bool:
@@ -136,6 +135,13 @@ class Simulator:
                 print(f"{instruction.mnemonic}")
                 return disassembled
         return f"Error: Unknown instruction at address {pc:04X}"
+    
+    def get_key(self, target_key: str) -> int:
+        event = keyboard.read_event()
+        if event.event_type == keyboard.KEY_DOWN:
+            if event.name == target_key:
+                return 1
+        return 0
 
     
     def execute_instruction(self, disassembled_instruction: DisassemblyResult):
@@ -159,10 +165,10 @@ class Simulator:
                         self.write_memory_byte(addr + i, ord(char))
                 self.write_memory_byte(addr + len(string), 0)  # Null-terminate the string
                 self.regs[6] = len(string)  # Store length in a0 register
-            elif name == "read_int":
+            elif name == "read_integer":
                 try:
                     value = int(input("Enter an integer: "))
-                    self.regs[6] = value  # Store in a0 register
+                    self.regs[6] = int(value)  # Store in a0 register
                 except ValueError:
                     print("Invalid input, expected an integer")
             elif name == "print_string":
@@ -186,8 +192,8 @@ class Simulator:
                     print("Volume must be between 0 and 255")
             elif name == "stop_audio_playback":
                 print("Audio playback stopped")
-            elif name == "read_keyboard": #TODO
-                return
+            elif name == "read_keyboard":
+                self.regs[7] = self.get_key(chr(self.regs[6])) # a0 register is the key to read, a1 register will hold the result
             elif name == "registers_dump":
                 for i, reg in enumerate(self.regs):
                     print(f"{self.reg_names[i]}: {reg}")
@@ -219,8 +225,7 @@ class Simulator:
         
     
     def run(self):
-        key = "start"
-        while self.pc < len(self.memory) and key != "q":
+        while self.pc < len(self.memory) and self.key != 'q':
             instruction = self.read_memory_word(self.pc)
 
             if instruction == 0:
@@ -241,8 +246,9 @@ class Simulator:
                 print("Reached end of memory")
                 break
             print(f"Registers: {self.regs}")
+            self.key = keyboard.read_event().name
             alias_names = [reg.alias[0] if reg.alias else reg.name for reg in self.isa_definition.registers['general_purpose']]
             #print(f"Registers: {': '.join(f'{name}: {value}' for name, value in zip(alias_names, self.regs))}")
-            key = input("Press Enter to continue, 'q' to quit: ").strip().lower()
+            #key = input("Press Enter to continue, 'q' to quit: ").strip().lower()
         print("Simulation complete")
 

@@ -8,7 +8,6 @@ by simulating the 16-bit RISC-V inspired processor architecture.
 import sys
 import struct
 import keyboard
-from pynput import keyboard
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
