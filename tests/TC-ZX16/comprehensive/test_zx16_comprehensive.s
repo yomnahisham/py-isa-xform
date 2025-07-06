@@ -20,7 +20,7 @@ skip1:
 skip2:
     ; Test memory operations with offsets
     LW a0, 4(a1)       ; Load word with offset
-    SW a1, 8(a0)       ; Store word with offset
+    SW a1, 4(a0)       ; Store word with offset
     
     ; Test immediate arithmetic
     ADDI a0, 20        ; Add immediate 20

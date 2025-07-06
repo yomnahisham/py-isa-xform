@@ -38,7 +38,8 @@ setup(
     
     include_package_data=True,
     package_data={
-        "": ["*.json", "*.md"],
+        "isa_definitions": ["*.json"],
+        "": ["*.md"],
     },
     
     python_requires=">=3.8",
