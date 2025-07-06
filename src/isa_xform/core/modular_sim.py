@@ -29,7 +29,7 @@ class Simulator:
         self.disassembler = disassembler if disassembler else Disassembler(isa_definition, self.symbol_table)
         self.memory = bytearray(65536)  # 64KB memory
         self.pc = 0
-        #self.pc = isa_definition.address_space.default_code_start if isa_definition.address_space.default_code_start is not None else 0
+        #self.pc = isa_definition.constants.
         self.pc_step = self.isa_definition.word_size // 8
         self.regs = [ctypes.c_int16(0) for _ in range(8)]  # Initialize registers
         self.reg_names = [reg for reg in self.isa_definition.registers]
