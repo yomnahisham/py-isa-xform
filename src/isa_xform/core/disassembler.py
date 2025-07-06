@@ -464,6 +464,42 @@ class Disassembler:
                 operand_part = ' '.join(parts[1:])
                 syntax_operands = [op.strip() for op in operand_part.split(',')]
 
+        # Reconstruct full immediate for any instruction with multiple immediate fields (contiguous by field width order, works for majority of risc/cicc isas but might fail for scattered immediate fields)
+        encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
+        immediate_fields = [f for f in encoding_fields if f.get('type') == 'immediate' and f.get('name') != 'opcode']
+        if len(immediate_fields) > 1:
+            # Gather all immediate fields and their widths (use order in encoding)
+            field_widths = []
+            for f in immediate_fields:
+                bits = f.get('bits', '')
+                if ':' in bits:
+                    high, low = [int(x) for x in bits.split(':')]
+                else:
+                    high = low = int(bits)
+                width = high - low + 1
+                field_widths.append((f['name'], width))
+            # Use order in encoding
+            field_widths = [(f['name'], width) for f, width in zip(immediate_fields, [w for _, w in field_widths])]
+            # Reconstruct the full immediate by concatenating field values by width/order
+            full_imm = 0
+            bit_offset = 0
+            for fname, width in field_widths:
+                val = field_values.get(fname, 0)
+                full_imm |= (val & ((1 << width) - 1)) << bit_offset
+                bit_offset += width
+            # Now format operands using the reconstructed immediate
+            for syntax_op in syntax_operands:
+                if syntax_op in ('imm', 'immediate'):
+                    operands.append(f"{immediate_prefix}{full_imm}")
+                elif syntax_op in ('rd', 'rs1', 'rs2'):
+                    reg_val = field_values.get(syntax_op, 0)
+                    operands.append(self._format_register(reg_val, register_prefix))
+                else:
+                    # fallback
+                    if syntax_op in field_values:
+                        operands.append(str(field_values[syntax_op]))
+            return operands
+
         for syntax_op in syntax_operands:
             # Special handling for offset(base) or imm(base) patterns
             if '(' in syntax_op and syntax_op.endswith(')'):

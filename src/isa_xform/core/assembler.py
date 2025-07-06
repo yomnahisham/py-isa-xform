@@ -251,11 +251,12 @@ class Assembler:
         return instruction_word
 
     def _map_operands_to_fields_modular(self, fields: List[Dict[str, Any]], operands: List[OperandNode], instruction: Instruction) -> Dict[str, OperandNode]:
-        """Map operands to field names based on the order in the instruction's syntax field, handling mem operands."""
+        """Map operands to field names based on the order in the instruction's syntax field, handling mem operands and multi-field immediates."""
         mapping = {}
 
         # Parse operand names from the syntax string
         syntax_parts = instruction.syntax.split()
+        operand_names = []
         if len(syntax_parts) > 1:
             # Remove the mnemonic and join the rest, then split by comma
             operand_str = ' '.join(syntax_parts[1:])
@@ -304,10 +305,20 @@ class Assembler:
                     if field_name == operand_name or (operand_name == "offset" and field_name == "imm"):
                         mapping[field_name] = operand_node
                         break
+        
+        # --- PATCH: For multi-field immediates (like LUI), map the same immediate operand to all immediate fields ---
+        # If there is exactly one immediate operand and multiple immediate fields, map to all
+        immediate_fields = [f for f in fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
+        immediate_operands = [op for op in operands if getattr(op, 'type', None) == 'immediate']
+        if len(immediate_operands) == 1 and len(immediate_fields) > 1:
+            for field in immediate_fields:
+                mapping[field["name"]] = immediate_operands[0]
+        # --- END PATCH ---
         return mapping
     
     def _resolve_operand_value(self, operand: OperandNode, field_type: str, bit_width: int, signed: bool = False, instruction_address: int = 0, field: dict = {}, instruction: Optional['Instruction'] = None) -> int:
         """Resolve operand value based on field type"""
+        field_name = field.get("name", "")
         if field_type == "register":
             return self._resolve_register_operand(operand)
         elif field_type == "immediate":
@@ -335,8 +346,37 @@ class Assembler:
             else:
                 # Treat as literal immediate value
                 value = self._resolve_immediate_operand(operand)
-            
-            # Validate immediate fits in bit width
+
+            # Handle multi-field immediates
+            if field and "bits" in field and instruction and hasattr(instruction, "encoding"):
+                encoding_fields = instruction.encoding.get("fields", [])
+                immediate_fields = [f for f in encoding_fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
+                if len(immediate_fields) > 1:
+                    # Sort fields by order in encoding (or by width, but order is more robust)
+                    field_widths = []
+                    for f in immediate_fields:
+                        bits = f.get("bits", "")
+                        if ":" in bits:
+                            high, low = [int(x) for x in bits.split(":")]
+                        else:
+                            high = low = int(bits)
+                        width = high - low + 1
+                        field_widths.append((f["name"], width))
+                    # Use order in encoding
+                    field_widths = [(f["name"], width) for f, width in zip(immediate_fields, [w for _, w in field_widths])]
+                    # Compute bit offsets for each field (lowest bits to first field, next bits to next, etc.)
+                    bit_offsets = []
+                    offset = 0
+                    for fname, width in field_widths:
+                        bit_offsets.append((fname, offset, width))
+                        offset += width
+                    # For this field, extract the correct bits from the user immediate
+                    for fname, bit_offset, width in bit_offsets:
+                        if fname == field_name:
+                            extracted_value = (value >> bit_offset) & ((1 << width) - 1)
+                            return extracted_value
+
+            # Validate immediate fits in bit width (for single-field immediates)
             if signed:
                 min_val = -(1 << (bit_width - 1))
                 max_val = (1 << (bit_width - 1)) - 1
@@ -395,7 +435,7 @@ class Assembler:
         if isinstance(value_str, str) and value_str.startswith(syntax.immediate_prefix):
             value_str = value_str[len(syntax.immediate_prefix):]
         
-        # --- PATCH: Support label bitfield extraction ---
+        # Support label bitfield extraction
         if isinstance(value_str, str):
             # Match pattern like 'label[15:9]'
             m = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+):(\d+)\]$", value_str)
@@ -416,7 +456,6 @@ class Assembler:
                 width = high - low + 1
                 mask = (1 << width) - 1
                 return (address >> low) & mask
-        # --- END PATCH ---
         return self._parse_number(value_str)
     
     def _resolve_address_operand(self, operand: OperandNode) -> int:

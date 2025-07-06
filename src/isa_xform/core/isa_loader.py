@@ -174,30 +174,24 @@ class ISALoader:
     
     def load_isa(self, isa_name: str) -> ISADefinition:
         """Load an ISA definition by name"""
-        print(f"[DEBUG] load_isa called with isa_name={isa_name}")
         if isa_name in self._cache:
-            print("[DEBUG] Returning cached ISA")
             return self._cache[isa_name]
         
         isa_file = self._find_isa_file(isa_name)
-        print(f"[DEBUG] _find_isa_file returned: {isa_file}")
         if isa_file:
-            print(f"[DEBUG] Loading ISA from file: {isa_file}")
             isa_def = self._load_from_file(isa_file)
             self._cache[isa_name] = isa_def
             return isa_def
         # Try to load from package resources
         try:
-            print(f"[DEBUG] Trying importlib.resources for isa_xform.isa_definitions/{isa_name}.json")
             import importlib.resources
             with importlib.resources.files("isa_xform.isa_definitions").joinpath(f"{isa_name}.json").open("r") as f:
                 data = json.load(f)
             isa_def = self._parse_isa_data(data, Path(f"isa_xform/isa_definitions/{isa_name}.json"))
             self._cache[isa_name] = isa_def
-            print(f"[DEBUG] Loaded ISA from importlib.resources")
             return isa_def
         except Exception as e:
-            print(f"[DEBUG] importlib.resources failed: {e}")
+            pass
         raise ISALoadError(f"ISA '{isa_name}' not found")
     
     def load_isa_from_file(self, file_path: Union[str, Path]) -> ISADefinition:
