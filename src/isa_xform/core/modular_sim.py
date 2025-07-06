@@ -3,6 +3,7 @@ import struct
 import re
 import numpy as np
 import keyboard
+from pynput.keyboard import Key, Listener
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
@@ -26,12 +27,31 @@ class Simulator:
         self.symbol_table = symbol_table if symbol_table else SymbolTable()
         self.disassembler = disassembler if disassembler else Disassembler(isa_definition, self.symbol_table)
         self.memory = bytearray(65536)  # 64KB memory
-        #self.pc = isa_definition.address_space.default_code_start
         self.pc = 0
+        #self.pc = isa_definition.address_space.default_code_start if isa_definition.address_space.default_code_start is not None else 0
         self.pc_step = self.isa_definition.word_size // 8
         self.regs = [0] * len(self.isa_definition.registers['general_purpose'])  # Initialize registers
         self.reg_names = [reg for reg in self.isa_definition.registers]
         self.key = "start"
+
+    def listen_for_key(self, target_key):
+        def on_press(key):
+            try:
+                # For alphanumeric keys
+                if key.char == target_key:
+                    print(f"You pressed '{target_key}'!")
+                    self.key = 1
+                    return False  # Stop the listener
+            except AttributeError:
+                # For special keys
+                if key == target_key:
+                    print(f"You pressed {target_key}!")
+                    self.key = 1
+                    return False
+                self.key = 0
+
+        with Listener(on_press=on_press) as listener:
+            listener.join()
 
 
     def load_memory_from_file(self, filename: str) -> bool:
@@ -88,8 +108,7 @@ class Simulator:
             return []
         
         operand_string = ' '.join(parts[1:])  # Join everything after the mnemonic
-
-        operands = re.findall(r'\b[a-zA-Z]\w*|\d+', operand_string)
+        operands = re.findall(r'(?:0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|-?\d+|[a-zA-Z_]\w*)', operand_string)
         operand_list = list(dict.fromkeys(operands))  # Remove duplicates while preserving order
         return operand_list
     
@@ -193,7 +212,9 @@ class Simulator:
             elif name == "stop_audio_playback":
                 print("Audio playback stopped")
             elif name == "read_keyboard":
-                self.regs[7] = self.get_key(chr(self.regs[6])) # a0 register is the key to read, a1 register will hold the result
+                #self.regs[7] = self.get_key(chr(self.regs[6])) # a0 register is the key to read, a1 register will hold the result
+                self.listen_for_key(chr(self.regs[6]))
+                self.regs[7] = self.key
             elif name == "registers_dump":
                 for i, reg in enumerate(self.regs):
                     print(f"{self.reg_names[i]}: {reg}")
@@ -204,51 +225,47 @@ class Simulator:
                     if addr < len(self.memory):
                         print(f"0x{addr:04X}: {self.read_memory_byte(addr)}")
             
-            print(f"Executing ECALL service: {name} with code {code}") 
             return True
 
             
         else:
-            generic_syntax = disassembled_instruction.instructions[0].instruction.syntax
+            generic_assembly = disassembled_instruction.instructions[0].instruction.syntax
             instruction = disassembled_instruction.instructions[0]
-            actual_syntax = f"{instruction.mnemonic}  {', '.join(instruction.operands)}"
-            semantics = disassembled_instruction.instructions[0].instruction.semantics
+            actual_assembly = f"{instruction.mnemonic}  {', '.join(instruction.operands)}"
+            code = disassembled_instruction.instructions[0].instruction.semantics
 
-            generic_parameters = self.extract_parameters(generic_syntax)
-            actual_parameters = self.extract_parameters(actual_syntax)
-            #operands_map = self.map_operands_to_registers(generic_parameters, actual_parameters)
-            semantics = self.generic_to_register_name(semantics, generic_parameters, actual_parameters)
-            executable_string = self.register_name_to_index(semantics, actual_parameters)
-            print(f"Executing: {executable_string}")
+            generic_parameters = self.extract_parameters(generic_assembly)
+            actual_parameters = self.extract_parameters(actual_assembly)
+            code = self.generic_to_register_name(code, generic_parameters, actual_parameters)
+            executable_string = self.register_name_to_index(code, actual_parameters)
             exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'unsigned': unsigned, 'sign_extend': sign_extend, 'read_memory_word': self.read_memory_word, 'write_memory_word': self.write_memory_word})
             return True
         
     
     def run(self):
-        while self.pc < len(self.memory) and self.key != 'q':
+        loop = "start"
+        while self.pc < len(self.memory) and loop != 'q':
             instruction = self.read_memory_word(self.pc)
-
             if instruction == 0:
-                print("Program terminated")
-                break
-            disassembled = self.disassemble_instruction(instruction, self.pc)
-            if disassembled is None:
-                print(f"Error: Unknown instruction at address {self.pc:04X}")
-                break
+                print(f"0x{self.pc:04x}: NOP")
+            else:    
+                disassembled = self.disassemble_instruction(instruction, self.pc)
+                if disassembled is None:
+                    print(f"Error: Unknown instruction at address {self.pc:04X}")
+                    break
 
-            if not self.execute_instruction(disassembled):
-                print("Execution terminated by instruction")
-                break
-
+                if not self.execute_instruction(disassembled):
+                    print("Execution terminated by instruction")
+                    break
             self.pc += self.pc_step
 
             if self.pc >= len(self.memory):
                 print("Reached end of memory")
                 break
             print(f"Registers: {self.regs}")
-            self.key = keyboard.read_event().name
+            #self.key = keyboard.read_event().name
             alias_names = [reg.alias[0] if reg.alias else reg.name for reg in self.isa_definition.registers['general_purpose']]
             #print(f"Registers: {': '.join(f'{name}: {value}' for name, value in zip(alias_names, self.regs))}")
-            #key = input("Press Enter to continue, 'q' to quit: ").strip().lower()
+            loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
         print("Simulation complete")
 
