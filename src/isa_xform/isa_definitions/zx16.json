@@ -8,7 +8,7 @@
     "address_space": {
       "size": 65536,
       "default_code_start": 32,
-      "default_data_start": 32,
+      "default_data_start": 32768,
       "default_stack_start": 61438,
       "memory_layout": {
         "interrupt_vectors": {"start": 0, "end": 30},
