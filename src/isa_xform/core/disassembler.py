@@ -133,7 +133,7 @@ class Disassembler:
         
         return (pattern_value, pattern_mask) if pattern_mask else None
     
-    def disassemble(self, machine_code: bytes, start_address: int = 0) -> DisassemblyResult:
+    def disassemble(self, machine_code: bytes, start_address: int = 0, debug: bool = False) -> DisassemblyResult:
         """Disassemble machine code to assembly"""
         instructions = []
         data_sections = {}
@@ -141,6 +141,14 @@ class Disassembler:
         # Use ISA default code start if not specified
         if start_address == 0:
             start_address = self.isa_definition.address_space.default_code_start
+        
+        if debug:
+            print(f"[DEBUG] Starting disassembly at PC=0x{start_address:04X}")
+            print(f"[DEBUG] Machine code size: {len(machine_code)} bytes")
+            print(f"[DEBUG] Instruction size: {self.instruction_size_bytes} bytes")
+            print(f"[DEBUG] ISA: {self.isa_definition.name}")
+            print(f"[DEBUG] Endianness: {self.isa_definition.endianness}")
+            print("-" * 60)
         
         current_address = start_address
         
@@ -152,10 +160,15 @@ class Disassembler:
         last_instruction_was_return = False
         
         while i < len(machine_code):
+            if debug:
+                print(f"[DEBUG] PC=0x{current_address:04X} | Byte offset={i:04X} | Mode={'DATA' if in_data_section else 'CODE'}")
+            
             if i + self.instruction_size_bytes > len(machine_code):
                 # Remaining bytes are data
                 if len(machine_code[i:]) > 0:
                     data_sections[current_address] = machine_code[i:]
+                    if debug:
+                        print(f"[DEBUG] PC=0x{current_address:04X} | Remaining {len(machine_code[i:])} bytes as DATA")
                 break
             
             # Extract instruction bytes
@@ -164,12 +177,18 @@ class Disassembler:
             # Check if this looks like padding (all zeros)
             if all(b == 0 for b in instr_bytes):
                 consecutive_nops += 1
+                if debug:
+                    print(f"[DEBUG] PC=0x{current_address:04X} | NOP detected (consecutive: {consecutive_nops})")
+                
                 # Only switch to data mode after many consecutive NOPs (more conservative)
                 if consecutive_nops >= self.max_consecutive_nops * 3 and not in_data_section:
                     # Switch to data mode for large blocks of zeros
                     in_data_section = True
                     data_start = current_address - (consecutive_nops - 1) * self.instruction_size_bytes
                     data_sections[data_start] = b'\x00' * (consecutive_nops * self.instruction_size_bytes)
+                    if debug:
+                        print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (large NOP block)")
+                        print(f"[DEBUG] Data section starts at 0x{data_start:04X}")
                     consecutive_nops = 0
                 elif not in_data_section:
                     # Still in instruction mode, add as NOP
@@ -180,6 +199,8 @@ class Disassembler:
                         operands=[],
                         comment=""
                     ))
+                    if debug:
+                        print(f"[DEBUG] PC=0x{current_address:04X} | Adding NOP instruction")
             else:
                 # Reset consecutive NOP counter
                 consecutive_nops = 0
@@ -195,14 +216,22 @@ class Disassembler:
                         consecutive_invalid = 0  # Reset invalid counter on successful decode
                         in_data_section = False  # Reset data section flag
                         
+                        if debug:
+                            print(f"[DEBUG] PC=0x{current_address:04X} | Decoded: {decoded.mnemonic} {', '.join(decoded.operands)}")
+                        
                         # Check if this is a return instruction (JR, RET, etc.)
                         if decoded.mnemonic in ['JR', 'RET', 'JALR'] and 'ra' in decoded.operands:
                             last_instruction_was_return = True
+                            if debug:
+                                print(f"[DEBUG] PC=0x{current_address:04X} | Return instruction detected")
                         else:
                             last_instruction_was_return = False
                     else:
                         # Unknown instruction - check if we should switch to data mode
                         consecutive_invalid += 1
+                        
+                        if debug:
+                            print(f"[DEBUG] PC=0x{current_address:04X} | Unknown instruction: 0x{instr_word:04X} (consecutive invalid: {consecutive_invalid})")
                         
                         # Switch to data mode if:
                         # 1. We just had a return instruction, OR
@@ -215,6 +244,8 @@ class Disassembler:
                         if should_switch_to_data and not in_data_section:
                             # Switch to data mode
                             in_data_section = True
+                            if debug:
+                                print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (unknown instruction)")
                             # Add the current word to data section
                             if current_address not in data_sections:
                                 data_sections[current_address] = bytearray()
@@ -228,14 +259,21 @@ class Disassembler:
                                 operands=[],
                                 comment=f"0x{instr_word:04X}"
                             ))
+                            if debug:
+                                print(f"[DEBUG] PC=0x{current_address:04X} | Adding UNKNOWN instruction")
                         else:
                             # Already in data mode, add to data section
                             if current_address not in data_sections:
                                 data_sections[current_address] = bytearray()
                             data_sections[current_address].extend(instr_bytes)
+                            if debug:
+                                print(f"[DEBUG] PC=0x{current_address:04X} | Adding to data section: 0x{instr_word:04X}")
                 except Exception as e:
                     # Decoding failed - be very conservative
                     consecutive_invalid += 1
+                    
+                    if debug:
+                        print(f"[DEBUG] PC=0x{current_address:04X} | Decode error: {e} (consecutive invalid: {consecutive_invalid})")
                     
                     # Switch to data mode if we just had a return instruction
                     should_switch_to_data = (
@@ -246,6 +284,8 @@ class Disassembler:
                     if should_switch_to_data and not in_data_section:
                         # Switch to data mode
                         in_data_section = True
+                        if debug:
+                            print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (decode error)")
                         if current_address not in data_sections:
                             data_sections[current_address] = bytearray()
                         data_sections[current_address].extend(instr_bytes)
@@ -258,14 +298,30 @@ class Disassembler:
                             operands=[],
                             comment=f"Decode error: {e}"
                         ))
+                        if debug:
+                            print(f"[DEBUG] PC=0x{current_address:04X} | Adding INVALID instruction")
                     else:
                         # Already in data mode, add to data section
                         if current_address not in data_sections:
                             data_sections[current_address] = bytearray()
                         data_sections[current_address].extend(instr_bytes)
+                        if debug:
+                            print(f"[DEBUG] PC=0x{current_address:04X} | Adding to data section (decode error): 0x{bytes_to_int(instr_bytes, 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'):04X}")
             
             i += self.instruction_size_bytes
             current_address += self.instruction_size_bytes
+        
+        if debug:
+            print("-" * 60)
+            print(f"[DEBUG] Disassembly complete!")
+            print(f"[DEBUG] Total instructions: {len(instructions)}")
+            print(f"[DEBUG] Data sections: {len(data_sections)}")
+            print(f"[DEBUG] Final PC: 0x{current_address:04X}")
+            print(f"[DEBUG] Code range: 0x{start_address:04X} - 0x{current_address-1:04X}")
+            if data_sections:
+                data_addrs = sorted(data_sections.keys())
+                print(f"[DEBUG] Data sections at: {[f'0x{addr:04X}' for addr in data_addrs]}")
+            print("-" * 60)
         
         return DisassemblyResult(
             instructions=instructions,
