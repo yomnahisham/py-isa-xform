@@ -20,7 +20,7 @@ def test_zx16_comprehensive():
     
     # Load ZX16 ISA
     loader = ISALoader()
-    isa_def = loader.load_isa_from_file("../../../../py-isa-xform/src/isa_definitions/zx16.json")
+    isa_def = loader.load_isa("zx16")
     
     print(f"✓ Loaded ISA: {isa_def.name} v{isa_def.version}")
     print(f"  Instructions: {len(isa_def.instructions)}")
@@ -137,7 +137,7 @@ def test_zx16_comprehensive():
         # Test CLI assembly
         result = subprocess.run([
             'python3', '-m', 'isa_xform.cli', 'assemble',
-            '--isa', '../../../../py-isa-xform/src/isa_definitions/zx16.json',
+            '--isa', 'zx16',
             '--input', 'test_zx16_comprehensive.s',
             '--output', 'test_zx16_comprehensive_cli.bin',
             '--verbose'
@@ -152,7 +152,7 @@ def test_zx16_comprehensive():
         # Test CLI disassembly
         result = subprocess.run([
             'python3', '-m', 'isa_xform.cli', 'disassemble',
-            '--isa', '../../../../py-isa-xform/src/isa_definitions/zx16.json',
+            '--isa', 'zx16',
             '--input', 'test_zx16_comprehensive_cli.bin',
             '--output', 'test_zx16_comprehensive_cli_dis.s',
             '--verbose'
