@@ -233,7 +233,7 @@ class TestISALoader:
         isa_def = self.loader.load_isa("zx16")
         
         assert isa_def.name == "ZX16"
-        assert isa_def.version == "1.0"
+        assert isa_def.version == "1.1"
         assert isa_def.word_size == 16
         assert isa_def.endianness == "little"
         assert len(isa_def.instructions) > 0
