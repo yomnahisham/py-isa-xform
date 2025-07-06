@@ -241,10 +241,13 @@ class Simulator:
             exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'unsigned': unsigned, 'sign_extend': sign_extend, 'read_memory_word': self.read_memory_word, 'write_memory_word': self.write_memory_word})
             return True
         
-    
+    def dump_memory(self, start: int, end: int):
+        for addr in range(start, end + 1):
+            print(f"0x{addr:04X}: {self.read_memory_byte(addr):02X}")
+
     def run(self):
         loop = "start"
-        while self.pc < len(self.memory) and loop != 'q':
+        while self.pc < len(self.memory):
             instruction = self.read_memory_word(self.pc)
             if instruction == 0:
                 print(f"0x{self.pc:04x}: NOP")
@@ -266,6 +269,9 @@ class Simulator:
             #self.key = keyboard.read_event().name
             alias_names = [reg.alias[0] if reg.alias else reg.name for reg in self.isa_definition.registers['general_purpose']]
             #print(f"Registers: {': '.join(f'{name}: {value}' for name, value in zip(alias_names, self.regs))}")
-            loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
+            #loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
         print("Simulation complete")
+
+
+        self.dump_memory(0xFA00, 0xFA03)  # print palette, supposed to store 3
 
