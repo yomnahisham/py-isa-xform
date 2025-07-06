@@ -3,6 +3,7 @@ import struct
 import re
 import numpy as np
 import keyboard
+import ctypes
 from pynput.keyboard import Key, Listener
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -30,7 +31,7 @@ class Simulator:
         self.pc = 0
         #self.pc = isa_definition.address_space.default_code_start if isa_definition.address_space.default_code_start is not None else 0
         self.pc_step = self.isa_definition.word_size // 8
-        self.regs = [0] * len(self.isa_definition.registers['general_purpose'])  # Initialize registers
+        self.regs = [ctypes.c_int16(0) for _ in range(8)]  # Initialize registers
         self.reg_names = [reg for reg in self.isa_definition.registers]
         self.key = "start"
 
@@ -136,6 +137,7 @@ class Simulator:
             result = result.replace(operand, f"regs[{idx}]")
         result = result.replace("memory", "self.memory")
         result = result.replace("PC", "self.pc")
+        result = result.replace("]", "].value")  # Ensure ctypes values are accessed correctly
         return result        
     
     def disassemble_instruction(self, instruction: int, pc: int) -> Optional[DisassembledInstruction]:
@@ -238,6 +240,7 @@ class Simulator:
             actual_parameters = self.extract_parameters(actual_assembly)
             code = self.generic_to_register_name(code, generic_parameters, actual_parameters)
             executable_string = self.register_name_to_index(code, actual_parameters)
+            print(f"Executing: {executable_string}")
             exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'unsigned': unsigned, 'sign_extend': sign_extend, 'read_memory_word': self.read_memory_word, 'write_memory_word': self.write_memory_word})
             return True
         
@@ -262,7 +265,8 @@ class Simulator:
             if self.pc >= len(self.memory):
                 print("Reached end of memory")
                 break
-            print(f"Registers: {self.regs}")
+            values = [reg.value for reg in self.regs]
+            print(f"Registers: {values}")
             #self.key = keyboard.read_event().name
             alias_names = [reg.alias[0] if reg.alias else reg.name for reg in self.isa_definition.registers['general_purpose']]
             #print(f"Registers: {': '.join(f'{name}: {value}' for name, value in zip(alias_names, self.regs))}")
