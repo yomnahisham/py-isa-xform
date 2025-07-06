@@ -1,24 +1,33 @@
 {
     "name": "ZX16",
-    "version": "1.0",
-    "description": "ZX16 16-bit RISC-V inspired ISA",
+    "version": "1.1",
+    "description": "ZX16 16-bit RISC ISA (updated to spec)",
     "instruction_size": 16,
     "word_size": 16,
     "endianness": "little",
     "address_space": {
       "size": 65536,
-      "default_code_start": 32
+      "default_code_start": 0,
+      "default_data_start": 32,
+      "default_stack_start": 61438,
+      "memory_layout": {
+        "interrupt_vectors": {"start": 0, "end": 30},
+        "code_section": {"start": 32, "end": 61439},
+        "data_section": {"start": 32768, "end": 61437},
+        "stack_section": {"start": 61438, "end": 61438},
+        "mmio": {"start": 61440, "end": 65535}
+      }
     },
     "registers": {
       "general_purpose": [
-        {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved)"},
-        {"name": "x1", "size": 16, "alias": ["ra"], "description": "Return address"},
-        {"name": "x2", "size": 16, "alias": ["sp"], "description": "Stack pointer"},
-        {"name": "x3", "size": 16, "alias": ["s0"], "description": "Saved/Frame pointer"},
-        {"name": "x4", "size": 16, "alias": ["s1"], "description": "Saved"},
-        {"name": "x5", "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved)"},
-        {"name": "x6", "size": 16, "alias": ["a0"], "description": "Argument 0/Return value"},
-        {"name": "x7", "size": 16, "alias": ["a1"], "description": "Argument 1"}
+        {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved scratch)"},
+        {"name": "x1", "size": 16, "alias": ["ra"], "description": "Return address (JAL/JALR)"},
+        {"name": "x2", "size": 16, "alias": ["sp"], "description": "Stack pointer (init 0xEFFE)"},
+        {"name": "x3", "size": 16, "alias": ["s0"], "description": "Saved/frame pointer (callee-saved)"},
+        {"name": "x4", "size": 16, "alias": ["s1"], "description": "Saved (callee-saved)"},
+        {"name": "x5", "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved scratch)"},
+        {"name": "x6", "size": 16, "alias": ["a0"], "description": "Arg0/Return value"},
+        {"name": "x7", "size": 16, "alias": ["a1"], "description": "Arg1 (spill to stack for more)"}
       ]
     },
     "instructions": [
@@ -717,6 +726,7 @@
       }
     ],
     "directives": [
+<<<<<<< HEAD:src/isa_definitions/zx16.json
     {
       "name": ".org",
       "description": "Set origin address",
@@ -916,6 +926,153 @@
       "examples": [".incbin \"data.bin\"", ".incbin \"image.raw\""]
     }
   ],
+=======
+      {
+        "name": ".org",
+        "description": "Set origin address",
+        "action": "set_origin",
+        "implementation": "# Set origin directive implementation\nif args:\n    addr = int(args[0], 0)  # Parse as hex/decimal\n    context.current_address = addr\n    assembler.context.current_address = addr\n    assembler.symbol_table.set_current_address(addr)",
+        "argument_types": ["number"],
+        "syntax": ".org address",
+        "examples": [".org 0x1000", ".org 4096"]
+      },
+      {
+        "name": ".word",
+        "description": "Define word data",
+        "action": "define_word",
+        "implementation": "# Define word directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    # Little endian 16-bit word\n    result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += 2\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number"],
+        "syntax": ".word value1, value2, ...",
+        "examples": [".word 0x1234", ".word 42, 0xABCD"]
+      },
+      {
+        "name": ".byte",
+        "description": "Define byte data",
+        "action": "define_byte",
+        "implementation": "# Define byte directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    result.append(value & 0xFF)\n    context.current_address += 1\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number"],
+        "syntax": ".byte value1, value2, ...",
+        "examples": [".byte 0x12", ".byte 65, 66, 67"]
+      },
+      {
+        "name": ".ascii",
+        "description": "Define ASCII string",
+        "action": "define_ascii",
+        "implementation": "# Define ASCII string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["string"],
+        "syntax": ".ascii \"string\"",
+        "examples": [".ascii \"Hello, World!\""]
+      },
+      {
+        "name": ".align",
+        "description": "Align to boundary",
+        "action": "align",
+        "implementation": "# Align directive implementation\nif args:\n    alignment = int(args[0])\n    padding = (alignment - (context.current_address % alignment)) % alignment\n    if padding > 0:\n        result = bytearray([0] * padding)\n        context.current_address += padding\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number"],
+        "syntax": ".align boundary",
+        "examples": [".align 4", ".align 16"]
+      },
+      {
+        "name": ".string",
+        "description": "Define null-terminated ASCII string",
+        "action": "define_stringz",
+        "implementation": "# Define null-terminated string\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii') + b'\\x00')\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["string"],
+        "syntax": ".string \"string\"",
+        "examples": [".string \"Hello\\n\""]
+      },
+      {
+        "name": ".fill",
+        "description": "Fill N items, M bytes each, with value",
+        "action": "fill",
+        "implementation": "# Fill directive\nif len(args) >= 3:\n    count = int(args[0], 0)\n    size = int(args[1], 0)\n    value = int(args[2], 0)\n    result = bytearray()\n    for _ in range(count):\n        result.extend(value.to_bytes(size, 'little'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number", "number", "number"],
+        "syntax": ".fill count, size, value",
+        "examples": [".fill 5, 2, 0xFFFF"]
+      },
+      {
+        "name": ".set",
+        "description": "Define constant (alias for .equ)",
+        "action": "define_constant",
+        "implementation": "# .set is an alias for .equ\nif len(args) >= 2:\n    symbol = args[0]\n    value = int(args[1], 0)\n    assembler.symbol_table.define_constant(symbol, value)",
+        "argument_types": ["string", "number"],
+        "syntax": ".set NAME, VALUE",
+        "examples": [".set MAX_COUNT, 100"]
+      },
+      {
+        "name": ".extern",
+        "description": "Declare external symbol",
+        "action": "declare_extern",
+        "implementation": "# Declare external symbol\nif args:\n    for symbol in args:\n        assembler.symbol_table.declare_extern(symbol)",
+        "argument_types": ["string"],
+        "syntax": ".extern symbol",
+        "examples": [".extern external_func"]
+      },
+      {
+        "name": ".ifdef",
+        "description": "If symbol is defined (conditional assembly)",
+        "action": "conditional_ifdef",
+        "implementation": "# Ifdef directive (handled by preprocessor)",
+        "argument_types": ["string"],
+        "syntax": ".ifdef SYMBOL",
+        "examples": [".ifdef DEBUG"]
+      },
+      {
+        "name": ".ifndef",
+        "description": "If symbol is not defined (conditional assembly)",
+        "action": "conditional_ifndef",
+        "implementation": "# Ifndef directive (handled by preprocessor)",
+        "argument_types": ["string"],
+        "syntax": ".ifndef SYMBOL",
+        "examples": [".ifndef RELEASE"]
+      },
+      {
+        "name": ".if",
+        "description": "If expression is true (conditional assembly)",
+        "action": "conditional_if",
+        "implementation": "# If directive (handled by preprocessor)",
+        "argument_types": ["expression"],
+        "syntax": ".if EXPR",
+        "examples": [".if STACK_SIZE > 0x200"]
+      },
+      {
+        "name": ".else",
+        "description": "Else for conditional assembly",
+        "action": "conditional_else",
+        "implementation": "# Else directive (handled by preprocessor)",
+        "argument_types": [],
+        "syntax": ".else",
+        "examples": [".else"]
+      },
+      {
+        "name": ".endif",
+        "description": "End if for conditional assembly",
+        "action": "conditional_endif",
+        "implementation": "# Endif directive (handled by preprocessor)",
+        "argument_types": [],
+        "syntax": ".endif",
+        "examples": [".endif"]
+      },
+      {
+        "name": ".include",
+        "description": "Include another assembly file",
+        "action": "include_file",
+        "implementation": "# Include directive (handled by preprocessor)",
+        "argument_types": ["string"],
+        "syntax": ".include \"file\"",
+        "examples": [".include \"constants.asm\""]
+      },
+      {
+        "name": ".incbin",
+        "description": "Include binary file",
+        "action": "include_binary",
+        "implementation": "# Incbin directive (handled by preprocessor)",
+        "argument_types": ["string"],
+        "syntax": ".incbin \"file\"",
+        "examples": [".incbin \"data.bin\""]
+      }
+    ],
+>>>>>>> main:src/isa_xform/isa_definitions/zx16.json
     "pseudo_instructions": [
       {
         "mnemonic": "NOP",
@@ -1004,6 +1161,97 @@
       "string_delimiters": ["\"", "'"],
       "case_sensitive": false,
       "instruction_separator": "\n"
+    },
+    "label_definition": {
+      "description": "Label definition syntax and scope rules for ZX16 assembly",
+      "syntax": {
+        "global_label": "label_name:",
+        "local_label": ".local_label:",
+        "data_label": "label_name: directive",
+        "section_label": "section_name:"
+      },
+      "rules": {
+        "naming": {
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "local_prefix": ".",
+          "case_sensitive": false,
+          "max_length": 64
+        },
+        "scope": {
+          "global": "Visible across all files",
+          "local": "Visible only within current file",
+          "section": "Defines section boundaries"
+        },
+        "placement": {
+          "start_of_line": true,
+          "followed_by_colon": true,
+          "can_follow_instruction": false,
+          "can_follow_directive": true
+        }
+      },
+      "examples": [
+        {
+          "type": "Global Label",
+          "description": "Main entry point, visible across all files",
+          "syntax": "main:",
+          "usage": "main:\n    LI x6, 10\n    CALL function"
+        },
+        {
+          "type": "Local Label", 
+          "description": "File-scope label, starts with dot",
+          "syntax": ".local_label:",
+          "usage": ".loop:\n    ADD x1, x2\n    BNZ x1, .loop"
+        },
+        {
+          "type": "Loop Label",
+          "description": "Common pattern for loop control",
+          "syntax": "loop:",
+          "usage": "loop:\n    ADD x1, x2\n    BNZ x1, loop\n    RET"
+        },
+        {
+          "type": "Section Label",
+          "description": "Defines code or data section",
+          "syntax": "data_section:",
+          "usage": "data_section:\n    .word 0x1234\n    .word 0x5678"
+        },
+        {
+          "type": "Data Label",
+          "description": "Label with data allocation",
+          "syntax": "buffer: .space 64",
+          "usage": "buffer: .space 64\n    .ascii \"Hello, World!\""
+        },
+        {
+          "type": "Function Label",
+          "description": "Function entry point",
+          "syntax": "function_name:",
+          "usage": "my_function:\n    PUSH x3\n    ADD x6, x7\n    POP x3\n    RET"
+        }
+      ],
+      "features": {
+        "forward_references": true,
+        "label_arithmetic": true,
+        "bitfield_extraction": true,
+        "scope_resolution": true,
+        "section_awareness": true
+      },
+      "bitfield_syntax": {
+        "description": "Extract bits from label address",
+        "pattern": "label[high:low]",
+        "examples": [
+          "label[15:9]  # Upper 7 bits",
+          "label[8:0]   # Lower 9 bits",
+          "label[7:0]   # Lower 8 bits"
+        ]
+      },
+      "arithmetic_operations": {
+        "supported": ["+", "-", "*", "/", "&", "|", "^", "<<", ">>"],
+        "examples": [
+          "end_label - start_label",
+          "(buffer + 4)",
+          "~0x0F",
+          "(value << 2) | 0x03"
+        ]
+      }
     },
     "constants": {
       "RESET_VECTOR": 0,
