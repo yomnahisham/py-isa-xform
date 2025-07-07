@@ -16,7 +16,7 @@ def debug_lui_encoding():
     
     # Load ZX16 ISA
     loader = ISALoader()
-    isa = loader.load_isa_from_file('src/isa_xform/isa_definitions/zx16.json')
+    isa = loader.load_isa_from_file('src/isa_definitions/zx16.json')
     
     # Find LUI instruction
     lui_instruction = None
@@ -98,7 +98,7 @@ def test_lui_100():
     
     # Load ZX16 ISA
     loader = ISALoader()
-    isa = loader.load_isa_from_file('src/isa_xform/isa_definitions/zx16.json')
+    isa = loader.load_isa_from_file('src/isa_definitions/zx16.json')
     
     # Create test assembly
     test_asm = """# Test LUI instruction
