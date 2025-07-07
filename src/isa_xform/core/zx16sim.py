@@ -1,4 +1,3 @@
-from isa_xform.core.simulator import ZX16Simulator
 import sys
 import struct
 from pathlib import Path
@@ -27,7 +26,6 @@ def main():
     isa_loader = ISALoader();
     symbol_table = SymbolTable();
     disassembler = Disassembler(isa_loader.load_isa("zx16"), symbol_table)
-    #simulator = ZX16Simulator(disassembler)
     simulator = Simulator(isa_loader.load_isa("zx16"), symbol_table, disassembler)
     if not simulator.load_memory_from_file(filename):
         sys.exit(1)

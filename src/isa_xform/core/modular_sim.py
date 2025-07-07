@@ -33,9 +33,13 @@ class Simulator:
         self.memory = bytearray(65536)  # 64KB memory
         self.pc = isa_definition.address_space.default_code_start
         self.data_start = isa_definition.address_space.default_data_start
+        self.stack_start = isa_definition.address_space.default_stack_start
         self.pc_step = self.isa_definition.word_size // 8
         self.regs = [0] * len(self.isa_definition.registers['general_purpose'])
         self.reg_names = [reg.alias[0] for reg in self.isa_definition.registers['general_purpose']]
+        # get index of sp
+        self.sp_index = self.reg_names.index('sp') if 'sp' in self.reg_names else -1
+        self.regs[self.sp_index] = self.stack_start  # Initialize stack pointer to stack start address
         self.key = "start"
 
     def listen_for_key(self, target_key):
@@ -254,7 +258,7 @@ class Simulator:
         loop = "start"
         print(f"Code Start: {self.pc}")
         print(f"Data Start: {self.data_start} ")
-        print(f"Memory: {self.memory[self.data_start]} ")
+        #print(f"Memory: {self.memory} ")
 
         while self.pc < len(self.memory) and (loop != 'q' or (not step)):
             
