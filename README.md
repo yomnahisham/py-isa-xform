@@ -79,8 +79,11 @@ pip install -e .
 # Assemble code for ZX16 ISA
 python3 -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
 
-# Disassemble machine code
+# Disassemble machine code (automatic data region detection)
 python3 -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s
+
+# Disassemble with custom data regions
+python3 -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s --data-regions 0x100-0x200
 
 # Assemble with verbose output
 python3 -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin --verbose
@@ -133,14 +136,23 @@ python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
 - **Correct Operand Ordering**: Outputs operands in syntax order, not encoding order
 - **Symbol Reconstruction**: Rebuilds labels and symbols from machine code
 - **Instruction Recognition**: Robust pattern matching for instruction identification
+- **Automatic Data Region Detection**: Automatically detects data vs code regions based on ISA memory layout
 - **Professional Output**: Clean, readable assembly code generation
 
 ### ISA Definition System
 - **JSON-Based Configuration**: Human-readable ISA specifications
 - **Flexible Field Definitions**: Support for various instruction formats
 - **Register Configuration**: Comprehensive register set definitions
+- **Memory Layout Definition**: Define address space and memory regions for automatic data detection
 - **Syntax Specification**: Customizable assembly language syntax
 - **Validation Rules**: Built-in validation for ISA definitions
+
+### Automatic Data Region Detection
+- **ISA-Based Detection**: Automatically detects data regions based on ISA memory layout
+- **Memory Layout Support**: Respects interrupt vectors, data sections, code sections, and MMIO regions
+- **User Override**: Manual specification of data regions with `--data-regions` parameter
+- **Cross-ISA Compatibility**: Works with any ISA that defines a memory layout
+- **Professional Behavior**: Mimics real disassemblers like objdump, Ghidra, and IDA
 
 ### Custom Instruction Implementations
 - **Python Code Semantics**: Write actual Python code to define instruction behavior
