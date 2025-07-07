@@ -90,6 +90,7 @@ Data Region Detection:
     assemble_parser.add_argument('--output', required=True, help='Output binary file')
     assemble_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
     assemble_parser.add_argument('--list-symbols', action='store_true', help='List resolved symbols')
+    assemble_parser.add_argument('--raw', action='store_true', help='Output raw binary with no header (for legacy/bootloader use)')
     
     # Disassemble command
     disassemble_parser = subparsers.add_parser('disassemble', 
@@ -225,9 +226,37 @@ def assemble_command(args) -> int:
         assembled_result = assembler.assemble(all_nodes)
         machine_code = assembled_result.machine_code
         
+        # Generate binary header if requested
+        if args.raw:
+            final_binary = machine_code
+        else:
+            # Create ISA binary header format:
+            # Magic: "ISA\x01" (4 bytes)
+            # ISA name length: 1 byte
+            # ISA name: variable length
+            # Code size: 4 bytes (little endian)
+            # Entry point: 4 bytes (little endian)
+            # Machine code follows
+            
+            isa_name = isa_definition.name.encode('ascii')
+            header = bytearray()
+            header.extend(b'ISA\x01')  # Magic + version
+            header.append(len(isa_name))  # Name length
+            header.extend(isa_name)  # ISA name
+            header.extend(len(machine_code).to_bytes(4, 'little'))  # Code size
+            header.extend((assembled_result.entry_point or 0).to_bytes(4, 'little'))  # Entry point
+            
+            # Combine header and machine code
+            final_binary = header + machine_code
+            
+            if args.verbose:
+                print(f"Generated header: {len(header)} bytes")
+                print(f"Entry point: 0x{assembled_result.entry_point or 0:X}")
+                print(f"Total binary size: {len(final_binary)} bytes")
+        
         # Write output
         with open(args.output, 'wb') as f:
-            f.write(machine_code)
+            f.write(final_binary)
         
         if args.verbose:
             print(f"Generated {len(machine_code)} bytes of machine code")

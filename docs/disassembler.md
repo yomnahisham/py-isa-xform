@@ -404,4 +404,67 @@ formatted = disassembler.format_disassembly(result, include_addresses=True, incl
 formatted = disassembler.format_disassembly(result, include_addresses=False)
 ```
 
+## Binary Input Format
+
+The disassembler supports both headered and raw binary formats, automatically detecting the format and extracting metadata when available.
+
+### Headered Binary Support
+
+The disassembler automatically detects and processes ISA-specific headers:
+
+- **Magic Detection**: Recognizes `ISA\x01` magic number
+- **Entry Point Extraction**: Automatically uses the entry point from the header
+- **ISA Verification**: Confirms the binary was assembled with the correct ISA
+- **Fallback**: Falls back to raw binary processing if no header is detected
+
+### Header Format
+
+```
+ISA\x01 + [ISA Name Length] + [ISA Name] + [Code Size] + [Entry Point] + [Machine Code]
+```
+
+### Automatic Address Detection
+
+When a headered binary is detected, the disassembler automatically:
+
+1. **Extracts the entry point** from the header
+2. **Starts disassembly at the correct address** without requiring `--start-address`
+3. **Uses the ISA name** for verification and enhanced output
+
+### Raw Binary Support
+
+For raw binaries (no header), the disassembler:
+
+1. **Uses the ISA default** code start address
+2. **Requires manual specification** of start address if different from default
+3. **Processes the entire file** as machine code
+
+### Examples
+
+```bash
+# Headered binary (automatic entry point detection)
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s
+
+# Raw binary (manual start address)
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s --start-address 0x20
+
+# Debug output shows header detection
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s --debug
+```
+
+### Header Detection Output
+
+When processing headered binaries, verbose output shows:
+
+```
+Loaded ISA: ZX16 v1.1
+Read 25 bytes from program.bin
+Extracted 8 bytes of code from header
+File entry point: 0x20
+Disassembled 4 instructions
+Found 0 data sections
+```
+
+## Disassembly Process
+
 This disassembler provides professional-grade machine code analysis with correct operand ordering and comprehensive error handling, making it suitable for educational, research, and development applications. 

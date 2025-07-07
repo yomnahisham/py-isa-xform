@@ -409,9 +409,9 @@ xform parse --isa simple_risc --input program.s --output ast.json
    └── InstructionNode (add r3, r1, r2)
    ```
 
-### `assemble` - Assembly to Machine Code (Future)
+### `assemble` - Assembly to Machine Code
 
-Converts assembly code to machine code binary.
+Converts assembly code to machine code binary with optional metadata headers.
 
 **Syntax:**
 ```bash
@@ -424,10 +424,15 @@ xform assemble --isa <file> --input <file> --output <file> [options]
 - `--output <file>`: Path to the output binary file (required)
 - `--list-symbols`: Display symbol table after assembly
 - `--verbose`, `-v`: Display detailed assembly information
+- `--raw`: Output raw binary without header (for bootloaders/legacy systems)
+
+**Binary Output Format:**
+- **Default**: Headered binary with entry point and metadata (recommended)
+- **Raw**: Use `--raw` flag for raw machine code without headers
 
 **Examples:**
 ```bash
-# Basic assembly
+# Basic assembly (headered binary by default)
 xform assemble --isa simple_risc --input program.s --output program.bin
 
 # Assembly with symbol listing
@@ -435,11 +440,14 @@ xform assemble --isa simple_risc --input program.s --output program.bin --list-s
 
 # Assembly multiple files
 xform assemble --isa simple_risc --input main.s data.s system.s --output program.bin
+
+# Raw binary output (for bootloaders/legacy)
+xform assemble --isa simple_risc --input program.s --output program.bin --raw
 ```
 
-### `disassemble` - Machine Code to Assembly (Future)
+### `disassemble` - Machine Code to Assembly
 
-Converts machine code binary back to assembly code.
+Converts machine code binary back to assembly code with automatic header detection.
 
 **Syntax:**
 ```bash
@@ -450,21 +458,30 @@ xform disassemble --isa <file> --input <file> --output <file> [options]
 - `--isa <file>`: Path to the ISA definition JSON file or ISA name (required)
 - `--input <file>`: Path to the binary input file (required)
 - `--output <file>`: Path to the assembly output file (required)
-- `--start-address <addr>`: Starting address for disassembly (default: 0)
+- `--start-address <addr>`: Starting address for disassembly (default: auto-detect from header)
 - `--show-addresses`: Show addresses in output
 - `--show-machine-code`: Show machine code in output
 - `--verbose`, `-v`: Display detailed disassembly information
+- `--debug`: Show detailed PC progression and mode switches
+- `--data-regions`: Specify custom data regions (overrides automatic detection)
+
+**Binary Input Support:**
+- **Headered Binaries**: Automatically detects entry point and starts disassembly correctly
+- **Raw Binaries**: Uses ISA default or manual `--start-address` specification
 
 **Examples:**
 ```bash
-# Basic disassembly
+# Basic disassembly (automatic header detection)
 xform disassemble --isa simple_risc --input program.bin --output disassembled.s
 
 # Disassembly with addresses and machine code shown
 xform disassemble --isa simple_risc --input program.bin --output disassembled.s --show-addresses --show-machine-code
 
-# Disassembly with custom starting address
+# Disassembly with custom starting address (for raw binaries)
 xform disassemble --isa simple_risc --input program.bin --output disassembled.s --start-address 0x1000
+
+# Debug output with automatic data region detection
+xform disassemble --isa zx16 --input program.bin --output disassembled.s --debug
 ```
 
 ## Error Handling
