@@ -156,18 +156,36 @@ class Disassembler:
             data_size = int.from_bytes(machine_code[20:24], 'little')
             code_bytes = machine_code[24:24+code_size]
             data_bytes = machine_code[24+code_size:24+code_size+data_size]
+            
+            if debug:
+                print(f"[DEBUG] ISAX header detected:")
+                print(f"[DEBUG] Entry point: 0x{entry_point:04X}")
+                print(f"[DEBUG] Code start: 0x{code_start:04X}, size: {code_size} bytes")
+                print(f"[DEBUG] Data start: 0x{data_start:04X}, size: {data_size} bytes")
+                print(f"[DEBUG] Total binary size: {len(machine_code)} bytes")
+                print(f"[DEBUG] Instruction size: {self.instruction_size_bytes} bytes")
+                print(f"[DEBUG] ISA: {self.isa_definition.name}")
+                print(f"[DEBUG] Endianness: {self.isa_definition.endianness}")
+                print("-" * 60)
             # Disassemble code section
             code_addr = code_start
             i = 0
             while i < len(code_bytes):
+                if debug:
+                    print(f"[DEBUG] PC=0x{code_addr:04X} | Byte offset={i:04X} | Disassembling instruction")
+                
                 instr_bytes = code_bytes[i:i+self.instruction_size_bytes]
                 if len(instr_bytes) < self.instruction_size_bytes:
+                    if debug:
+                        print(f"[DEBUG] PC=0x{code_addr:04X} | Insufficient bytes for instruction, stopping")
                     break
                 endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
                 instr_word = bytes_to_int(instr_bytes, endianness)
                 decoded = self._disassemble_instruction(instr_word, instr_bytes, code_addr)
                 if decoded:
                     instructions.append(decoded)
+                    if debug:
+                        print(f"[DEBUG] PC=0x{code_addr:04X} | Decoded: {decoded.mnemonic} {', '.join(decoded.operands)}")
                 else:
                     instructions.append(DisassembledInstruction(
                         address=code_addr,
@@ -176,12 +194,20 @@ class Disassembler:
                         operands=[],
                         comment=f"0x{instr_word:04X}"
                     ))
+                    if debug:
+                        print(f"[DEBUG] PC=0x{code_addr:04X} | Unknown instruction: 0x{instr_word:04X}")
                 i += self.instruction_size_bytes
                 code_addr += self.instruction_size_bytes
             # Disassemble data section: store as a single entry at the correct address
             data_addr = data_start
             if len(data_bytes) > 0:
                 data_sections[data_addr] = data_bytes
+                if debug:
+                    print(f"[DEBUG] Data section at 0x{data_addr:04X}, size: {len(data_bytes)} bytes")
+                    print(f"[DEBUG] Data bytes: {' '.join(f'{b:02X}' for b in data_bytes)}")
+            else:
+                if debug:
+                    print(f"[DEBUG] No data section found")
             return DisassemblyResult(
                 instructions=instructions,
                 symbols=self._extract_symbols(instructions),
