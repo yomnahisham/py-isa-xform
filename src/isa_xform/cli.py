@@ -226,11 +226,15 @@ def assemble_command(args) -> int:
         assembled_result = assembler.assemble(all_nodes)
         machine_code = assembled_result.machine_code
         
-        # Generate binary header if requested
-        if args.raw:
+        # Check if the assembler already created an ISAX header
+        if machine_code.startswith(b'ISAX'):
+            # Assembler created ISAX format, use it directly
+            final_binary = machine_code
+        elif args.raw:
+            # Raw binary requested
             final_binary = machine_code
         else:
-            # Create ISA binary header format:
+            # Create legacy ISA binary header format:
             # Magic: "ISA\x01" (4 bytes)
             # ISA name length: 1 byte
             # ISA name: variable length
@@ -240,19 +244,14 @@ def assemble_command(args) -> int:
             
             isa_name = isa_definition.name.encode('ascii')
             header = bytearray()
-            header.extend(b'ISA\x01')  # Magic + version
-            header.append(len(isa_name))  # Name length
+            header.extend(b'ISA\x01')  # Magic number
+            header.extend(len(isa_name).to_bytes(1, 'little'))  # ISA name length
             header.extend(isa_name)  # ISA name
-            header.extend(len(machine_code).to_bytes(4, 'little'))  # Code size
-            header.extend((assembled_result.entry_point or 0).to_bytes(4, 'little'))  # Entry point
+            header.extend(len(machine_code).to_bytes(4, 'little'))  # Total size
+            entry_point = assembled_result.entry_point or 0
+            header.extend(entry_point.to_bytes(4, 'little'))  # Entry point
             
-            # Combine header and machine code
             final_binary = header + machine_code
-            
-            if args.verbose:
-                print(f"Generated header: {len(header)} bytes")
-                print(f"Entry point: 0x{assembled_result.entry_point or 0:X}")
-                print(f"Total binary size: {len(final_binary)} bytes")
         
         # Write output
         with open(args.output, 'wb') as f:
@@ -301,7 +300,37 @@ def disassemble_command(args) -> int:
         # Check for ISA header
         machine_code = binary_data
         entry_point = args.start_address
-        if binary_data.startswith(b'ISA\x01'):
+        
+        # Check for ISAX header format (new format)
+        if binary_data.startswith(b'ISAX'):
+            # Parse ISAX header: [magic][entry_point][code_start][code_size][data_start][data_size][code][data]
+            if len(binary_data) >= 24:  # Minimum header size
+                file_entry_point = int.from_bytes(binary_data[4:8], 'little')
+                code_start = int.from_bytes(binary_data[8:12], 'little')
+                code_size = int.from_bytes(binary_data[12:16], 'little')
+                data_start = int.from_bytes(binary_data[16:20], 'little')
+                data_size = int.from_bytes(binary_data[20:24], 'little')
+                
+                # Extract code and data sections
+                code_bytes = binary_data[24:24+code_size]
+                data_bytes = binary_data[24+code_size:24+code_size+data_size]
+                
+                # For disassembly, we need the full binary with header info
+                # The disassembler will handle the ISAX header parsing
+                machine_code = binary_data  # Pass the full binary
+                
+                if args.verbose:
+                    print(f"ISAX header detected:")
+                    print(f"  Entry point: 0x{file_entry_point:X}")
+                    print(f"  Code start: 0x{code_start:X}, size: {code_size} bytes")
+                    print(f"  Data start: 0x{data_start:X}, size: {data_size} bytes")
+                    print(f"  Total binary size: {len(binary_data)} bytes")
+                
+                # Use file entry point if not specified
+                if entry_point == 0:
+                    entry_point = file_entry_point
+        # Check for old ISA header format
+        elif binary_data.startswith(b'ISA\x01'):
             # Has header - extract machine code
             offset = 4  # Magic + version
             if len(binary_data) > offset:
@@ -336,8 +365,16 @@ def disassemble_command(args) -> int:
         
         # Disassemble
         try:
-            # Ensure entry_point is an integer (0 will trigger ISA default)
-            disassemble_start = entry_point if entry_point is not None else 0
+            # Calculate the correct start address for disassembly
+            # For ISAX format, the disassembler handles the header parsing and uses the correct addresses
+            # For legacy format, start from the beginning of the extracted machine code
+            if binary_data.startswith(b'ISAX'):
+                # ISAX format: pass the full binary, disassembler will handle header parsing
+                disassemble_start = 0  # Disassembler will use code_start from header when it detects ISAX
+            else:
+                # Legacy format: start from beginning of extracted machine code
+                disassemble_start = 0
+            
             disassembler = Disassembler(isa_definition)
             result = disassembler.disassemble(machine_code, disassemble_start, debug=args.debug, data_regions=data_regions)
             

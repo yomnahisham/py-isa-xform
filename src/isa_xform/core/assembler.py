@@ -26,6 +26,7 @@ class AssemblyContext:
     pass_number: int = 1
     origin_set: bool = False
     symbols_defined: Dict[str, int] = field(default_factory=dict)
+    org_address: int = 0
 
 
 @dataclass 
@@ -35,6 +36,7 @@ class AssembledCode:
     symbol_table: SymbolTable
     entry_point: Optional[int] = None
     sections: Optional[Dict[str, Tuple[int, int]]] = None  # section_name: (start_addr, size)
+    data_section_size: int = 0  # Size of data section in bytes
 
 
 class Assembler:
@@ -115,7 +117,8 @@ class Assembler:
         return AssembledCode(
             machine_code=machine_code,
             symbol_table=self.symbol_table,
-            entry_point=self._find_entry_point()
+            entry_point=self._find_entry_point(),
+            data_section_size=0  # We'll calculate this properly later
         )
     
     def _first_pass(self, nodes: List[ASTNode]):
@@ -132,24 +135,65 @@ class Assembler:
                 self._handle_directive_first_pass(node)
     
     def _second_pass(self, nodes: List[ASTNode]) -> bytearray:
-        """Second pass: generate machine code"""
-        machine_code = bytearray()
-        # Start at the address set by .org in the first pass
-        self.context.current_address = self.symbol_table.current_address if self.context.origin_set else 0
-
+        """Second pass: generate machine code with section header"""
+        # Get ISA memory layout
+        data_section_start = self.isa_definition.address_space.memory_layout.get('data_section', {}).get('start', 0)
+        code_section_start = self.isa_definition.address_space.memory_layout.get('code_section', {}).get('start', 0)
+        
+        # Collect code and data sections
+        code_bytes = bytearray()
+        data_bytes = bytearray()
+        current_section = "text"
+        self.context.current_address = self.context.org_address
+        
         for node in nodes:
             if isinstance(node, LabelNode):
-                # Labels don't generate code, just update address
                 pass
-            elif isinstance(node, InstructionNode):
-                code = self._assemble_instruction(node)
-                machine_code.extend(code)
             elif isinstance(node, DirectiveNode):
-                code = self._handle_directive_second_pass(node)
-                if code:
-                    machine_code.extend(code)
+                if node.name.lower() == '.data':
+                    current_section = "data"
+                elif node.name.lower() == '.text':
+                    current_section = "text"
+                elif node.name.lower() == '.org':
+                    # .org handled in first pass
+                    pass
+                else:
+                    # Use directive handler dispatch
+                    handler = self.directive_handlers.get(node.name.lower())
+                    if handler:
+                        if current_section == "data":
+                            data_bytes.extend(handler(node) or b"")
+                        else:
+                            code_bytes.extend(handler(node) or b"")
+            elif isinstance(node, InstructionNode):
+                if current_section == "text":
+                    instruction = self._find_instruction(node.mnemonic)
+                    operands = node.operands if hasattr(node, 'operands') else []
+                    if instruction is not None:
+                        encoded = self._encode_instruction(instruction, operands)
+                        if isinstance(encoded, int):
+                            word_size = self.isa_definition.instruction_size // 8
+                            endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+                            code_bytes.extend(encoded.to_bytes(word_size, endianness))
+                        else:
+                            code_bytes.extend(encoded)
+                else:
+                    # Data section should not have instructions
+                    pass
         
-        return machine_code
+        # Build header: [magic][entry_point][code_start][code_size][data_start][data_size][code][data]
+        header = bytearray()
+        header.extend(b'ISAX')  # Magic
+        entry_point = code_section_start.to_bytes(4, 'little')
+        header.extend(entry_point)
+        header.extend(code_section_start.to_bytes(4, 'little'))
+        header.extend(len(code_bytes).to_bytes(4, 'little'))
+        header.extend(data_section_start.to_bytes(4, 'little'))
+        header.extend(len(data_bytes).to_bytes(4, 'little'))
+        # Append code and data
+        header.extend(code_bytes)
+        header.extend(data_bytes)
+        return header
     
     def _single_pass(self, nodes: List[ASTNode]) -> bytearray:
         """Single pass assembly (for simple cases)"""

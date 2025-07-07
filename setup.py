@@ -33,7 +33,7 @@ setup(
     
     include_package_data=True,
     package_data={
-        "isa_xform.isa_definitions": ["*.json"],
+        "isa_definitions": ["*.json"],
         "isa_xform": ["*.md"],
     },
     

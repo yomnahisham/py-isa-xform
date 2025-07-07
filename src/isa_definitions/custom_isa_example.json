@@ -7,7 +7,13 @@
   "endianness": "little",
   "address_space": {
     "size": 65536,
-    "default_code_start": 32
+    "default_code_start": 32,
+    "default_data_start": 8192,
+    "memory_layout": {
+      "code_section": {"start": 32, "end": 8191},
+      "data_section": {"start": 8192, "end": 16383},
+      "stack_section": {"start": 16384, "end": 65535}
+    }
   },
   "registers": {
     "general_purpose": [

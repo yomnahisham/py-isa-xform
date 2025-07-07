@@ -170,7 +170,7 @@ class ISALoader:
     
     def __init__(self):
         self._cache: Dict[str, ISADefinition] = {}
-        self._builtin_path = Path(__file__).parent.parent / "isa_definitions"
+        self._builtin_path = Path(__file__).parent.parent.parent / "isa_definitions"
     
     def load_isa(self, isa_name: str) -> ISADefinition:
         """Load an ISA definition by name"""
@@ -185,9 +185,9 @@ class ISALoader:
         # Try to load from package resources
         try:
             import importlib.resources
-            with importlib.resources.files("isa_xform.isa_definitions").joinpath(f"{isa_name}.json").open("r") as f:
+            with importlib.resources.files("isa_definitions").joinpath(f"{isa_name}.json").open("r") as f:
                 data = json.load(f)
-            isa_def = self._parse_isa_data(data, Path(f"isa_xform/isa_definitions/{isa_name}.json"))
+            isa_def = self._parse_isa_data(data, Path(f"isa_definitions/{isa_name}.json"))
             self._cache[isa_name] = isa_def
             return isa_def
         except Exception as e:

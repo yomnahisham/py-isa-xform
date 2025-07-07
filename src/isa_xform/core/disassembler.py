@@ -146,6 +146,49 @@ class Disassembler:
         instructions = []
         data_sections = {}
         
+        # Check for ISAX header
+        if machine_code[:4] == b'ISAX':
+            # Parse header: [magic][entry_point][code_start][code_size][data_start][data_size][code][data]
+            entry_point = int.from_bytes(machine_code[4:8], 'little')
+            code_start = int.from_bytes(machine_code[8:12], 'little')
+            code_size = int.from_bytes(machine_code[12:16], 'little')
+            data_start = int.from_bytes(machine_code[16:20], 'little')
+            data_size = int.from_bytes(machine_code[20:24], 'little')
+            code_bytes = machine_code[24:24+code_size]
+            data_bytes = machine_code[24+code_size:24+code_size+data_size]
+            # Disassemble code section
+            code_addr = code_start
+            i = 0
+            while i < len(code_bytes):
+                instr_bytes = code_bytes[i:i+self.instruction_size_bytes]
+                if len(instr_bytes) < self.instruction_size_bytes:
+                    break
+                endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+                instr_word = bytes_to_int(instr_bytes, endianness)
+                decoded = self._disassemble_instruction(instr_word, instr_bytes, code_addr)
+                if decoded:
+                    instructions.append(decoded)
+                else:
+                    instructions.append(DisassembledInstruction(
+                        address=code_addr,
+                        machine_code=instr_bytes,
+                        mnemonic="UNKNOWN",
+                        operands=[],
+                        comment=f"0x{instr_word:04X}"
+                    ))
+                i += self.instruction_size_bytes
+                code_addr += self.instruction_size_bytes
+            # Disassemble data section: store as a single entry at the correct address
+            data_addr = data_start
+            if len(data_bytes) > 0:
+                data_sections[data_addr] = data_bytes
+            return DisassemblyResult(
+                instructions=instructions,
+                symbols=self._extract_symbols(instructions),
+                data_sections=data_sections,
+                entry_point=entry_point
+            )
+        
         # Use ISA default code start if not specified
         if start_address is None:
             start_address = self.isa_definition.address_space.default_code_start
@@ -169,23 +212,38 @@ class Disassembler:
                 addr_space = self.isa_definition.address_space
                 memory_layout = addr_space.memory_layout
                 
-                # Add interrupt vectors as data region
-                if 'interrupt_vectors' in memory_layout:
-                    vectors = memory_layout['interrupt_vectors']
-                    if 'start' in vectors and 'end' in vectors:
-                        auto_regions.append((vectors['start'], vectors['end'] + 1))
+                # For compact binaries, we need to detect if this is a full address space binary
+                # or a compact binary. If the binary size is much smaller than the address space,
+                # assume it's a compact binary and don't use absolute ISA addresses
+                # ZX16 has a 65536-byte address space
+                address_space_size = 65536  # Fixed for ZX16
+                is_compact_binary = len(machine_code) < address_space_size // 10  # Heuristic: if binary is < 10% of address space
                 
-                # Add data section as data region
-                if 'data_section' in memory_layout:
-                    data_sect = memory_layout['data_section']
-                    if 'start' in data_sect and 'end' in data_sect:
-                        auto_regions.append((data_sect['start'], data_sect['end'] + 1))
-                
-                # Add MMIO as data region
-                if 'mmio' in memory_layout:
-                    mmio = memory_layout['mmio']
-                    if 'start' in mmio and 'end' in mmio:
-                        auto_regions.append((mmio['start'], mmio['end'] + 1))
+                if is_compact_binary:
+                    # For compact binaries, use intelligent detection based on content
+                    # Don't use absolute ISA addresses since the binary is compact
+                    if debug:
+                        print(f"[DEBUG] Detected compact binary ({len(machine_code)} bytes), using intelligent data detection")
+                    return []
+                else:
+                    # For full address space binaries, use ISA-defined regions
+                    # Add interrupt vectors as data region
+                    if 'interrupt_vectors' in memory_layout:
+                        vectors = memory_layout['interrupt_vectors']
+                        if 'start' in vectors and 'end' in vectors:
+                            auto_regions.append((vectors['start'], vectors['end'] + 1))
+                    
+                    # Add data section as data region
+                    if 'data_section' in memory_layout:
+                        data_sect = memory_layout['data_section']
+                        if 'start' in data_sect and 'end' in data_sect:
+                            auto_regions.append((data_sect['start'], data_sect['end'] + 1))
+                    
+                    # Add MMIO as data region
+                    if 'mmio' in memory_layout:
+                        mmio = memory_layout['mmio']
+                        if 'start' in mmio and 'end' in mmio:
+                            auto_regions.append((mmio['start'], mmio['end'] + 1))
             
             return auto_regions
         
@@ -207,8 +265,13 @@ class Disassembler:
         
         current_address = start_address
         
+        # Calculate the byte offset to start reading from
+        # The machine code in the binary is placed at the correct addresses,
+        # so we need to start reading from the entry point offset
+        start_byte_offset = start_address
+        
         # Process the machine code in instruction-sized chunks
-        i = 0
+        i = start_byte_offset
         consecutive_nops = 0
         consecutive_invalid = 0
         in_data_section = False
@@ -218,6 +281,9 @@ class Disassembler:
         data_start_address = None
         consecutive_valid_instructions = 0
         min_consecutive_for_code = 3  # Need 3 consecutive valid instructions to switch to code mode
+        
+        # More aggressive data detection for compact binaries
+        max_nops_before_data = 4  # Reduced from 8 to 4 for more aggressive detection
         
         while i < len(machine_code):
             if debug:
@@ -269,14 +335,14 @@ class Disassembler:
                     if debug:
                         print(f"[DEBUG] PC=0x{current_address:04X} | NOP detected (consecutive: {consecutive_nops})")
                     
-                    # Only switch to data mode after many consecutive NOPs (more conservative)
-                    if consecutive_nops >= self.max_consecutive_nops * 3 and not in_data_section:
-                        # Switch to data mode for large blocks of zeros
+                    # More aggressive switching to data mode
+                    if consecutive_nops >= max_nops_before_data and not in_data_section:
+                        # Switch to data mode for blocks of zeros
                         in_data_section = True
                         data_start = current_address - (consecutive_nops - 1) * self.instruction_size_bytes
                         data_sections[data_start] = b'\x00' * (consecutive_nops * self.instruction_size_bytes)
                         if debug:
-                            print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (large NOP block)")
+                            print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (NOP block)")
                             print(f"[DEBUG] Data section starts at 0x{data_start:04X}")
                         consecutive_nops = 0
                     elif not in_data_section:
@@ -339,15 +405,17 @@ class Disassembler:
                             if debug:
                                 print(f"[DEBUG] PC=0x{current_address:04X} | Unknown instruction: 0x{instr_word:04X} (consecutive invalid: {consecutive_invalid})")
                             
+                            # More aggressive switching to data mode for compact binaries
                             # Only switch to data mode automatically if no user data regions are specified
                             # If user has specified data regions, respect their boundaries and treat unknowns as instructions
                             if data_regions is None:
                                 # Switch to data mode if:
                                 # 1. We just had a return instruction, OR
-                                # 2. We have multiple consecutive invalid instructions
+                                # 2. We have multiple consecutive invalid instructions, OR
+                                # 3. We have a single invalid instruction (more aggressive)
                                 should_switch_to_data = (
                                     last_instruction_was_return or 
-                                    consecutive_invalid >= 1
+                                    consecutive_invalid >= 1  # Reduced from 1 to 1 (immediate switch)
                                 )
                                 
                                 if should_switch_to_data and not in_data_section:
@@ -396,6 +464,7 @@ class Disassembler:
                         if debug:
                             print(f"[DEBUG] PC=0x{current_address:04X} | Decode error: {e} (consecutive invalid: {consecutive_invalid})")
                         
+                        # More aggressive switching to data mode for compact binaries
                         # Only switch to data mode automatically if no user data regions are specified
                         if data_regions is None:
                             # Switch to data mode if we just had a return instruction
@@ -863,83 +932,40 @@ class Disassembler:
         if result.data_sections:
             lines.append("")
             lines.append("; Data sections:")
-            
-            # Process each data section individually to preserve boundaries
-            for data_addr in sorted(result.data_sections.keys()):
-                data = result.data_sections[data_addr]
-                
-                # Process this data section intelligently
-                i = 0
-                while i < len(data):
-                    # Check if we can output as word first (prioritize structured data)
-                    word_size = self.isa_definition.word_size // 8
-                    if i + word_size <= len(data):
-                        chunk = data[i:i+word_size]
-                        endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
-                        value = int.from_bytes(chunk, endianness)
-                        
-                        # Check if this could be ASCII instead (but not if it's just zeros or very common values)
-                        is_likely_ascii = False
-                        if value != 0 and value != 0xFFFF:  # Don't treat zeros or all-1s as ASCII
-                            # Look ahead to see if we have a meaningful ASCII string
-                            ascii_start = i
-                            ascii_length = 0
-                            
-                            # Look for printable ASCII characters
-                            while (ascii_start + ascii_length < len(data) and 
-                                   ascii_length < 64 and  # Limit string length
-                                   data[ascii_start + ascii_length] >= 32 and 
-                                   data[ascii_start + ascii_length] <= 126):
-                                ascii_length += 1
-                            
-                            # Check if string is null-terminated
-                            is_null_terminated = (ascii_start + ascii_length < len(data) and 
-                                                 data[ascii_start + ascii_length] == 0)
-                            
-                            # Only treat as ASCII if we have a substantial string (3+ chars) or null-terminated
-                            is_likely_ascii = ascii_length >= 3 or (ascii_length >= 1 and is_null_terminated)
-                        
-                        if is_likely_ascii:
-                            # Output as ASCII string
-                            ascii_length_with_null = ascii_length + (1 if is_null_terminated else 0)
-                            ascii_data = data[ascii_start:ascii_start + ascii_length_with_null]
-                            
-                            if is_null_terminated:
-                                ascii_str = ascii_data[:-1].decode('ascii', errors='replace')
-                                directive = ".asciiz"
-                            else:
-                                ascii_str = ascii_data.decode('ascii', errors='replace')
-                                directive = ".ascii"
-                            
-                            if include_addresses:
-                                lines.append(f"    {data_addr + ascii_start:04X}: {directive} \"{ascii_str}\"")
-                            else:
-                                lines.append(f"    {directive} \"{ascii_str}\"")
-                            i += ascii_length_with_null
-                        else:
-                            # Output as word
-                            if include_addresses:
-                                lines.append(f"    {data_addr + i:04X}: .word 0x{value:04X}")
-                            else:
-                                lines.append(f"    .word 0x{value:04X}")
-                            i += word_size
+
+            # Gather all data bytes in order, starting from the lowest address
+            sorted_addrs = sorted(result.data_sections.keys())
+            if not sorted_addrs:
+                return "\n".join(lines)
+            start_addr = sorted_addrs[0]
+            end_addr = sorted_addrs[-1] + len(result.data_sections[sorted_addrs[-1]])
+            # Concatenate all bytes in order
+            data_bytes = bytearray()
+            addr_cursor = start_addr
+            while addr_cursor < end_addr:
+                data_bytes.extend(result.data_sections.get(addr_cursor, b""))
+                addr_cursor += len(result.data_sections.get(addr_cursor, b""))
+            # Output as .word and .byte
+            i = 0
+            word_size = self.isa_definition.word_size // 8
+            endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+            while i < len(data_bytes):
+                if i + word_size <= len(data_bytes):
+                    chunk = data_bytes[i:i+word_size]
+                    value = int.from_bytes(chunk, endianness)
+                    if include_addresses:
+                        lines.append(f"    {start_addr + i:04X}: .word 0x{value:04X}")
                     else:
-                        # Output remaining bytes as individual bytes
-                        chunk = data[i:]
-                        if len(chunk) == 1:
-                            # Single byte
-                            hex_byte = f'0x{chunk[0]:02X}'
-                            if include_addresses:
-                                lines.append(f"    {data_addr + i:04X}: .byte {hex_byte}")
-                            else:
-                                lines.append(f"    .byte {hex_byte}")
+                        lines.append(f"    .word 0x{value:04X}")
+                    i += word_size
+                else:
+                    # Output remaining bytes as .byte
+                    for j in range(i, len(data_bytes)):
+                        b = data_bytes[j]
+                        if include_addresses:
+                            lines.append(f"    {start_addr + j:04X}: .byte 0x{b:02X}")
                         else:
-                            # Multiple bytes
-                            hex_bytes = ', '.join(f'0x{b:02X}' for b in chunk)
-                            if include_addresses:
-                                lines.append(f"    {data_addr + i:04X}: .byte {hex_bytes}")
-                            else:
-                                lines.append(f"    .byte {hex_bytes}")
-                        i += len(chunk)
-        
+                            lines.append(f"    .byte 0x{b:02X}")
+                    break
+
         return "\n".join(lines) 
