@@ -273,5 +273,5 @@ class Simulator:
         print("Simulation complete")
 
 
-        self.dump_memory(0xFA00, 0xFA03)  # print palette, supposed to store 3
+        self.dump_memory(800, 805)  # print palette, supposed to store 3
 
