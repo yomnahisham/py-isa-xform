@@ -9,18 +9,13 @@ from pathlib import Path
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
 
-# Read requirements from requirements.txt
-requirements = []
-try:
-    with open("requirements.txt", "r") as f:
-        requirements = [line.strip() for line in f if line.strip() and not line.startswith("#")]
-except FileNotFoundError:
-    # Fallback requirements if file doesn't exist
-    requirements = [
-        "jsonschema>=4.0.0",
-        "click>=8.0.0",
-        "rich>=13.0.0",
-    ]
+# Core dependencies only (not dev dependencies)
+core_requirements = [
+    "jsonschema>=4.0.0",
+    "pydantic>=2.0.0", 
+    "click>=8.0.0",
+    "rich>=13.0.0",
+]
 
 setup(
     name="py-isa-xform",
@@ -39,11 +34,11 @@ setup(
     include_package_data=True,
     package_data={
         "isa_definitions": ["*.json"],
-        "": ["*.md"],
+        "isa_xform": ["*.md"],
     },
     
     python_requires=">=3.8",
-    install_requires=requirements,
+    install_requires=core_requirements,
     
     extras_require={
         "dev": [
@@ -61,6 +56,11 @@ setup(
             "pyparsing>=3.0.0",
             "lark>=1.0.0",
         ],
+        "build": [
+            "build>=0.10.0",
+            "wheel>=0.40.0",
+            "setuptools>=65.0.0",
+        ],
     },
     
     entry_points={
@@ -70,10 +70,9 @@ setup(
     },
     
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
         "Intended Audience :: Education",
-        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9", 

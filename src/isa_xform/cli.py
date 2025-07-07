@@ -6,7 +6,7 @@ import argparse
 import sys
 import os
 from pathlib import Path
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Tuple
 import json
 
 from .core.isa_loader import ISALoader
@@ -27,17 +27,57 @@ def load_isa_smart(isa_arg: str) -> Any:
         return loader.load_isa(isa_arg)
 
 
+def parse_data_regions(data_regions_arg: Optional[List[str]]) -> Optional[List[Tuple[int, int]]]:
+    """Parse data regions from command line arguments
+    
+    Args:
+        data_regions_arg: List of strings like ["0x0-0xA", "0x100-0x200"]
+    
+    Returns:
+        List of (start_addr, end_addr) tuples, or None if no regions specified
+    """
+    if not data_regions_arg:
+        return None
+    
+    regions = []
+    for region_str in data_regions_arg:
+        try:
+            if '-' not in region_str:
+                raise ValueError(f"Invalid data region format: {region_str}. Expected 'start-end'")
+            
+            start_str, end_str = region_str.split('-', 1)
+            start_addr = int(start_str, 0)  # Auto-detect base
+            end_addr = int(end_str, 0)      # Auto-detect base
+            
+            if start_addr >= end_addr:
+                raise ValueError(f"Invalid data region: start ({start_addr}) must be less than end ({end_addr})")
+            
+            regions.append((start_addr, end_addr))
+            
+        except ValueError as e:
+            raise ValueError(f"Failed to parse data region '{region_str}': {e}")
+    
+    return regions
+
+
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
-        description="ISA Transformation Toolkit - Modular assembly and disassembly",
+        description="~xform -: Full Ecosystem for ISA Transformation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s assemble --isa simple_risc --input main.s --output program.bin
   %(prog)s disassemble --isa simple_risc --input program.bin --output disassembled.s
+  %(prog)s disassemble --isa zx16 --input program.bin --output disassembled.s --start-address 0x20
+  %(prog)s disassemble --isa zx16 --input program.bin --output disassembled.s --data-regions 0x100-0x200
   %(prog)s validate --isa simple_risc
   %(prog)s list-isas
+
+Data Region Detection:
+  The disassembler automatically detects data regions based on your ISA's memory layout
+  when --data-regions is not specified. This includes interrupt vectors, data sections,
+  and MMIO regions defined in your ISA. Use --data-regions to override automatic detection.
         """
     )
     
@@ -50,9 +90,34 @@ Examples:
     assemble_parser.add_argument('--output', required=True, help='Output binary file')
     assemble_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
     assemble_parser.add_argument('--list-symbols', action='store_true', help='List resolved symbols')
+    assemble_parser.add_argument('--raw', action='store_true', help='Output raw binary with no header (for legacy/bootloader use)')
     
     # Disassemble command
-    disassemble_parser = subparsers.add_parser('disassemble', help='Disassemble machine code to assembly')
+    disassemble_parser = subparsers.add_parser('disassemble', 
+                                              help='Disassemble machine code to assembly with automatic data region detection',
+                                              description='Disassemble binary files to assembly code. Automatically detects data regions based on ISA memory layout unless --data-regions is specified.',
+                                              formatter_class=argparse.RawDescriptionHelpFormatter,
+                                              epilog="""
+Data Region Detection:
+  The disassembler automatically detects data regions based on your ISA's memory layout
+  when --data-regions is not specified. This includes:
+  • Interrupt vectors (treated as data)
+  • Data sections (treated as data)
+  • MMIO regions (treated as data)
+  • Code sections (treated as instructions)
+
+  Use --data-regions to override automatic detection with custom regions.
+
+Examples:
+  # Automatic detection (recommended)
+  %(prog)s --isa zx16 --input program.bin --output program.s
+
+  # Manual override with custom data regions
+  %(prog)s --isa zx16 --input program.bin --output program.s --data-regions 0x100-0x200
+
+  # Start disassembly at specific address
+  %(prog)s --isa zx16 --input program.bin --output program.s --start-address 0x20
+                                              """)
     disassemble_parser.add_argument('--isa', required=True, help='ISA definition file or name')
     disassemble_parser.add_argument('--input', required=True, help='Input binary file')
     disassemble_parser.add_argument('--output', required=True, help='Output assembly file')
@@ -61,6 +126,9 @@ Examples:
     disassemble_parser.add_argument('--show-addresses', action='store_true', help='Show addresses in output')
     disassemble_parser.add_argument('--show-machine-code', action='store_true', help='Show machine code in output')
     disassemble_parser.add_argument('--start-address', type=lambda x: int(x, 0), default=0, help='Starting address for disassembly')
+    disassemble_parser.add_argument('--data-regions', nargs='+', 
+                                   help='Data regions as start-end pairs (e.g., 0x0-0xA 0x100-0x200). '
+                                        'If not specified, automatically detects data regions based on ISA memory layout.')
     
     # Validate command
     validate_parser = subparsers.add_parser('validate', help='Validate ISA definition')
@@ -158,9 +226,36 @@ def assemble_command(args) -> int:
         assembled_result = assembler.assemble(all_nodes)
         machine_code = assembled_result.machine_code
         
+        # Check if the assembler already created an ISAX header
+        if machine_code.startswith(b'ISAX'):
+            # Assembler created ISAX format, use it directly
+            final_binary = machine_code
+        elif args.raw:
+            # Raw binary requested
+            final_binary = machine_code
+        else:
+            # Create legacy ISA binary header format:
+            # Magic: "ISA\x01" (4 bytes)
+            # ISA name length: 1 byte
+            # ISA name: variable length
+            # Code size: 4 bytes (little endian)
+            # Entry point: 4 bytes (little endian)
+            # Machine code follows
+            
+            isa_name = isa_definition.name.encode('ascii')
+            header = bytearray()
+            header.extend(b'ISA\x01')  # Magic number
+            header.extend(len(isa_name).to_bytes(1, 'little'))  # ISA name length
+            header.extend(isa_name)  # ISA name
+            header.extend(len(machine_code).to_bytes(4, 'little'))  # Total size
+            entry_point = assembled_result.entry_point or 0
+            header.extend(entry_point.to_bytes(4, 'little'))  # Entry point
+            
+            final_binary = header + machine_code
+        
         # Write output
         with open(args.output, 'wb') as f:
-            f.write(machine_code)
+            f.write(final_binary)
         
         if args.verbose:
             print(f"Generated {len(machine_code)} bytes of machine code")
@@ -205,7 +300,37 @@ def disassemble_command(args) -> int:
         # Check for ISA header
         machine_code = binary_data
         entry_point = args.start_address
-        if binary_data.startswith(b'ISA\x01'):
+        
+        # Check for ISAX header format (new format)
+        if binary_data.startswith(b'ISAX'):
+            # Parse ISAX header: [magic][entry_point][code_start][code_size][data_start][data_size][code][data]
+            if len(binary_data) >= 24:  # Minimum header size
+                file_entry_point = int.from_bytes(binary_data[4:8], 'little')
+                code_start = int.from_bytes(binary_data[8:12], 'little')
+                code_size = int.from_bytes(binary_data[12:16], 'little')
+                data_start = int.from_bytes(binary_data[16:20], 'little')
+                data_size = int.from_bytes(binary_data[20:24], 'little')
+                
+                # Extract code and data sections
+                code_bytes = binary_data[24:24+code_size]
+                data_bytes = binary_data[24+code_size:24+code_size+data_size]
+                
+                # For disassembly, we need the full binary with header info
+                # The disassembler will handle the ISAX header parsing
+                machine_code = binary_data  # Pass the full binary
+                
+                if args.verbose:
+                    print(f"ISAX header detected:")
+                    print(f"  Entry point: 0x{file_entry_point:X}")
+                    print(f"  Code start: 0x{code_start:X}, size: {code_size} bytes")
+                    print(f"  Data start: 0x{data_start:X}, size: {data_size} bytes")
+                    print(f"  Total binary size: {len(binary_data)} bytes")
+                
+                # Use file entry point if not specified
+                if entry_point == 0:
+                    entry_point = file_entry_point
+        # Check for old ISA header format
+        elif binary_data.startswith(b'ISA\x01'):
             # Has header - extract machine code
             offset = 4  # Magic + version
             if len(binary_data) > offset:
@@ -224,12 +349,34 @@ def disassemble_command(args) -> int:
                     if entry_point == 0:
                         entry_point = file_entry_point
         
+        # Parse data regions if specified
+        data_regions = None
+        if args.data_regions:
+            try:
+                data_regions = parse_data_regions(args.data_regions)
+                if args.verbose and data_regions:
+                    print("Data regions:")
+                    for start, end in data_regions:
+                        print(f"  0x{start:X}-0x{end:X}")
+            except ValueError as e:
+                error_reporter.add_error(DisassemblerError(f"Invalid data regions: {e}"))
+                error_reporter.raise_if_errors()
+                return 1
+        
         # Disassemble
         try:
-            # Ensure entry_point is an integer (0 will trigger ISA default)
-            disassemble_start = entry_point if entry_point is not None else 0
+            # Calculate the correct start address for disassembly
+            # For ISAX format, the disassembler handles the header parsing and uses the correct addresses
+            # For legacy format, start from the beginning of the extracted machine code
+            if binary_data.startswith(b'ISAX'):
+                # ISAX format: pass the full binary, disassembler will handle header parsing
+                disassemble_start = 0  # Disassembler will use code_start from header when it detects ISAX
+            else:
+                # Legacy format: start from beginning of extracted machine code
+                disassemble_start = 0
+            
             disassembler = Disassembler(isa_definition)
-            result = disassembler.disassemble(machine_code, disassemble_start, debug=args.debug)
+            result = disassembler.disassemble(machine_code, disassemble_start, debug=args.debug, data_regions=data_regions)
             
             # Format output
             output_text = disassembler.format_disassembly(

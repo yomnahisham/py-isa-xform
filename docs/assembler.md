@@ -441,4 +441,72 @@ ADDI a0, x0, 10   # More verbose
 XOR a1, a1        # Less readable
 ```
 
-This assembler provides professional-grade assembly capabilities with comprehensive validation, pseudo-instruction support, and detailed error reporting, making it suitable for educational, research, and development applications. 
+This assembler provides professional-grade assembly capabilities with comprehensive validation, pseudo-instruction support, and detailed error reporting, making it suitable for educational, research, and development applications.
+
+## Binary Output Format
+
+The assembler generates binary files with metadata headers by default, following industry best practices for robust toolchain interoperability.
+
+### Default Headered Binary Format
+
+By default, the assembler outputs a binary with an ISA-specific header that includes:
+
+- **Magic Number**: `ISA\x01` (4 bytes) - identifies the file format
+- **ISA Name Length**: 1 byte - length of the ISA name
+- **ISA Name**: Variable length - name of the ISA used for assembly
+- **Code Size**: 4 bytes (little-endian) - size of the machine code section
+- **Entry Point**: 4 bytes (little-endian) - starting address for execution
+- **Machine Code**: The actual assembled instructions and data
+
+### Raw Binary Output
+
+For special cases (bootloaders, legacy systems, etc.), you can output a raw binary without headers using the `--raw` flag:
+
+```bash
+# Output raw binary (no header)
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin --raw
+```
+
+### Header Format Example
+
+```bash
+# Default: headered binary
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
+
+# Hexdump shows header + machine code
+hexdump -C program.bin
+00000000  49 53 41 01 04 5a 58 31  36 08 00 00 00 20 00 00  |ISA..ZX16.... ..|
+00000010  00 39 14 79 0a 00 02 87  02                       |.9.y.....|
+#         ^^^^^^^^^^^^^^^^ header ^^^^^^^^^^^^ machine code ^
+```
+
+### Benefits of Headered Binaries
+
+1. **Automatic Address Detection**: Disassemblers can automatically determine the correct starting address
+2. **Tool Interoperability**: Debuggers, loaders, and other tools can work without manual configuration
+3. **Robust Disassembly**: No need to specify `--start-address` when disassembling
+4. **Industry Standard**: Follows the same patterns as ELF, PE, and other executable formats
+
+### Command Line Options
+
+```bash
+python -m isa_xform.cli assemble [options] --isa <isa> --input <files> --output <file>
+
+Options:
+  --isa <name>           ISA definition name or file path
+  --input <files>        Input assembly files (can specify multiple)
+  --output <file>        Output binary file
+  --verbose, -v          Enable verbose output
+  --list-symbols         Display symbol table after assembly
+  --raw                  Output raw binary without header (for bootloaders/legacy)
+```
+
+## Assembly Process
+
+```bash
+# Assemble the program
+python3 -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
+
+# Verify with disassembly
+python3 -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program_dis.s
+``` 

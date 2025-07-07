@@ -138,14 +138,127 @@ class Disassembler:
         
         return (pattern_value, pattern_mask) if pattern_mask else None
     
-    def disassemble(self, machine_code: bytes, start_address: int = 0, debug: bool = False) -> DisassemblyResult:
-        """Disassemble machine code to assembly"""
+    def disassemble(self, machine_code: bytes, start_address: int = 0, debug: bool = False, 
+                   data_regions: Optional[List[Tuple[int, int]]] = None) -> DisassemblyResult:
+        """Disassemble machine code to assembly
+        
+        Args:
+            machine_code: The binary data to disassemble
+            start_address: Starting address for disassembly (None for ISA default)
+            debug: Enable debug output
+            data_regions: List of (start_addr, end_addr) tuples specifying data regions
+        """
         instructions = []
         data_sections = {}
+        
+        # Check for ISAX header
+        if machine_code[:4] == b'ISAX':
+            # Parse header: [magic][entry_point][code_start][code_size][data_start][data_size][code][data]
+            entry_point = int.from_bytes(machine_code[4:8], 'little')
+            code_start = int.from_bytes(machine_code[8:12], 'little')
+            code_size = int.from_bytes(machine_code[12:16], 'little')
+            data_start = int.from_bytes(machine_code[16:20], 'little')
+            data_size = int.from_bytes(machine_code[20:24], 'little')
+            code_bytes = machine_code[24:24+code_size]
+            data_bytes = machine_code[24+code_size:24+code_size+data_size]
+            # Disassemble code section
+            code_addr = code_start
+            i = 0
+            while i < len(code_bytes):
+                instr_bytes = code_bytes[i:i+self.instruction_size_bytes]
+                if len(instr_bytes) < self.instruction_size_bytes:
+                    break
+                endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+                instr_word = bytes_to_int(instr_bytes, endianness)
+                decoded = self._disassemble_instruction(instr_word, instr_bytes, code_addr)
+                if decoded:
+                    instructions.append(decoded)
+                else:
+                    instructions.append(DisassembledInstruction(
+                        address=code_addr,
+                        machine_code=instr_bytes,
+                        mnemonic="UNKNOWN",
+                        operands=[],
+                        comment=f"0x{instr_word:04X}"
+                    ))
+                i += self.instruction_size_bytes
+                code_addr += self.instruction_size_bytes
+            # Disassemble data section: store as a single entry at the correct address
+            data_addr = data_start
+            if len(data_bytes) > 0:
+                data_sections[data_addr] = data_bytes
+            return DisassemblyResult(
+                instructions=instructions,
+                symbols=self._extract_symbols(instructions),
+                data_sections=data_sections,
+                entry_point=entry_point
+            )
         
         # Use ISA default code start if not specified
         if start_address is None:
             start_address = self.isa_definition.address_space.default_code_start
+        
+        # Helper function to check if address is in a data region
+        def is_in_data_region(addr: int) -> bool:
+            if not data_regions:
+                return False
+            for start, end in data_regions:
+                if start <= addr < end:
+                    return True
+            return False
+        
+        # Helper function to get automatic data regions based on ISA
+        def get_automatic_data_regions() -> List[Tuple[int, int]]:
+            """Get data regions based on ISA memory layout"""
+            auto_regions = []
+            
+            # Check if ISA has address space definition
+            if hasattr(self.isa_definition, 'address_space') and self.isa_definition.address_space:
+                addr_space = self.isa_definition.address_space
+                memory_layout = addr_space.memory_layout
+                
+                # For compact binaries, we need to detect if this is a full address space binary
+                # or a compact binary. If the binary size is much smaller than the address space,
+                # assume it's a compact binary and don't use absolute ISA addresses
+                # ZX16 has a 65536-byte address space
+                address_space_size = 65536  # Fixed for ZX16
+                is_compact_binary = len(machine_code) < address_space_size // 10  # Heuristic: if binary is < 10% of address space
+                
+                if is_compact_binary:
+                    # For compact binaries, use intelligent detection based on content
+                    # Don't use absolute ISA addresses since the binary is compact
+                    if debug:
+                        print(f"[DEBUG] Detected compact binary ({len(machine_code)} bytes), using intelligent data detection")
+                    return []
+                else:
+                    # For full address space binaries, use ISA-defined regions
+                    # Add interrupt vectors as data region
+                    if 'interrupt_vectors' in memory_layout:
+                        vectors = memory_layout['interrupt_vectors']
+                        if 'start' in vectors and 'end' in vectors:
+                            auto_regions.append((vectors['start'], vectors['end'] + 1))
+                    
+                    # Add data section as data region
+                    if 'data_section' in memory_layout:
+                        data_sect = memory_layout['data_section']
+                        if 'start' in data_sect and 'end' in data_sect:
+                            auto_regions.append((data_sect['start'], data_sect['end'] + 1))
+                    
+                    # Add MMIO as data region
+                    if 'mmio' in memory_layout:
+                        mmio = memory_layout['mmio']
+                        if 'start' in mmio and 'end' in mmio:
+                            auto_regions.append((mmio['start'], mmio['end'] + 1))
+            
+            return auto_regions
+        
+        # If no user-specified data regions, use automatic detection
+        if data_regions is None:
+            auto_regions = get_automatic_data_regions()
+            if auto_regions:
+                data_regions = auto_regions
+                if debug:
+                    print(f"[DEBUG] Using automatic data regions: {auto_regions}")
         
         if debug:
             print(f"[DEBUG] Starting disassembly at PC=0x{start_address:04X}")
@@ -157,8 +270,13 @@ class Disassembler:
         
         current_address = start_address
         
+        # Calculate the byte offset to start reading from
+        # The machine code in the binary is placed at the correct addresses,
+        # so we need to start reading from the entry point offset
+        start_byte_offset = start_address
+        
         # Process the machine code in instruction-sized chunks
-        i = 0
+        i = start_byte_offset
         consecutive_nops = 0
         consecutive_invalid = 0
         in_data_section = False
@@ -168,6 +286,9 @@ class Disassembler:
         data_start_address = None
         consecutive_valid_instructions = 0
         min_consecutive_for_code = 3  # Need 3 consecutive valid instructions to switch to code mode
+        
+        # More aggressive data detection for compact binaries
+        max_nops_before_data = 4  # Reduced from 8 to 4 for more aggressive detection
         
         while i < len(machine_code):
             if debug:
@@ -181,160 +302,219 @@ class Disassembler:
                         print(f"[DEBUG] PC=0x{current_address:04X} | Remaining {len(machine_code[i:])} bytes as DATA")
                 break
             
-            # Extract instruction bytes
-            instr_bytes = machine_code[i:i + self.instruction_size_bytes]
-            
-            # Check if this looks like padding (all zeros)
-            if all(b == 0 for b in instr_bytes):
-                consecutive_nops += 1
-                if debug:
-                    print(f"[DEBUG] PC=0x{current_address:04X} | NOP detected (consecutive: {consecutive_nops})")
-                
-                # Only switch to data mode after many consecutive NOPs (more conservative)
-                if consecutive_nops >= self.max_consecutive_nops * 3 and not in_data_section:
-                    # Switch to data mode for large blocks of zeros
+            # Check if current address is in a user-specified data region
+            if is_in_data_region(current_address):
+                if not in_data_section:
                     in_data_section = True
-                    data_start = current_address - (consecutive_nops - 1) * self.instruction_size_bytes
-                    data_sections[data_start] = b'\x00' * (consecutive_nops * self.instruction_size_bytes)
+                    data_start_address = current_address
                     if debug:
-                        print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (large NOP block)")
-                        print(f"[DEBUG] Data section starts at 0x{data_start:04X}")
-                    consecutive_nops = 0
-                elif not in_data_section:
-                    # Still in instruction mode, add as NOP
-                    instructions.append(DisassembledInstruction(
-                        address=current_address,
-                        machine_code=instr_bytes,
-                        mnemonic="NOP",
-                        operands=[],
-                        comment=""
-                    ))
-                    if debug:
-                        print(f"[DEBUG] PC=0x{current_address:04X} | Adding NOP instruction")
-            else:
-                # Reset consecutive NOP counter
-                consecutive_nops = 0
+                        print(f"[DEBUG] PC=0x{current_address:04X} | ENTERING USER-SPECIFIED DATA REGION")
                 
-                # Decode the instruction
-                try:
-                    endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
-                    instr_word = bytes_to_int(instr_bytes, endianness)
-                    
-                    decoded = self._disassemble_instruction(instr_word, instr_bytes, current_address)
-                    if decoded:
-                        consecutive_invalid = 0  # Reset invalid counter on successful decode
-                        
-                        # Track consecutive valid instructions
-                        consecutive_valid_instructions += 1
-                        
-                        # If we're in data mode, check if we should switch to code mode
-                        if in_data_section:
-                            if consecutive_valid_instructions >= min_consecutive_for_code:
-                                # We've found enough consecutive valid instructions, switch to code mode
-                                in_data_section = False
-                                consecutive_valid_instructions = 0
-                                if debug:
-                                    print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO CODE MODE ({min_consecutive_for_code}+ consecutive valid instructions)")
-                        else:
-                            # We're already in code mode, just continue
-                            pass
-                        
-                        # Add the instruction
-                        instructions.append(decoded)
-                        
-                        if debug:
-                            print(f"[DEBUG] PC=0x{current_address:04X} | Decoded: {decoded.mnemonic} {', '.join(decoded.operands)}")
-                        
-                        # Check if this is a return instruction (JR, RET, etc.)
-                        if decoded.mnemonic in ['JR', 'RET', 'JALR'] and 'ra' in decoded.operands:
-                            last_instruction_was_return = True
-                            if debug:
-                                print(f"[DEBUG] PC=0x{current_address:04X} | Return instruction detected")
-                        else:
-                            last_instruction_was_return = False
-                    else:
-                        # Unknown instruction - check if we should switch to data mode
-                        consecutive_invalid += 1
-                        consecutive_valid_instructions = 0  # Reset valid instruction counter
-                        
-                        if debug:
-                            print(f"[DEBUG] PC=0x{current_address:04X} | Unknown instruction: 0x{instr_word:04X} (consecutive invalid: {consecutive_invalid})")
-                        
-                        # Switch to data mode if:
-                        # 1. We just had a return instruction, OR
-                        # 2. We have multiple consecutive invalid instructions
-                        should_switch_to_data = (
-                            last_instruction_was_return or 
-                            consecutive_invalid >= 1
-                        )
-                        
-                        if should_switch_to_data and not in_data_section:
-                            # Switch to data mode
-                            in_data_section = True
-                            data_start_address = current_address
-                            if debug:
-                                print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (unknown instruction)")
-                            # Add the current word to data section
-                            if data_start_address not in data_sections:
-                                data_sections[data_start_address] = bytearray()
-                            data_sections[data_start_address].extend(instr_bytes)
-                        elif not in_data_section:
-                            # Still try to decode as instruction, but mark as unknown
-                            instructions.append(DisassembledInstruction(
-                                address=current_address,
-                                machine_code=instr_bytes,
-                                mnemonic="UNKNOWN",
-                                operands=[],
-                                comment=f"0x{instr_word:04X}"
-                            ))
-                            if debug:
-                                print(f"[DEBUG] PC=0x{current_address:04X} | Adding UNKNOWN instruction")
-                        else:
-                            # Already in data mode, add to data section
-                            if data_start_address not in data_sections:
-                                data_sections[data_start_address] = bytearray()
-                            data_sections[data_start_address].extend(instr_bytes)
-                            if debug:
-                                print(f"[DEBUG] PC=0x{current_address:04X} | Adding to data section: 0x{instr_word:04X}")
-                except Exception as e:
-                    # Decoding failed - be very conservative
-                    consecutive_invalid += 1
-                    
+                # Add bytes to data section
+                if data_start_address not in data_sections:
+                    data_sections[data_start_address] = bytearray()
+                data_sections[data_start_address].extend(machine_code[i:i + self.instruction_size_bytes])
+                
+                if debug:
+                    print(f"[DEBUG] PC=0x{current_address:04X} | Adding to data section (user-specified)")
+                
+                i += self.instruction_size_bytes
+                current_address += self.instruction_size_bytes
+                continue
+            
+            # Check if we're exiting a data region
+            if in_data_section and not is_in_data_region(current_address):
+                in_data_section = False
+                consecutive_valid_instructions = 0
+                if debug:
+                    print(f"[DEBUG] PC=0x{current_address:04X} | EXITING DATA REGION, SWITCHING TO CODE MODE")
+            
+            # Only emit instructions if not in a data region
+            if not in_data_section:
+                # Extract instruction bytes
+                instr_bytes = machine_code[i:i + self.instruction_size_bytes]
+                
+                # Check if this looks like padding (all zeros)
+                if all(b == 0 for b in instr_bytes):
+                    consecutive_nops += 1
                     if debug:
-                        print(f"[DEBUG] PC=0x{current_address:04X} | Decode error: {e} (consecutive invalid: {consecutive_invalid})")
+                        print(f"[DEBUG] PC=0x{current_address:04X} | NOP detected (consecutive: {consecutive_nops})")
                     
-                    # Switch to data mode if we just had a return instruction
-                    should_switch_to_data = (
-                        last_instruction_was_return or 
-                        consecutive_invalid >= 1
-                    )
-                    
-                    if should_switch_to_data and not in_data_section:
-                        # Switch to data mode
+                    # More aggressive switching to data mode
+                    if consecutive_nops >= max_nops_before_data and not in_data_section:
+                        # Switch to data mode for blocks of zeros
                         in_data_section = True
+                        data_start = current_address - (consecutive_nops - 1) * self.instruction_size_bytes
+                        data_sections[data_start] = b'\x00' * (consecutive_nops * self.instruction_size_bytes)
                         if debug:
-                            print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (decode error)")
-                        if current_address not in data_sections:
-                            data_sections[current_address] = bytearray()
-                        data_sections[current_address].extend(instr_bytes)
+                            print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (NOP block)")
+                            print(f"[DEBUG] Data section starts at 0x{data_start:04X}")
+                        consecutive_nops = 0
                     elif not in_data_section:
-                        # Still try to treat as instruction
+                        # Still in instruction mode, add as NOP
                         instructions.append(DisassembledInstruction(
                             address=current_address,
                             machine_code=instr_bytes,
-                            mnemonic="INVALID",
+                            mnemonic="NOP",
                             operands=[],
-                            comment=f"Decode error: {e}"
+                            comment=""
                         ))
                         if debug:
-                            print(f"[DEBUG] PC=0x{current_address:04X} | Adding INVALID instruction")
-                    else:
-                        # Already in data mode, add to data section
-                        if current_address not in data_sections:
-                            data_sections[current_address] = bytearray()
-                        data_sections[current_address].extend(instr_bytes)
+                            print(f"[DEBUG] PC=0x{current_address:04X} | Adding NOP instruction")
+                else:
+                    # Reset consecutive NOP counter
+                    consecutive_nops = 0
+                    
+                    # Decode the instruction
+                    try:
+                        endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+                        instr_word = bytes_to_int(instr_bytes, endianness)
+                        
+                        decoded = self._disassemble_instruction(instr_word, instr_bytes, current_address)
+                        if decoded:
+                            consecutive_invalid = 0  # Reset invalid counter on successful decode
+                            
+                            # Track consecutive valid instructions
+                            consecutive_valid_instructions += 1
+                            
+                            # If we're in data mode, check if we should switch to code mode
+                            if in_data_section:
+                                if consecutive_valid_instructions >= min_consecutive_for_code:
+                                    # We've found enough consecutive valid instructions, switch to code mode
+                                    in_data_section = False
+                                    consecutive_valid_instructions = 0
+                                    if debug:
+                                        print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO CODE MODE ({min_consecutive_for_code}+ consecutive valid instructions)")
+                            else:
+                                # We're already in code mode, just continue
+                                pass
+                            
+                            # Add the instruction
+                            instructions.append(decoded)
+                            
+                            if debug:
+                                print(f"[DEBUG] PC=0x{current_address:04X} | Decoded: {decoded.mnemonic} {', '.join(decoded.operands)}")
+                            
+                            # Check if this is a return instruction (JR, RET, etc.)
+                            if decoded.mnemonic in ['JR', 'RET', 'JALR'] and 'ra' in decoded.operands:
+                                last_instruction_was_return = True
+                                if debug:
+                                    print(f"[DEBUG] PC=0x{current_address:04X} | Return instruction detected")
+                            else:
+                                last_instruction_was_return = False
+                        else:
+                            # Unknown instruction - check if we should switch to data mode
+                            consecutive_invalid += 1
+                            consecutive_valid_instructions = 0  # Reset valid instruction counter
+                            
+                            if debug:
+                                print(f"[DEBUG] PC=0x{current_address:04X} | Unknown instruction: 0x{instr_word:04X} (consecutive invalid: {consecutive_invalid})")
+                            
+                            # More aggressive switching to data mode for compact binaries
+                            # Only switch to data mode automatically if no user data regions are specified
+                            # If user has specified data regions, respect their boundaries and treat unknowns as instructions
+                            if data_regions is None:
+                                # Switch to data mode if:
+                                # 1. We just had a return instruction, OR
+                                # 2. We have multiple consecutive invalid instructions, OR
+                                # 3. We have a single invalid instruction (more aggressive)
+                                should_switch_to_data = (
+                                    last_instruction_was_return or 
+                                    consecutive_invalid >= 1  # Reduced from 1 to 1 (immediate switch)
+                                )
+                                
+                                if should_switch_to_data and not in_data_section:
+                                    # Switch to data mode
+                                    in_data_section = True
+                                    data_start_address = current_address
+                                    if debug:
+                                        print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (unknown instruction)")
+                                    # Add the current word to data section
+                                    if data_start_address not in data_sections:
+                                        data_sections[data_start_address] = bytearray()
+                                    data_sections[data_start_address].extend(instr_bytes)
+                                elif not in_data_section:
+                                    # Still try to decode as instruction, but mark as unknown
+                                    instructions.append(DisassembledInstruction(
+                                        address=current_address,
+                                        machine_code=instr_bytes,
+                                        mnemonic="UNKNOWN",
+                                        operands=[],
+                                        comment=f"0x{instr_word:04X}"
+                                    ))
+                                    if debug:
+                                        print(f"[DEBUG] PC=0x{current_address:04X} | Adding UNKNOWN instruction")
+                                else:
+                                    # Already in data mode, add to data section
+                                    if data_start_address not in data_sections:
+                                        data_sections[data_start_address] = bytearray()
+                                    data_sections[data_start_address].extend(instr_bytes)
+                                    if debug:
+                                        print(f"[DEBUG] PC=0x{current_address:04X} | Adding to data section: 0x{instr_word:04X}")
+                            else:
+                                # User has specified data regions, so treat unknown instructions as UNKNOWN
+                                instructions.append(DisassembledInstruction(
+                                    address=current_address,
+                                    machine_code=instr_bytes,
+                                    mnemonic="UNKNOWN",
+                                    operands=[],
+                                    comment=f"0x{instr_word:04X}"
+                                ))
+                                if debug:
+                                    print(f"[DEBUG] PC=0x{current_address:04X} | Adding UNKNOWN instruction (user data regions specified)")
+                    except Exception as e:
+                        # Decoding failed - be very conservative
+                        consecutive_invalid += 1
+                        
                         if debug:
-                            print(f"[DEBUG] PC=0x{current_address:04X} | Adding to data section (decode error): 0x{bytes_to_int(instr_bytes, 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'):04X}")
+                            print(f"[DEBUG] PC=0x{current_address:04X} | Decode error: {e} (consecutive invalid: {consecutive_invalid})")
+                        
+                        # More aggressive switching to data mode for compact binaries
+                        # Only switch to data mode automatically if no user data regions are specified
+                        if data_regions is None:
+                            # Switch to data mode if we just had a return instruction
+                            should_switch_to_data = (
+                                last_instruction_was_return or 
+                                consecutive_invalid >= 1
+                            )
+                            
+                            if should_switch_to_data and not in_data_section:
+                                # Switch to data mode
+                                in_data_section = True
+                                if debug:
+                                    print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (decode error)")
+                                if current_address not in data_sections:
+                                    data_sections[current_address] = bytearray()
+                                data_sections[current_address].extend(instr_bytes)
+                            elif not in_data_section:
+                                # Still try to treat as instruction
+                                instructions.append(DisassembledInstruction(
+                                    address=current_address,
+                                    machine_code=instr_bytes,
+                                    mnemonic="INVALID",
+                                    operands=[],
+                                    comment=f"Decode error: {e}"
+                                ))
+                                if debug:
+                                    print(f"[DEBUG] PC=0x{current_address:04X} | Adding INVALID instruction")
+                            else:
+                                # Already in data mode, add to data section
+                                if current_address not in data_sections:
+                                    data_sections[current_address] = bytearray()
+                                data_sections[current_address].extend(instr_bytes)
+                                if debug:
+                                    print(f"[DEBUG] PC=0x{current_address:04X} | Adding to data section (decode error): 0x{bytes_to_int(instr_bytes, 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'):04X}")
+                        else:
+                            # User has specified data regions, so treat decode errors as INVALID instructions
+                            instructions.append(DisassembledInstruction(
+                                address=current_address,
+                                machine_code=instr_bytes,
+                                mnemonic="INVALID",
+                                operands=[],
+                                comment=f"Decode error: {e}"
+                            ))
+                            if debug:
+                                print(f"[DEBUG] PC=0x{current_address:04X} | Adding INVALID instruction (user data regions specified)")
             
             i += self.instruction_size_bytes
             current_address += self.instruction_size_bytes
@@ -757,89 +937,40 @@ class Disassembler:
         if result.data_sections:
             lines.append("")
             lines.append("; Data sections:")
-            
-            # Create a complete data map by analyzing all data sections
-            all_data = bytearray()
-            data_start = min(result.data_sections.keys())
-            data_end = max(addr + len(data) for addr, data in result.data_sections.items())
-            
-            # Initialize with zeros
-            all_data = bytearray(data_end - data_start)
-            
-            # Fill in the actual data
-            for addr, data in result.data_sections.items():
-                offset = addr - data_start
-                all_data[offset:offset + len(data)] = data
-            
-            # Now process the complete data region intelligently
+
+            # Gather all data bytes in order, starting from the lowest address
+            sorted_addrs = sorted(result.data_sections.keys())
+            if not sorted_addrs:
+                return "\n".join(lines)
+            start_addr = sorted_addrs[0]
+            end_addr = sorted_addrs[-1] + len(result.data_sections[sorted_addrs[-1]])
+            # Concatenate all bytes in order
+            data_bytes = bytearray()
+            addr_cursor = start_addr
+            while addr_cursor < end_addr:
+                data_bytes.extend(result.data_sections.get(addr_cursor, b""))
+                addr_cursor += len(result.data_sections.get(addr_cursor, b""))
+            # Output as .word and .byte
             i = 0
-            while i < len(all_data):
-                # Try to detect ASCII string first
-                ascii_start = i
-                ascii_length = 0
-                is_null_terminated = False
-                
-                # Look for printable ASCII characters
-                while (i + ascii_length < len(all_data) and 
-                       ascii_length < 64 and  # Limit string length
-                       all_data[i + ascii_length] >= 32 and 
-                       all_data[i + ascii_length] <= 126):
-                    ascii_length += 1
-                
-                # Check if string is null-terminated
-                if (i + ascii_length < len(all_data) and 
-                    all_data[i + ascii_length] == 0):
-                    is_null_terminated = True
-                    ascii_length += 1  # Include the null terminator
-                
-                # Output ASCII string if we found one (minimum 2 chars or null-terminated)
-                if ascii_length >= 2 or is_null_terminated:
-                    ascii_data = all_data[ascii_start:ascii_start + ascii_length]
-                    if is_null_terminated:
-                        # Remove null terminator for display
-                        ascii_str = ascii_data[:-1].decode('ascii', errors='replace')
-                        directive = ".asciiz"
-                    else:
-                        ascii_str = ascii_data.decode('ascii', errors='replace')
-                        directive = ".ascii"
-                    
+            word_size = self.isa_definition.word_size // 8
+            endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+            while i < len(data_bytes):
+                if i + word_size <= len(data_bytes):
+                    chunk = data_bytes[i:i+word_size]
+                    value = int.from_bytes(chunk, endianness)
                     if include_addresses:
-                        lines.append(f"    {data_start + ascii_start:04X}: {directive} \"{ascii_str}\"")
+                        lines.append(f"    {start_addr + i:04X}: .word 0x{value:04X}")
                     else:
-                        lines.append(f"    {directive} \"{ascii_str}\"")
-                    i += ascii_length
+                        lines.append(f"    .word 0x{value:04X}")
+                    i += word_size
                 else:
-                    # Not ASCII, check if we can output as word
-                    word_size = self.isa_definition.word_size // 8
-                    if i + word_size <= len(all_data):
-                        # Check if this looks like a word (not just random bytes)
-                        chunk = all_data[i:i+word_size]
-                        endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
-                        value = int.from_bytes(chunk, endianness)
-                        
-                        # Output as word if it's a reasonable value
+                    # Output remaining bytes as .byte
+                    for j in range(i, len(data_bytes)):
+                        b = data_bytes[j]
                         if include_addresses:
-                            lines.append(f"    {data_start + i:04X}: .word 0x{value:04X}")
+                            lines.append(f"    {start_addr + j:04X}: .byte 0x{b:02X}")
                         else:
-                            lines.append(f"    .word 0x{value:04X}")
-                        i += word_size
-                    else:
-                        # Output remaining bytes as individual bytes
-                        chunk = all_data[i:]
-                        if len(chunk) == 1:
-                            # Single byte
-                            hex_byte = f'0x{chunk[0]:02X}'
-                            if include_addresses:
-                                lines.append(f"    {data_start + i:04X}: .byte {hex_byte}")
-                            else:
-                                lines.append(f"    .byte {hex_byte}")
-                        else:
-                            # Multiple bytes
-                            hex_bytes = ', '.join(f'0x{b:02X}' for b in chunk)
-                            if include_addresses:
-                                lines.append(f"    {data_start + i:04X}: .byte {hex_bytes}")
-                            else:
-                                lines.append(f"    .byte {hex_bytes}")
-                        i += len(chunk)
-        
+                            lines.append(f"    .byte 0x{b:02X}")
+                    break
+
         return "\n".join(lines) 

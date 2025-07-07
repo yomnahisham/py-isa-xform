@@ -206,19 +206,22 @@ constants = symbol_table.list_symbols(SymbolType.CONSTANT)
 
 ```bash
 # Validate ISA definition
-python -m isa_xform validate my_isa.json
+python -m isa_xform.cli validate my_isa.json
 
 # Parse assembly file
-python -m isa_xform parse --isa simple_risc program.s
+python -m isa_xform.cli parse --isa simple_risc program.s
 
-# Assemble to binary
-python -m isa_xform assemble --isa simple_risc --output program.bin program.s
+# Assemble to binary (headered by default)
+python -m isa_xform.cli assemble --isa simple_risc --output program.bin program.s
 
-# Disassemble binary
-python -m isa_xform disassemble --isa simple_risc --output program.s program.bin
+# Assemble to raw binary (no header)
+python -m isa_xform.cli assemble --isa simple_risc --output program.bin program.s --raw
+
+# Disassemble binary (automatic header detection)
+python -m isa_xform.cli disassemble --isa simple_risc --output program.s program.bin
 
 # List available ISAs
-python -m isa_xform list-isas
+python -m isa_xform.cli list-isas
 ```
 
 ### Common Options
@@ -227,7 +230,24 @@ python -m isa_xform list-isas
 - `--isa-file PATH`: Use custom ISA definition file
 - `--output PATH`: Specify output file
 - `--verbose`: Enable verbose output
-- `--start-address ADDR`: Set starting address for disassembly
+- `--start-address ADDR`: Set starting address for disassembly (auto-detected from header by default)
+- `--raw`: Output raw binary without header (assembler only)
+
+### Binary Format Examples
+
+```bash
+# Headered binary (default) - includes entry point and metadata
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
+
+# Raw binary - just machine code bytes
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin --raw
+
+# Disassemble headered binary (automatic entry point detection)
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s
+
+# Disassemble raw binary (manual start address)
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s --start-address 0x20
+```
 
 ## Working with Custom ISAs
 

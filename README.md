@@ -74,20 +74,51 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-### Basic Usage
+## Quick Start
+
+### Assembly and Disassembly
+
 ```bash
-# Assemble code for ZX16 ISA
-python3 -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
+# Assemble with headered binary output (recommended)
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
 
-# Disassemble machine code
-python3 -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s
+# Disassemble with automatic header detection
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output disassembled.s
 
-# Assemble with verbose output
-python3 -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin --verbose
-
-# List available ISAs
-python3 -m isa_xform.cli list-isas
+# Raw binary output (for bootloaders/legacy systems)
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin --raw
 ```
+
+### Professional Binary Format
+
+The toolchain generates **headered binaries by default** following industry best practices:
+
+- **Automatic Entry Point Detection**: Disassemblers automatically determine the correct starting address
+- **Tool Interoperability**: Works seamlessly with debuggers, loaders, and other tools
+- **Robust Disassembly**: No manual address specification required
+- **Industry Standard**: Follows patterns from ELF, PE, and other executable formats
+
+### Example Workflow
+
+```assembly
+# program.s
+.org 32
+_start:
+    LI x0, 10
+    LI x1, 5
+    ADD x0, x1
+    ECALL 10
+```
+
+```bash
+# Assemble (creates headered binary with entry point 32)
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
+
+# Disassemble (automatically starts at address 32)
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program_dis.s
+```
+
+The disassembled output will correctly show instructions starting at address 0x20 (32), matching the original `.org` directive.
 
 ## Supported Instruction Set Architectures
 
@@ -133,14 +164,23 @@ python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
 - **Correct Operand Ordering**: Outputs operands in syntax order, not encoding order
 - **Symbol Reconstruction**: Rebuilds labels and symbols from machine code
 - **Instruction Recognition**: Robust pattern matching for instruction identification
+- **Automatic Data Region Detection**: Automatically detects data vs code regions based on ISA memory layout
 - **Professional Output**: Clean, readable assembly code generation
 
 ### ISA Definition System
 - **JSON-Based Configuration**: Human-readable ISA specifications
 - **Flexible Field Definitions**: Support for various instruction formats
 - **Register Configuration**: Comprehensive register set definitions
+- **Memory Layout Definition**: Define address space and memory regions for automatic data detection
 - **Syntax Specification**: Customizable assembly language syntax
 - **Validation Rules**: Built-in validation for ISA definitions
+
+### Automatic Data Region Detection
+- **ISA-Based Detection**: Automatically detects data regions based on ISA memory layout
+- **Memory Layout Support**: Respects interrupt vectors, data sections, code sections, and MMIO regions
+- **User Override**: Manual specification of data regions with `--data-regions` parameter
+- **Cross-ISA Compatibility**: Works with any ISA that defines a memory layout
+- **Professional Behavior**: Mimics real disassemblers like objdump, Ghidra, and IDA
 
 ### Custom Instruction Implementations
 - **Python Code Semantics**: Write actual Python code to define instruction behavior
