@@ -441,7 +441,7 @@ ADDI a0, x0, 10   # More verbose
 XOR a1, a1        # Less readable
 ```
 
-This assembler provides professional-grade assembly capabilities with comprehensive validation, pseudo-instruction support, and detailed error reporting, making it suitable for educational, research, and development applications.
+This assembler provides professional-grade assembly capabilities with comprehensive validation, pseudo-instruction support, and detailed error reporting, making it suitable for educational, research, and development applications. 
 
 ## Binary Output Format
 

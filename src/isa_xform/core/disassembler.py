@@ -39,7 +39,7 @@ class Disassembler:
     """Converts machine code to assembly language"""
     
     def __init__(self, isa_definition: ISADefinition, symbol_table: Optional[SymbolTable] = None, 
-                 max_consecutive_nops: int = 8):
+        max_consecutive_nops: int = 8):
         self.isa_definition = isa_definition
         self.symbol_table = symbol_table or SymbolTable()
         self.instruction_size_bytes = isa_definition.instruction_size // 8
@@ -55,6 +55,13 @@ class Disassembler:
         """Build lookup tables for efficient instruction matching"""
         self.opcode_to_instruction = {}
         self.instruction_patterns = []
+        
+        # Build pseudo-instruction patterns for reconstruction
+        self.pseudo_patterns = {}
+        self.control_flow_instructions = set()
+        self.branch_instructions = set()
+        self.jump_instructions = set()
+        self.relative_branch_instructions = set()
         
         try:
             for instruction in self.isa_definition.instructions:
@@ -87,6 +94,20 @@ class Disassembler:
                         except ValueError:
                             # Skip invalid opcodes with warning
                             continue
+                
+                # Categorize control flow instructions
+                mnemonic = instruction.mnemonic.upper()
+                if any(keyword in mnemonic for keyword in ['JMP', 'CALL', 'JAL', 'J']):
+                    self.jump_instructions.add(mnemonic)
+                    self.control_flow_instructions.add(mnemonic)
+                elif any(keyword in mnemonic for keyword in ['BEQ', 'BNE', 'BLT', 'BGE', 'BLTU', 'BGEU', 'BZ', 'BNZ']):
+                    self.branch_instructions.add(mnemonic)
+                    self.control_flow_instructions.add(mnemonic)
+                    self.relative_branch_instructions.add(mnemonic)
+            
+            # Build pseudo-instruction patterns from ISA definition
+            self._build_pseudo_patterns()
+            
         except Exception as e:
             raise DisassemblerError(f"Error building lookup tables: {e}")
     
@@ -137,6 +158,59 @@ class Disassembler:
         
         return (pattern_value, pattern_mask) if pattern_mask else None
     
+    def _build_pseudo_patterns(self):
+        """Build patterns for pseudo-instruction reconstruction from ISA definition"""
+        if not hasattr(self.isa_definition, 'pseudo_instructions'):
+            return
+        
+        for pseudo in self.isa_definition.pseudo_instructions:
+            if not hasattr(pseudo, 'expansion') or not pseudo.expansion:
+                continue
+            
+            # Parse the expansion to understand the pattern
+            expansion_lines = pseudo.expansion.strip().split('\n')
+            if not expansion_lines:
+                continue
+            
+            # Get the first instruction from the expansion
+            first_line = expansion_lines[0].strip()
+            if not first_line:
+                continue
+            
+            # Parse the first instruction to understand the pattern
+            parts = first_line.split()
+            if len(parts) < 2:
+                continue
+            
+            first_mnemonic = parts[0].upper()
+            
+            # Build pattern for this pseudo-instruction
+            if first_mnemonic not in self.pseudo_patterns:
+                self.pseudo_patterns[first_mnemonic] = []
+            
+            pattern = {
+                'pseudo_mnemonic': pseudo.mnemonic,
+                'expansion': pseudo.expansion,
+                'syntax': getattr(pseudo, 'syntax', ''),
+                'conditions': []
+            }
+            
+            # Add conditions based on the expansion pattern
+            # For example, NOP: ADD x0, x0
+            if len(parts) >= 3:
+                rd = parts[1]
+                rs2 = parts[2] if len(parts) > 2 else None
+                
+                if rd == 'x0' and rs2 == 'x0':
+                    pattern['conditions'].append(('rd', 0))
+                    pattern['conditions'].append(('rs2', 0))
+                elif rd == 'x0':
+                    pattern['conditions'].append(('rd', 0))
+                elif rs2 == 'x0':
+                    pattern['conditions'].append(('rs2', 0))
+            
+            self.pseudo_patterns[first_mnemonic].append(pattern)
+    
     def _build_label_map_from_symbols(self, instructions: List[DisassembledInstruction]) -> Dict[int, str]:
         """Build a map of addresses to label names from disassembled instructions"""
         label_map = {}
@@ -178,46 +252,40 @@ class Disassembler:
         return f"0x{address:X}"
     
     def _detect_ascii_strings(self, data_bytes: bytes, start_addr: int) -> List[Tuple[int, int, str]]:
-        """Detect ASCII strings in data bytes"""
+        """Detect ASCII strings in data bytes based on ISA definition"""
         strings = []
         i = 0
         
+        # Get word size and endianness from ISA definition
+        word_size_bytes = self.isa_definition.word_size // 8
+        endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+        
+        # Get printable character range from ISA definition, with fallback to standard ASCII
+        ascii_config = getattr(self.isa_definition, 'ascii_config', {})
+        printable_min = ascii_config.get('printable_min', 32)  # Space
+        printable_max = ascii_config.get('printable_max', 126)  # Tilde
+        min_string_length = ascii_config.get('min_string_length', 2)
+        
         while i < len(data_bytes):
-            # Look for printable ASCII sequence
-            if i + 1 < len(data_bytes):
-                # Check for 2-byte sequences that could be ASCII
-                word = int.from_bytes(data_bytes[i:i+2], 'little')
-                char1 = (word >> 8) & 0xFF
-                char2 = word & 0xFF
+            # Look for printable character sequence based on ISA definition
+            if i < len(data_bytes) and printable_min <= data_bytes[i] <= printable_max:
+                # Found printable character, look for more
+                string_start = i
+                string_chars = []
                 
-                if (32 <= char1 <= 126) and (32 <= char2 <= 126):
-                    # Found printable ASCII, look for more
-                    string_start = i
-                    string_chars = []
-                    
-                    while i < len(data_bytes) - 1:
-                        word = int.from_bytes(data_bytes[i:i+2], 'little')
-                        char1 = (word >> 8) & 0xFF
-                        char2 = word & 0xFF
-                        
-                        if (32 <= char1 <= 126) and (32 <= char2 <= 126):
-                            string_chars.append(chr(char1))
-                            string_chars.append(chr(char2))
-                            i += 2
-                        else:
-                            break
-                    
-                    if len(string_chars) >= 2:  # Minimum 2 characters
-                        strings.append((start_addr + string_start, len(string_chars), ''.join(string_chars)))
-                else:
-                    i += 2
+                while i < len(data_bytes) and printable_min <= data_bytes[i] <= printable_max:
+                    string_chars.append(chr(data_bytes[i]))
+                    i += 1
+                
+                if len(string_chars) >= min_string_length:
+                    strings.append((start_addr + string_start, len(string_chars), ''.join(string_chars)))
             else:
                 i += 1
         
         return strings
     
     def disassemble(self, machine_code: bytes, start_address: int = 0, debug: bool = False, 
-                   data_regions: Optional[List[Tuple[int, int]]] = None) -> DisassemblyResult:
+                   data_regions: Optional[List[Tuple[int, int]]] = None, reconstruct_pseudo: bool = True) -> DisassemblyResult:
         """Disassemble machine code to assembly
         
         Args:
@@ -225,26 +293,31 @@ class Disassembler:
             start_address: Starting address for disassembly (None for ISA default)
             debug: Enable debug output
             data_regions: List of (start_addr, end_addr) tuples specifying data regions
+            reconstruct_pseudo: Whether to reconstruct pseudo-instructions
         """
         instructions = []
         data_sections = {}
         
         # Check for ISAX header
         if machine_code[:4] == b'ISAX':
-            # Parse header: [magic][entry_point][code_start][code_size][data_start][data_size][code][data]
-            entry_point = int.from_bytes(machine_code[4:8], 'little')
-            code_start = int.from_bytes(machine_code[8:12], 'little')
-            code_size = int.from_bytes(machine_code[12:16], 'little')
-            data_start = int.from_bytes(machine_code[16:20], 'little')
-            data_size = int.from_bytes(machine_code[20:24], 'little')
-            code_bytes = machine_code[24:24+code_size]
-            data_bytes = machine_code[24+code_size:24+code_size+data_size]
+            # Parse header: [magic][version][entry_point][code_start][code_size][data_start][data_size][symbol_size][code][data][symbols]
+            version = int.from_bytes(machine_code[4:8], 'little')
+            entry_point = int.from_bytes(machine_code[8:12], 'little')
+            code_start = int.from_bytes(machine_code[12:16], 'little')
+            code_size = int.from_bytes(machine_code[16:20], 'little')
+            data_start = int.from_bytes(machine_code[20:24], 'little')
+            data_size = int.from_bytes(machine_code[24:28], 'little')
+            symbol_size = int.from_bytes(machine_code[28:32], 'little')
+            code_bytes = machine_code[32:32+code_size]
+            data_bytes = machine_code[32+code_size:32+code_size+data_size]
+            symbol_bytes = machine_code[32+code_size+data_size:32+code_size+data_size+symbol_size]
             
             if debug:
-                print(f"[DEBUG] ISAX header detected:")
+                print(f"[DEBUG] ISAX header detected (version {version}):")
                 print(f"[DEBUG] Entry point: 0x{entry_point:04X}")
                 print(f"[DEBUG] Code start: 0x{code_start:04X}, size: {code_size} bytes")
                 print(f"[DEBUG] Data start: 0x{data_start:04X}, size: {data_size} bytes")
+                print(f"[DEBUG] Symbol table size: {symbol_size} bytes")
                 print(f"[DEBUG] Total binary size: {len(machine_code)} bytes")
                 print(f"[DEBUG] Instruction size: {self.instruction_size_bytes} bytes")
                 print(f"[DEBUG] ISA: {self.isa_definition.name}")
@@ -298,8 +371,32 @@ class Disassembler:
                 i += self.instruction_size_bytes
                 code_addr += self.instruction_size_bytes
             
-            # Build label map from instructions
-            self.label_map = self._build_label_map_from_symbols(instructions)
+            # Load symbol table from binary if available
+            if symbol_size > 0 and len(symbol_bytes) > 0:
+                try:
+                    symbol_json = symbol_bytes.decode('utf-8')
+                    import json
+                    symbol_data = json.loads(symbol_json)
+                    
+                    # Build enhanced label map from symbol table
+                    self.label_map = {}
+                    for name, info in symbol_data.items():
+                        if info.get('type') == 'label':
+                            addr = info['value']
+                            self.label_map[addr] = name
+                    
+                    if debug:
+                        print(f"[DEBUG] Loaded {len(symbol_data)} symbols from binary")
+                        for name, info in symbol_data.items():
+                            print(f"[DEBUG] Symbol: {name} = 0x{info['value']:04X} ({info['type']})")
+                except Exception as e:
+                    if debug:
+                        print(f"[DEBUG] Failed to load symbol table: {e}")
+                    # Fall back to building label map from instructions
+                    self.label_map = self._build_label_map_from_symbols(instructions)
+            else:
+                # Build label map from instructions
+                self.label_map = self._build_label_map_from_symbols(instructions)
             
             # Disassemble data section: store as a single entry at the correct address
             data_addr = data_start
@@ -309,18 +406,8 @@ class Disassembler:
                     print(f"[DEBUG] Data section at 0x{data_addr:04X}, size: {len(data_bytes)} bytes")
                     print(f"[DEBUG] Data bytes: {' '.join(f'{b:02X}' for b in data_bytes)}")
             else:
-                # Check if there are additional bytes after the code section that weren't accounted for
-                # This can happen if the assembler didn't properly calculate the data section size
-                remaining_bytes = machine_code[24+code_size:]
-                if len(remaining_bytes) > 0:
-                    data_sections[data_addr] = remaining_bytes
-                    if debug:
-                        print(f"[DEBUG] Found {len(remaining_bytes)} bytes after code section (data size was 0 in header)")
-                        print(f"[DEBUG] Data section at 0x{data_addr:04X}, size: {len(remaining_bytes)} bytes")
-                        print(f"[DEBUG] Data bytes: {' '.join(f'{b:02X}' for b in remaining_bytes)}")
-                else:
-                    if debug:
-                        print(f"[DEBUG] No data section found")
+                if debug:
+                    print(f"[DEBUG] No data section found")
             
             return DisassemblyResult(
                 instructions=instructions,
@@ -783,33 +870,25 @@ class Disassembler:
                 operand_part = ' '.join(parts[1:])
                 syntax_operands = [op.strip() for op in operand_part.split(',')]
 
-        # Reconstruct full immediate for any instruction with multiple immediate fields (contiguous by field width order, works for majority of risc/cicc isas but might fail for scattered immediate fields)
+        # Reconstruct full immediate for any instruction with multiple immediate fields
         encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
         immediate_fields = [f for f in encoding_fields if f.get('type') == 'immediate' and f.get('name') != 'opcode']
         if len(immediate_fields) > 1:
-            # Gather all immediate fields and their widths (use order in encoding)
-            field_widths = []
-            for f in immediate_fields:
-                bits = f.get('bits', '')
-                if ':' in bits:
-                    high, low = [int(x) for x in bits.split(':')]
-                else:
-                    high = low = int(bits)
-                width = high - low + 1
-                field_widths.append((f['name'], width))
-            # Use order in encoding
-            field_widths = [(f['name'], width) for f, width in zip(immediate_fields, [w for _, w in field_widths])]
-            # Reconstruct the full immediate by concatenating field values by width/order
-            full_imm = 0
-            bit_offset = 0
-            for fname, width in field_widths:
-                val = field_values.get(fname, 0)
-                full_imm |= (val & ((1 << width) - 1)) << bit_offset
-                bit_offset += width
+            # Use the instruction's implementation to reconstruct the full immediate
+            # This is fully modular - the ISA definition tells us how to combine fields
+            full_imm = self._reconstruct_immediate_from_implementation(instruction, field_values)
+            
             # Now format operands using the reconstructed immediate
             for syntax_op in syntax_operands:
-                if syntax_op in ('imm', 'immediate'):
-                    operands.append(f"{immediate_prefix}{full_imm}")
+                if syntax_op in ('imm', 'immediate', 'offset'):
+                    # Check if this is a branch/jump target address
+                    if (instruction.mnemonic.upper() in ['JMP', 'CALL', 'BEQ', 'BNE', 'JZ', 'JNZ', 'JAL', 'J'] and 
+                        syntax_op in ['immediate', 'imm', 'offset']):
+                        # Try to resolve as label
+                        resolved = self._resolve_address_to_label(full_imm)
+                        operands.append(resolved)
+                    else:
+                        operands.append(f"{immediate_prefix}{full_imm}")
                 elif syntax_op in ('rd', 'rs1', 'rs2'):
                     reg_val = field_values.get(syntax_op, 0)
                     operands.append(self._format_register(reg_val, register_prefix))
@@ -954,7 +1033,7 @@ class Disassembler:
         
         return symbols
     
-    def format_disassembly(self, result: DisassemblyResult, include_addresses: bool = True, include_machine_code: bool = False) -> str:
+    def format_disassembly(self, result: DisassemblyResult, include_addresses: bool = True, include_machine_code: bool = False, reconstruct_pseudo: bool = True) -> str:
         """Format disassembly result as human-readable assembly"""
         lines = []
         
@@ -966,6 +1045,10 @@ class Disassembler:
         
         # Sort instructions by address
         sorted_instructions = sorted(result.instructions, key=lambda x: x.address)
+        
+        # Apply pseudo-instruction reconstruction if enabled
+        if reconstruct_pseudo:
+            sorted_instructions = self._reconstruct_pseudo_instructions(sorted_instructions)
         
         for instr in sorted_instructions:
             line_parts = []
@@ -1023,28 +1106,195 @@ class Disassembler:
                     # Check if we're at a string position
                     if current_pos in string_positions:
                         length, text = string_positions[current_pos]
+                        # Get string directive name from ISA definition, with fallback to .ascii
+                        string_directive = getattr(self.isa_definition, 'string_directive', '.ascii')
                         if include_addresses:
-                            lines.append(f"    {current_pos:04X}: .ascii \"{text}\"")
+                            lines.append(f"    {current_pos:04X}: {string_directive} \"{text}\"")
                         else:
-                            lines.append(f"    .ascii \"{text}\"")
+                            lines.append(f"    {string_directive} \"{text}\"")
                         i += length
                     elif i + word_size <= len(data_bytes):
                         # Output as word
                         chunk = data_bytes[i:i+word_size]
                         value = int.from_bytes(chunk, endianness)
+                        # Get word directive name from ISA definition, with fallback to .word
+                        word_directive = getattr(self.isa_definition, 'word_directive', '.word')
                         if include_addresses:
-                            lines.append(f"    {current_pos:04X}: .word 0x{value:04X}")
+                            lines.append(f"    {current_pos:04X}: {word_directive} 0x{value:04X}")
                         else:
-                            lines.append(f"    .word 0x{value:04X}")
+                            lines.append(f"    {current_pos:04X}: {word_directive} 0x{value:04X}")
                         i += word_size
                     else:
                         # Output remaining bytes as .byte
+                        # Get byte directive name from ISA definition, with fallback to .byte
+                        byte_directive = getattr(self.isa_definition, 'byte_directive', '.byte')
                         for j in range(i, len(data_bytes)):
                             b = data_bytes[j]
                             if include_addresses:
-                                lines.append(f"    {addr + j:04X}: .byte 0x{b:02X}")
+                                lines.append(f"    {addr + j:04X}: {byte_directive} 0x{b:02X}")
                             else:
-                                lines.append(f"    .byte 0x{b:02X}")
+                                lines.append(f"    {byte_directive} 0x{b:02X}")
                         break
-
-        return "\n".join(lines) 
+        
+        return "\n".join(lines)
+    
+    def _reconstruct_pseudo_instructions(self, instructions: List[DisassembledInstruction]) -> List[DisassembledInstruction]:
+        """Reconstruct pseudo-instructions from hardware instructions"""
+        if not self.pseudo_patterns:
+            return instructions
+        
+        reconstructed = []
+        i = 0
+        
+        while i < len(instructions):
+            instr = instructions[i]
+            
+            # Check if this instruction matches a pseudo-pattern
+            pseudo_mnemonic = self._check_pseudo_pattern(instr, instructions, i)
+            
+            if pseudo_mnemonic:
+                # Replace with pseudo-instruction
+                reconstructed.append(DisassembledInstruction(
+                    address=instr.address,
+                    machine_code=instr.machine_code,
+                    mnemonic=pseudo_mnemonic,
+                    operands=instr.operands,
+                    instruction=instr.instruction,
+                    comment=f"pseudo: {pseudo_mnemonic}"
+                ))
+                
+                # Skip the next instruction if it was part of the pseudo-instruction
+                # (e.g., LA expands to AUIPC + ADDI)
+                if pseudo_mnemonic in ['LA', 'LI'] and i + 1 < len(instructions):
+                    i += 1  # Skip the second instruction
+            else:
+                reconstructed.append(instr)
+            
+            i += 1
+        
+        return reconstructed
+    
+    def _check_pseudo_pattern(self, instr: DisassembledInstruction, instructions: List[DisassembledInstruction], index: int) -> Optional[str]:
+        """Check if an instruction matches a pseudo-instruction pattern"""
+        if not instr.instruction:
+            return None
+        
+        mnemonic = instr.instruction.mnemonic.upper()
+        
+        if mnemonic not in self.pseudo_patterns:
+            return None
+        
+        # Extract field values from the instruction
+        field_values = self._extract_field_values(instr)
+        
+        for pattern in self.pseudo_patterns[mnemonic]:
+            if self._matches_pseudo_pattern(field_values, pattern):
+                return pattern['pseudo_mnemonic']
+        
+        return None
+    
+    def _extract_field_values(self, instr: DisassembledInstruction) -> Dict[str, int]:
+        """Extract field values from a disassembled instruction"""
+        field_values = {}
+        
+        if not instr.instruction or not hasattr(instr.instruction, 'encoding'):
+            return field_values
+        
+        encoding = instr.instruction.encoding
+        if not isinstance(encoding, dict) or 'fields' not in encoding:
+            return field_values
+        
+        # Parse operands to extract field values
+        # This is a simplified approach - in a full implementation, you'd decode the machine code
+        if instr.operands:
+            # For now, try to extract register numbers from operand strings
+            for i, operand in enumerate(instr.operands):
+                if operand.startswith('x'):
+                    try:
+                        reg_num = int(operand[1:])
+                        field_values[f'rd'] = reg_num if i == 0 else field_values.get('rd', 0)
+                        field_values[f'rs{i+1}'] = reg_num
+                    except ValueError:
+                        pass
+                elif operand.isdigit() or operand.startswith('0x'):
+                    try:
+                        imm_val = int(operand, 16) if operand.startswith('0x') else int(operand)
+                        field_values['imm'] = imm_val
+                    except ValueError:
+                        pass
+        
+        return field_values
+    
+    def _matches_pseudo_pattern(self, field_values: Dict[str, int], pattern: Dict[str, Any]) -> bool:
+        """Check if field values match a pseudo-instruction pattern"""
+        for field_name, expected_value in pattern['conditions']:
+            if field_name not in field_values:
+                return False
+            if field_values[field_name] != expected_value:
+                return False
+        return True
+    
+    def _reconstruct_immediate_from_implementation(self, instruction: Instruction, field_values: Dict[str, int]) -> int:
+        """Reconstruct the full immediate value from instruction implementation"""
+        # Parse the implementation to understand how to combine immediate fields
+        implementation = getattr(instruction, 'implementation', '')
+        
+        # Create a local namespace with the field values
+        local_vars = field_values.copy()
+        
+        try:
+            # Extract immediate combination logic from implementation
+            # Look for patterns like: offset = (imm1 << 3) | imm2
+            lines = implementation.split('\n')
+            for line in lines:
+                line = line.strip()
+                if '=' in line and ('<<' in line or '|' in line or '&' in line):
+                    # This line likely combines immediate fields
+                    # Execute it in our local namespace
+                    exec(line, {}, local_vars)
+            
+            # Look for the final immediate value
+            # Common variable names: offset, imm, immediate, result
+            for var_name in ['offset', 'imm', 'immediate', 'result']:
+                if var_name in local_vars:
+                    return local_vars[var_name]
+            
+            # If no specific variable found, try to reconstruct from field names
+            # This is a fallback for when the implementation doesn't clearly define the output
+            immediate_fields = [f for f in getattr(instruction, 'encoding', {}).get('fields', []) 
+                              if f.get('type') == 'immediate' and f.get('name') != 'opcode']
+            
+            if len(immediate_fields) == 2:
+                # Common pattern: combine two immediate fields
+                field_names = [f['name'] for f in immediate_fields]
+                if 'imm' in field_names and 'imm2' in field_names:
+                    imm_val = field_values.get('imm', 0)
+                    imm2_val = field_values.get('imm2', 0)
+                    # Default pattern: (imm << 3) | imm2
+                    return (imm_val << 3) | imm2_val
+                elif 'imm1' in field_names and 'imm2' in field_names:
+                    imm1_val = field_values.get('imm1', 0)
+                    imm2_val = field_values.get('imm2', 0)
+                    # Default pattern: (imm1 << 3) | imm2
+                    return (imm1_val << 3) | imm2_val
+            
+            # If all else fails, return the first immediate field value
+            for field_name, value in field_values.items():
+                if field_name in ['imm', 'immediate', 'offset']:
+                    return value
+            
+            return 0
+            
+        except Exception:
+            # If execution fails, fall back to simple concatenation
+            immediate_fields = [f for f in getattr(instruction, 'encoding', {}).get('fields', []) 
+                              if f.get('type') == 'immediate' and f.get('name') != 'opcode']
+            
+            if len(immediate_fields) == 2:
+                field_names = [f['name'] for f in immediate_fields]
+                if 'imm' in field_names and 'imm2' in field_names:
+                    imm_val = field_values.get('imm', 0)
+                    imm2_val = field_values.get('imm2', 0)
+                    return (imm_val << 3) | imm2_val
+            
+            return field_values.get('imm', 0) 

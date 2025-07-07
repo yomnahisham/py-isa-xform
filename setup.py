@@ -11,11 +11,11 @@ long_description = (this_directory / "README.md").read_text()
 
 # Core dependencies only (not dev dependencies)
 core_requirements = [
-    "jsonschema>=4.0.0",
+        "jsonschema>=4.0.0",
     "pydantic>=2.0.0", 
-    "click>=8.0.0",
-    "rich>=13.0.0",
-]
+        "click>=8.0.0",
+        "rich>=13.0.0",
+    ]
 
 setup(
     name="py-isa-xform",
