@@ -3,13 +3,12 @@ import struct
 import re
 import numpy as np
 import keyboard
-import ctypes
 from pynput.keyboard import Key, Listener
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 from .disassembler import Disassembler, DisassembledInstruction, DisassemblyResult
-from .isa_loader import ISADefinition, Instruction, AddressSpace
+from .isa_loader import ISADefinition, Register
 from .symbol_table import SymbolTable
 from ..utils.bit_utils import (
     extract_bits, set_bits, sign_extend, parse_bit_range, 
@@ -35,8 +34,8 @@ class Simulator:
         self.pc = isa_definition.address_space.default_code_start
         self.data_start = isa_definition.address_space.default_data_start
         self.pc_step = self.isa_definition.word_size // 8
-        self.regs = [ctypes.c_int16(0) for _ in range(8)]  # Initialize registers
-        self.reg_names = [reg for reg in self.isa_definition.registers]
+        self.regs = [0] * len(self.isa_definition.registers['general_purpose'])
+        self.reg_names = [reg.alias[0] for reg in self.isa_definition.registers['general_purpose']]
         self.key = "start"
 
     def listen_for_key(self, target_key):
@@ -114,8 +113,7 @@ class Simulator:
         
         operand_string = ' '.join(parts[1:])  # Join everything after the mnemonic
         operands = re.findall(r'(?:0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|-?\d+|[a-zA-Z_]\w*)', operand_string)
-        operand_list = list(dict.fromkeys(operands))  # Remove duplicates while preserving order
-        return operand_list
+        return operands
     
     def generic_to_register_name(self, syntax: str, generic: List[str], operands: List[str]) -> str:
         """Converts generic operand names to actual register names in the syntax"""
@@ -129,37 +127,19 @@ class Simulator:
         result = syntax
         reg_objs = self.isa_definition.registers['general_purpose']
         reg_names = [reg.name if hasattr(reg, 'name') else str(reg) for reg in reg_objs]
-        reg_aliases = [reg.alias[0] if hasattr(reg, 'alias') and reg.alias else None for reg in reg_objs]
         for operand in operands:
             if operand in reg_names:
                 idx = reg_names.index(operand)
-            elif operand in reg_aliases:
-                idx = reg_aliases.index(operand)
+                result = result.replace(operand, f"regs[{idx}]")
             else:
+                
                 # print(f"Warning: Operand '{operand}' not found in register names or aliases.", file=sys.stderr)
                 continue
-            result = result.replace(operand, f"regs[{idx}]")
+            
         result = result.replace("memory", "self.memory")
         result = result.replace("PC", "self.pc")
-        result = result.replace("]", "].value")  # Ensure ctypes values are accessed correctly
         return result        
     
-    # def disassemble_instruction(self, instruction: int, pc: int) -> Optional[DisassembledInstruction]:
-    #     if self.isa_definition.endianness == 'little':
-    #         instruction = struct.pack('<H', self.read_memory_word(pc))
-    #     else:
-    #         instruction = struct.pack('>H', self.read_memory_word(pc))
-
-    #     disassembled = self.disassembler.disassemble(instruction, pc)
-    #     if disassembled.instructions:
-    #         instruction = disassembled.instructions[0]
-    #         if instruction.operands:
-    #             print(f"0x{self.pc:04x}: {instruction.mnemonic} {', '.join(instruction.operands)}")
-    #             return disassembled
-    #         else:
-    #             print(f"{instruction.mnemonic}")
-    #             return disassembled
-    #     return f"Error: Unknown instruction at address {pc:04X}"
     
     def get_key(self, target_key: str) -> int:
         event = keyboard.read_event()
@@ -167,6 +147,14 @@ class Simulator:
             if event.name == target_key:
                 return 1
         return 0
+    
+    def map_disassembly_result_to_pc(self, disassembly_result: DisassemblyResult) -> Dict[int, DisassembledInstruction]:
+        """Maps disassembled instructions to their program counter (PC) addresses"""
+        pc_map = {}
+        for instruction in disassembly_result.instructions:
+            if instruction is not None:
+                pc_map[instruction.address] = instruction
+        return pc_map
 
     
     def execute_instruction(self, disassembled_instruction: DisassembledInstruction) -> bool:
@@ -198,13 +186,15 @@ class Simulator:
                     except ValueError:
                         print("Invalid input, expected an integer")
                 elif name == "print_string":
-                    addr = self.regs[6]  # a0 register
-                    string = ""
-                    while addr < len(self.memory) and self.memory[addr] != 0:
-                        string += chr(self.memory[addr])
-                        addr += 1
-                    print(string)
+                    print(self.memory[self.regs[6]])
+                    # addr = self.regs[6]  # a0 register
+                    # string = ""
+                    # while addr < len(self.memory) and self.memory[addr] != 0:
+                    #     string += chr(self.memory[addr])
+                    #     addr += 1
+                    #print(string)
                 elif name == "print_int":
+                    print(self.memory[self.regs[6]])
                     return
                 elif name == "play_tone":
                     frequency = self.regs[6]  # a0 register
@@ -260,37 +250,37 @@ class Simulator:
     def run(self, step: bool = False):
         """Runs the simulator, disassembling and executing instructions in memory"""
         disassembly_result = self.disassembler.disassemble(self.memory, self.pc)
+        instuctions_map = self.map_disassembly_result_to_pc(disassembly_result)
         loop = "start"
-        i = 0
         print(f"Code Start: {self.pc}")
         print(f"Data Start: {self.data_start} ")
+        print(f"Memory: {self.memory[self.data_start]} ")
+
         while self.pc < len(self.memory) and (loop != 'q' or (not step)):
-            current_instruction = disassembly_result.instructions[i]
-            # if NoneType, skip the instruction
-            if i >= len(disassembly_result.instructions):
-                print("Reached end of disassembled instructions")
-                break
+            
+            current_instruction = instuctions_map[self.pc] if self.pc in instuctions_map else None
             if current_instruction is None:
                 print(f"Skipping instruction at PC: {self.pc} (NoneType)")
-                i += 1
                 continue
 
             print(f"PC: {self.pc:04X} - {current_instruction.mnemonic} {', '.join(current_instruction.operands)}")
-            self.pc += self.pc_step
-            i += 1
+            temp_pc = self.pc
             if self.execute_instruction(current_instruction):
+                if temp_pc == self.pc:
+                    self.pc += self.pc_step
                 if "NOP" in current_instruction.mnemonic:
                     continue
                 else:
                     if step:
-                        values = [reg.value for reg in self.regs]
-                        print(f"Registers: {values}")
+                        values = [reg for reg in self.regs]
+                        print(self.regs)
+                        #print(f"Registers: {', '.join(f'{name}: {value}' for name, value in zip(self.reg_names, values))}")
                         loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
                     else:
-                        i += 1
-                        if i >= len(disassembly_result.instructions):
+                        if self.pc >= len(disassembly_result.instructions):
                             print("Reached end of disassembled instructions")
                             break
+                
             else:
                 print("Execution terminated by instruction")
                 break
