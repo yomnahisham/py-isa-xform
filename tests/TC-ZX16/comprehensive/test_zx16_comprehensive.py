@@ -58,7 +58,7 @@ def test_zx16_comprehensive():
         
     except Exception as e:
         print(f"✗ Assembly failed: {e}")
-        return False
+        assert False, f"Assembly failed: {e}"
     
     # Test 2: Disassembly
     print("\n=== Testing Disassembly ===")
@@ -89,7 +89,7 @@ def test_zx16_comprehensive():
         
     except Exception as e:
         print(f"✗ Disassembly failed: {e}")
-        return False
+        assert False, f"Disassembly failed: {e}"
     
     # Test 3: Verify specific patterns
     print("\n=== Testing Specific Patterns ===")
@@ -104,19 +104,19 @@ def test_zx16_comprehensive():
             print(f"✓ Label 'start' resolved to 0x{start_symbol.value:04X}")
         else:
             print("✗ Label 'start' not found or not defined")
-            return False
+            assert False, "Label 'start' not found or not defined"
         
         if func1_symbol and func1_symbol.defined:
-            print(f"✓ Label 'func1' resolved to 0x{func1_symbol.value:04X}")
+            print(f"✓ Label 'func1' resolved to 0x{func2_symbol.value:04X}")
         else:
             print("✗ Label 'func1' not found or not defined")
-            return False
+            assert False, "Label 'func1' not found or not defined"
         
         if func2_symbol and func2_symbol.defined:
             print(f"✓ Label 'func2' resolved to 0x{func2_symbol.value:04X}")
         else:
             print("✗ Label 'func2' not found or not defined")
-            return False
+            assert False, "Label 'func2' not found or not defined"
         
         # Check that immediates are within bounds
         print("✓ All immediates are within ZX16 constraints")
@@ -126,7 +126,7 @@ def test_zx16_comprehensive():
         
     except Exception as e:
         print(f"✗ Pattern verification failed: {e}")
-        return False
+        assert False, f"Pattern verification failed: {e}"
     
     # Test 4: CLI test
     print("\n=== Testing CLI ===")
@@ -147,7 +147,7 @@ def test_zx16_comprehensive():
             print("✓ CLI assembly successful")
         else:
             print(f"✗ CLI assembly failed: {result.stderr}")
-            return False
+            assert False, f"CLI assembly failed: {result.stderr}"
         
         # Test CLI disassembly
         result = subprocess.run([
@@ -162,15 +162,14 @@ def test_zx16_comprehensive():
             print("✓ CLI disassembly successful")
         else:
             print(f"✗ CLI disassembly failed: {result.stderr}")
-            return False
+            assert False, f"CLI disassembly failed: {result.stderr}"
         
     except Exception as e:
         print(f"✗ CLI test failed: {e}")
-        return False
+        assert False, f"CLI test failed: {e}"
     
     print("\n" + "=" * 50)
     print("✓ All tests passed! ZX16 handles labels, offsets, and immediates correctly.")
-    return True
 
 
 def show_comparison():

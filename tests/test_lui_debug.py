@@ -135,13 +135,16 @@ ECALL 0x3FF  # Exit
         print(f"\nDisassembled output:")
         print(disassembler.format_disassembly(dis_result))
         
-        return True
+        # Verify the disassembly contains the expected instruction
+        disassembly_text = disassembler.format_disassembly(dis_result)
+        assert "LUI" in disassembly_text, "LUI instruction not found in disassembly"
+        assert "100" in disassembly_text, "Immediate value 100 not found in disassembly"
         
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Test failed: {e}"
 
 if __name__ == "__main__":
     debug_lui_encoding()
