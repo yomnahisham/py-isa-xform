@@ -3,6 +3,7 @@ import struct
 import re
 import numpy as np
 import keyboard
+import ctypes
 from pynput.keyboard import Key, Listener
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -10,6 +11,10 @@ from dataclasses import dataclass
 from .disassembler import Disassembler, DisassembledInstruction, DisassemblyResult
 from .isa_loader import ISADefinition, Instruction, AddressSpace
 from .symbol_table import SymbolTable
+from ..utils.bit_utils import (
+    extract_bits, set_bits, sign_extend, parse_bit_range, 
+    create_mask, bytes_to_int, int_to_bytes
+)
 
 def sign_extend(value: int, bits: int) -> int:
     """Sign extend a value from specified number of bits to 16 bits"""
@@ -27,10 +32,10 @@ class Simulator:
         self.symbol_table = symbol_table if symbol_table else SymbolTable()
         self.disassembler = disassembler if disassembler else Disassembler(isa_definition, self.symbol_table)
         self.memory = bytearray(65536)  # 64KB memory
-        self.pc = 0
-        #self.pc = isa_definition.address_space.default_code_start if isa_definition.address_space.default_code_start is not None else 0
+        self.pc = isa_definition.address_space.default_code_start
+        self.data_start = isa_definition.address_space.default_data_start
         self.pc_step = self.isa_definition.word_size // 8
-        self.regs = [0] * len(self.isa_definition.registers['general_purpose'])  # Initialize registers
+        self.regs = [ctypes.c_int16(0) for _ in range(8)]  # Initialize registers
         self.reg_names = [reg for reg in self.isa_definition.registers]
         self.key = "start"
 
@@ -82,9 +87,9 @@ class Simulator:
             print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
     
     def read_memory_word(self, addr: int) -> int: # TO BE VISITED
-        if 0 <= addr < len(self.memory) - 1:
+        if 0 <= addr < len(self.memory) - self.pc_step:
             if self.isa_definition.endianness == 'little':
-                return struct.unpack('<H', self.memory[addr:addr + self.pc_step])[0] #NOT SURE ABOUT + PC_STEP
+                return struct.unpack('<H', self.memory[addr:addr + self.pc_step])[0] 
             else:                
                 return struct.unpack('>H', self.memory[addr:addr + self.pc_step])[0] 
         else:
@@ -136,24 +141,25 @@ class Simulator:
             result = result.replace(operand, f"regs[{idx}]")
         result = result.replace("memory", "self.memory")
         result = result.replace("PC", "self.pc")
+        result = result.replace("]", "].value")  # Ensure ctypes values are accessed correctly
         return result        
     
-    def disassemble_instruction(self, instruction: int, pc: int) -> Optional[DisassembledInstruction]:
-        if self.isa_definition.endianness == 'little':
-            instruction = struct.pack('<H', self.read_memory_word(pc))
-        else:
-            instruction = struct.pack('>H', self.read_memory_word(pc))
+    # def disassemble_instruction(self, instruction: int, pc: int) -> Optional[DisassembledInstruction]:
+    #     if self.isa_definition.endianness == 'little':
+    #         instruction = struct.pack('<H', self.read_memory_word(pc))
+    #     else:
+    #         instruction = struct.pack('>H', self.read_memory_word(pc))
 
-        disassembled = self.disassembler.disassemble(instruction, pc)
-        if disassembled.instructions:
-            instruction = disassembled.instructions[0]
-            if instruction.operands:
-                print(f"0x{self.pc:04x}: {instruction.mnemonic} {', '.join(instruction.operands)}")
-                return disassembled
-            else:
-                print(f"{instruction.mnemonic}")
-                return disassembled
-        return f"Error: Unknown instruction at address {pc:04X}"
+    #     disassembled = self.disassembler.disassemble(instruction, pc)
+    #     if disassembled.instructions:
+    #         instruction = disassembled.instructions[0]
+    #         if instruction.operands:
+    #             print(f"0x{self.pc:04x}: {instruction.mnemonic} {', '.join(instruction.operands)}")
+    #             return disassembled
+    #         else:
+    #             print(f"{instruction.mnemonic}")
+    #             return disassembled
+    #     return f"Error: Unknown instruction at address {pc:04X}"
     
     def get_key(self, target_key: str) -> int:
         event = keyboard.read_event()
@@ -163,107 +169,135 @@ class Simulator:
         return 0
 
     
-    def execute_instruction(self, disassembled_instruction: DisassemblyResult):
+    def execute_instruction(self, disassembled_instruction: DisassembledInstruction) -> bool:
         """Executes a disassembled instruction"""
-        if disassembled_instruction.instructions[0].instruction.mnemonic == "ECALL":
-            code = disassembled_instruction.instructions[0].operands[0]
-            code = f"0x{int(code):03X}"
-            name = self.isa_definition.ecall_services[code].name
-            if name == "exit":
-                print("Exiting simulation")
-                return False
-            elif name == "read_string":
-                addr = self.regs[6]  # a0 register
-                max_length = self.regs[7]  # a1 register
-                string = input()
-                if len(string) > max_length:
-                    print(f"Input exceeds maximum length of {max_length} characters")
-                    return True
-                for i, char in enumerate(string):
-                    if addr + i < len(self.memory):
-                        self.write_memory_byte(addr + i, ord(char))
-                self.write_memory_byte(addr + len(string), 0)  # Null-terminate the string
-                self.regs[6] = len(string)  # Store length in a0 register
-            elif name == "read_integer":
-                try:
-                    value = int(input("Enter an integer: "))
-                    self.regs[6] = int(value)  # Store in a0 register
-                except ValueError:
-                    print("Invalid input, expected an integer")
-            elif name == "print_string":
-                addr = self.regs[6]  # a0 register
-                string = ""
-                while addr < len(self.memory) and self.memory[addr] != 0:
-                    string += chr(self.memory[addr])
-                    addr += 1
-                print(string)
-            elif name == "print_int":
-                return
-            elif name == "play_tone":
-                frequency = self.regs[6]  # a0 register
-                duration_ms = self.regs[7]  # a1 register
-                print(f"Playing tone at {frequency}Hz for {duration_ms}ms")
-            elif name == "set_audio_volume":
-                volume = self.regs[6]  # a0 register
-                if 0 <= volume <= 255:
-                    print(f"Setting audio volume to {volume}")
-                else:
-                    print("Volume must be between 0 and 255")
-            elif name == "stop_audio_playback":
-                print("Audio playback stopped")
-            elif name == "read_keyboard":
-                #self.regs[7] = self.get_key(chr(self.regs[6])) # a0 register is the key to read, a1 register will hold the result
-                self.listen_for_key(chr(self.regs[6]))
-                self.regs[7] = self.key
-            elif name == "registers_dump":
-                for i, reg in enumerate(self.regs):
-                    print(f"{self.reg_names[i]}: {reg}")
-            elif name == "memory_dump":
-                start = self.regs[6]  # a0 register
-                end = self.regs[7]  # a1 register
-                for addr in range(start, end + 1):
-                    if addr < len(self.memory):
-                        print(f"0x{addr:04X}: {self.read_memory_byte(addr)}")
+        if disassembled_instruction.instruction:
+            if disassembled_instruction.instruction.mnemonic == "ECALL":
+                code = disassembled_instruction.operands[0]
+                code = f"0x{int(code):03X}"
+                name = self.isa_definition.ecall_services[code].name
+                if name == "exit":
+                    print("Exiting simulation")
+                    return False
+                elif name == "read_string":
+                    addr = self.regs[6]  # a0 register
+                    max_length = self.regs[7]  # a1 register
+                    string = input()
+                    if len(string) > max_length:
+                        print(f"Input exceeds maximum length of {max_length} characters")
+                        return True
+                    for i, char in enumerate(string):
+                        if addr + i < len(self.memory):
+                            self.write_memory_byte(addr + i, ord(char))
+                    self.write_memory_byte(addr + len(string), 0)  # Null-terminate the string
+                    self.regs[6] = len(string)  # Store length in a0 register
+                elif name == "read_integer":
+                    try:
+                        value = int(input("Enter an integer: "))
+                        self.regs[6] = int(value)  # Store in a0 register
+                    except ValueError:
+                        print("Invalid input, expected an integer")
+                elif name == "print_string":
+                    addr = self.regs[6]  # a0 register
+                    string = ""
+                    while addr < len(self.memory) and self.memory[addr] != 0:
+                        string += chr(self.memory[addr])
+                        addr += 1
+                    print(string)
+                elif name == "print_int":
+                    return
+                elif name == "play_tone":
+                    frequency = self.regs[6]  # a0 register
+                    duration_ms = self.regs[7]  # a1 register
+                    print(f"Playing tone at {frequency}Hz for {duration_ms}ms")
+                elif name == "set_audio_volume":
+                    volume = self.regs[6]  # a0 register
+                    if 0 <= volume <= 255:
+                        print(f"Setting audio volume to {volume}")
+                    else:
+                        print("Volume must be between 0 and 255")
+                elif name == "stop_audio_playback":
+                    print("Audio playback stopped")
+                elif name == "read_keyboard":
+                    #self.regs[7] = self.get_key(chr(self.regs[6])) # a0 register is the key to read, a1 register will hold the result
+                    self.listen_for_key(chr(self.regs[6]))
+                    self.regs[7] = self.key
+                elif name == "registers_dump":
+                    for i, reg in enumerate(self.regs):
+                        print(f"{self.reg_names[i]}: {reg}")
+                elif name == "memory_dump":
+                    start = self.regs[6]  # a0 register
+                    end = self.regs[7]  # a1 register
+                    for addr in range(start, end + 1):
+                        if addr < len(self.memory):
+                            print(f"0x{addr:04X}: {self.read_memory_byte(addr)}")
+                
+                return True
+        
             
-            return True
 
-            
-        else:
-            generic_assembly = disassembled_instruction.instructions[0].instruction.syntax
-            instruction = disassembled_instruction.instructions[0]
-            actual_assembly = f"{instruction.mnemonic}  {', '.join(instruction.operands)}"
-            code = disassembled_instruction.instructions[0].instruction.semantics
+                
+            else:
+                generic_assembly = disassembled_instruction.instruction.syntax
+                instruction = disassembled_instruction.instruction
+                actual_assembly = f"{instruction.mnemonic}  {', '.join(disassembled_instruction.operands)}"
+                code = instruction.semantics
+                # generic_assembly = disassembled_instruction.instructions[0].instruction.syntax
+                # instruction = disassembled_instruction.instructions[0]
+                # actual_assembly = f"{instruction.mnemonic}  {', '.join(instruction.operands)}"
+                # code = disassembled_instruction.instructions[0].instruction.semantics
 
-            generic_parameters = self.extract_parameters(generic_assembly)
-            actual_parameters = self.extract_parameters(actual_assembly)
-            code = self.generic_to_register_name(code, generic_parameters, actual_parameters)
-            executable_string = self.register_name_to_index(code, actual_parameters)
-            exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'unsigned': unsigned, 'sign_extend': sign_extend, 'read_memory_word': self.read_memory_word, 'write_memory_word': self.write_memory_word})
-            return True
+                generic_parameters = self.extract_parameters(generic_assembly)
+                actual_parameters = self.extract_parameters(actual_assembly)
+                code = self.generic_to_register_name(code, generic_parameters, actual_parameters)
+                executable_string = self.register_name_to_index(code, actual_parameters)
+                print(f"Executing: {executable_string}")
+                exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'unsigned': unsigned, 'sign_extend': sign_extend, 'read_memory_word': self.read_memory_word, 'write_memory_word': self.write_memory_word})
+                return True
+        return True
         
     def dump_memory(self, start: int, end: int):
         for addr in range(start, end + 1):
             print(f"0x{addr:04X}: {self.read_memory_byte(addr):02X}")
 
     def run(self):
+
+    def run(self, step: bool = False):
+        """Runs the simulator, disassembling and executing instructions in memory"""
+        disassembly_result = self.disassembler.disassemble(self.memory, self.pc)
         loop = "start"
-        while self.pc < len(self.memory):
-            instruction = self.read_memory_word(self.pc)
-            if instruction == 0:
-                print(f"0x{self.pc:04x}: NOP")
-            else:    
-                disassembled = self.disassemble_instruction(instruction, self.pc)
-                if disassembled is None:
-                    print(f"Error: Unknown instruction at address {self.pc:04X}")
-                    break
+        i = 0
+        print(f"Code Start: {self.pc}")
+        print(f"Data Start: {self.data_start} ")
+        while self.pc < len(self.memory) and (loop != 'q' or (not step)):
+            current_instruction = disassembly_result.instructions[i]
+            # if NoneType, skip the instruction
+            if i >= len(disassembly_result.instructions):
+                print("Reached end of disassembled instructions")
+                break
+            if current_instruction is None:
+                print(f"Skipping instruction at PC: {self.pc} (NoneType)")
+                i += 1
+                continue
 
-                if not self.execute_instruction(disassembled):
-                    print("Execution terminated by instruction")
-                    break
+            print(f"PC: {self.pc:04X} - {current_instruction.mnemonic} {', '.join(current_instruction.operands)}")
             self.pc += self.pc_step
-
-            if self.pc >= len(self.memory):
-                print("Reached end of memory")
+            i += 1
+            if self.execute_instruction(current_instruction):
+                if "NOP" in current_instruction.mnemonic:
+                    continue
+                else:
+                    if step:
+                        values = [reg.value for reg in self.regs]
+                        print(f"Registers: {values}")
+                        loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
+                    else:
+                        i += 1
+                        if i >= len(disassembly_result.instructions):
+                            print("Reached end of disassembled instructions")
+                            break
+            else:
+                print("Execution terminated by instruction")
                 break
             print(f"Registers: {self.regs}")
             #self.key = keyboard.read_event().name

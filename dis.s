@@ -1,9 +1,13 @@
-; Disassembly of ZX16 v1.0
-; Word size: 16 bits
-; Endianness: little
+.org 0x20
+.data
+array: .space 10
 
-    LI x0, 10
-    ADDI x0, 0xFFFFFFFF
-    BNZ x0, 0
-    LI x6, 0
-    ECALL 0x3FF
+.text
+
+main:
+    # Initialize counter to 10
+    LI x0, 10       # i = 10
+    LI x1, 5        # j = 5
+    ADD  x0, x1     # i = i + j
+    SUB x0, x1      # i = i - j
+    ECALL 10       # system call to exit
