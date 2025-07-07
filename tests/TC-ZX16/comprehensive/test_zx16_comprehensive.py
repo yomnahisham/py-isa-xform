@@ -31,7 +31,7 @@ def test_zx16_comprehensive():
     try:
         # Parse the assembly code
         parser = Parser(isa_def)
-        with open("test_zx16_comprehensive.s", "r") as f:
+        with open("tests/TC-ZX16/comprehensive/test_zx16_comprehensive.s", "r") as f:
             assembly_code = f.read()
         
         nodes = parser.parse(assembly_code)
@@ -138,7 +138,7 @@ def test_zx16_comprehensive():
         result = subprocess.run([
             'python3', '-m', 'isa_xform.cli', 'assemble',
             '--isa', 'zx16',
-            '--input', 'test_zx16_comprehensive.s',
+            '--input', 'tests/TC-ZX16/comprehensive/test_zx16_comprehensive.s',
             '--output', 'test_zx16_comprehensive_cli.bin',
             '--verbose'
         ], capture_output=True, text=True)
@@ -178,7 +178,7 @@ def show_comparison():
     
     try:
         # Read original assembly
-        with open("test_zx16_comprehensive.s", "r") as f:
+        with open("tests/TC-ZX16/comprehensive/test_zx16_comprehensive.s", "r") as f:
             original = f.read()
         
         # Read disassembled code
