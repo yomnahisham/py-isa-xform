@@ -1,24 +1,33 @@
 {
     "name": "ZX16",
-    "version": "1.0",
-    "description": "ZX16 16-bit RISC-V inspired ISA",
+    "version": "1.1",
+    "description": "ZX16 16-bit RISC ISA (updated to spec)",
     "instruction_size": 16,
     "word_size": 16,
     "endianness": "little",
     "address_space": {
       "size": 65536,
-      "default_code_start": 32
+      "default_code_start": 0,
+      "default_data_start": 32,
+      "default_stack_start": 61438,
+      "memory_layout": {
+        "interrupt_vectors": {"start": 0, "end": 30},
+        "code_section": {"start": 32, "end": 61439},
+        "data_section": {"start": 32768, "end": 61437},
+        "stack_section": {"start": 61438, "end": 61438},
+        "mmio": {"start": 61440, "end": 65535}
+      }
     },
     "registers": {
       "general_purpose": [
-        {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved)"},
-        {"name": "x1", "size": 16, "alias": ["ra"], "description": "Return address"},
-        {"name": "x2", "size": 16, "alias": ["sp"], "description": "Stack pointer"},
-        {"name": "x3", "size": 16, "alias": ["s0"], "description": "Saved/Frame pointer"},
-        {"name": "x4", "size": 16, "alias": ["s1"], "description": "Saved"},
-        {"name": "x5", "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved)"},
-        {"name": "x6", "size": 16, "alias": ["a0"], "description": "Argument 0/Return value"},
-        {"name": "x7", "size": 16, "alias": ["a1"], "description": "Argument 1"}
+        {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved scratch)"},
+        {"name": "x1", "size": 16, "alias": ["ra"], "description": "Return address (JAL/JALR)"},
+        {"name": "x2", "size": 16, "alias": ["sp"], "description": "Stack pointer (init 0xEFFE)"},
+        {"name": "x3", "size": 16, "alias": ["s0"], "description": "Saved/frame pointer (callee-saved)"},
+        {"name": "x4", "size": 16, "alias": ["s1"], "description": "Saved (callee-saved)"},
+        {"name": "x5", "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved scratch)"},
+        {"name": "x6", "size": 16, "alias": ["a0"], "description": "Arg0/Return value"},
+        {"name": "x7", "size": 16, "alias": ["a1"], "description": "Arg1 (spill to stack for more)"}
       ]
     },
     "instructions": [
@@ -61,7 +70,7 @@
         "format": "R-type",
         "description": "Set if less than (signed)",
         "syntax": "SLT rd, rs2",
-        "semantics": "rd = (rd < rs2)",
+        "semantics": "rd = (rd < rs2) ? 1 : 0",
         "implementation": "# Set if less than (signed) implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\n# Sign extend to 32 bits for comparison\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nresult = 1 if rd_signed < rs2_signed else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -78,7 +87,7 @@
         "format": "R-type",
         "description": "Set if less than (unsigned)",
         "syntax": "SLTU rd, rs2",
-        "semantics": "rd = (unsigned(rd) < unsigned(rs2))",
+        "semantics": "rd = (unsigned rd < unsigned rs2) ? 1 : 0",
         "implementation": "# Set if less than (unsigned) implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = 1 if rd_val < rs2_val else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -248,7 +257,7 @@
         "format": "I-type",
         "description": "Add immediate",
         "syntax": "ADDI rd, imm",
-        "semantics": "rd = rd + sign_extend(imm, 7)",
+        "semantics": "rd = rd + sign_extend(imm)",
         "implementation": "# Add immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val + imm_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -264,7 +273,7 @@
         "format": "I-type",
         "description": "Set if less than immediate (signed)",
         "syntax": "SLTI rd, imm",
-        "semantics": "rd = (rd < sign_extend(imm, 7))",
+        "semantics": "rd = (rd < sign_extend(imm)) ? 1 : 0",
         "implementation": "# Set if less than immediate (signed) implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\n# Sign extend to 32 bits for comparison\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nimm_signed = imm_val if (imm_val & 0x8000) == 0 else imm_val - 0x10000\nresult = 1 if rd_signed < imm_signed else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -280,7 +289,7 @@
         "format": "I-type",
         "description": "Set if less than immediate (unsigned)",
         "syntax": "SLTUI rd, imm",
-        "semantics": "rd = (unsigned(rd) < unsigned(sign_extend(imm, 7)))",
+        "semantics": "rd = (unsigned rd < unsigned sign_extend(imm)) ? 1 : 0",
         "implementation": "# Set if less than immediate (unsigned) implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\n# Treat as unsigned comparison\nresult = 1 if rd_val < (imm_val & 0xFFFF) else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -296,7 +305,7 @@
         "format": "I-type",
         "description": "Shift left logical immediate",
         "syntax": "SLLI rd, imm",
-        "semantics": "rd = rd << (imm & 0x7)",
+        "semantics": "rd = rd << imm[3:0]",
         "implementation": "# Shift left logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val << shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -312,7 +321,7 @@
         "format": "I-type",
         "description": "Shift right logical immediate",
         "syntax": "SRLI rd, imm",
-        "semantics": "rd = rd >> (imm & 0x7)",
+        "semantics": "rd = rd >> imm[3:0]",
         "implementation": "# Shift right logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -328,7 +337,7 @@
         "format": "I-type",
         "description": "Shift right arithmetic immediate",
         "syntax": "SRAI rd, imm",
-        "semantics": "rd = rd >> (imm & 0x7)",
+        "semantics": "rd = rd >> imm[3:0]",
         "implementation": "# Shift right arithmetic immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -344,7 +353,7 @@
         "format": "I-type",
         "description": "OR immediate",
         "syntax": "ORI rd, imm",
-        "semantics": "rd = rd | sign_extend(imm, 7)",
+        "semantics": "rd = rd | sign_extend(imm)",
         "implementation": "# OR immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val | (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -360,7 +369,7 @@
         "format": "I-type",
         "description": "AND immediate",
         "syntax": "ANDI rd, imm",
-        "semantics": "rd = rd & sign_extend(imm, 7)",
+        "semantics": "rd = rd & sign_extend(imm)",
         "implementation": "# AND immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val & (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -376,7 +385,7 @@
         "format": "I-type",
         "description": "XOR immediate",
         "syntax": "XORI rd, imm",
-        "semantics": "rd = rd ^ sign_extend(imm, 7)",
+        "semantics": "rd = rd ^ sign_extend(imm)",
         "implementation": "# XOR immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val ^ (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -392,7 +401,7 @@
         "format": "I-type",
         "description": "Load immediate",
         "syntax": "LI rd, imm",
-        "semantics": "rd = sign_extend(imm, 7)",
+        "semantics": "rd = sign_extend(imm)",
         "implementation": "# Load immediate implementation\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = imm_val & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -408,7 +417,7 @@
         "format": "B-type",
         "description": "Branch if equal",
         "syntax": "BEQ rs1, rs2, offset",
-        "semantics": "if rs1 == rs2: PC = PC + sign_extend(offset, 4)",
+        "semantics": "if rs1 == rs2: PC = PC + offset",
         "implementation": "# Branch if equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val == rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -426,7 +435,7 @@
         "format": "B-type",
         "description": "Branch if not equal",
         "syntax": "BNE rs1, rs2, offset",
-        "semantics": "if rs1 != rs2: PC = PC + sign_extend(offset, 4)",
+        "semantics": "if rs1 != rs2: PC = PC + offset",
         "implementation": "# Branch if not equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val != rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -444,7 +453,7 @@
         "format": "B-type",
         "description": "Branch if zero",
         "syntax": "BZ rs1, offset",
-        "semantics": "if rs1 == 0: PC = PC + sign_extend(offset, 4)",
+        "semantics": "if rs1 == 0: PC = PC + offset",
         "implementation": "# Branch if zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val == 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -462,7 +471,7 @@
         "format": "B-type",
         "description": "Branch if not zero",
         "syntax": "BNZ rs1, offset",
-        "semantics": "if rs1 != 0: PC = PC + sign_extend(offset, 4)",
+        "semantics": "if rs1 != 0: PC = PC + offset",
         "implementation": "# Branch if not zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val != 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -480,7 +489,7 @@
         "format": "B-type",
         "description": "Branch if less than (signed)",
         "syntax": "BLT rs1, rs2, offset",
-        "semantics": "if rs1 < rs2: PC = PC + sign_extend(offset, 4)",
+        "semantics": "if rs1 < rs2: PC = PC + offset",
         "implementation": "# Branch if less than (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed < rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -498,7 +507,7 @@
         "format": "B-type",
         "description": "Branch if greater or equal (signed)",
         "syntax": "BGE rs1, rs2, offset",
-        "semantics": "if rs1 >= rs2: PC = PC + sign_extend(offset, 4)",
+        "semantics": "if rs1 >= rs2: PC = PC + offset",
         "implementation": "# Branch if greater or equal (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed >= rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -516,7 +525,7 @@
         "format": "B-type",
         "description": "Branch if less than (unsigned)",
         "syntax": "BLTU rs1, rs2, offset",
-        "semantics": "if unsigned(rs1) < unsigned(rs2): PC = PC + sign_extend(offset, 4)",
+        "semantics": "if unsigned rs1 < unsigned rs2: PC = PC + offset",
         "implementation": "# Branch if less than (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val < rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -534,7 +543,7 @@
         "format": "B-type",
         "description": "Branch if greater or equal (unsigned)",
         "syntax": "BGEU rs1, rs2, offset",
-        "semantics": "if (unsigned)rs1 >= rs2: PC = PC + sign_extend(offset, 4)",
+        "semantics": "if unsigned rs1 >= rs2: PC = PC + offset",
         "implementation": "# Branch if greater or equal (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val >= rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -552,7 +561,7 @@
         "format": "S-type",
         "description": "Store byte",
         "syntax": "SB rs2, offset(rs1)",
-        "semantics": "memory[rs1 + sign_extend(offset, 4)] = (rs2 & 0x7F)",
+        "semantics": "mem[rs1 + sign_extend(offset)] = rs2[7:0]",
         "implementation": "# Store byte implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store low byte\nif addr < len(memory):\n    memory[addr] = rs2_val & 0xFF",
         "encoding": {
           "fields": [
@@ -569,7 +578,7 @@
         "format": "S-type",
         "description": "Store word",
         "syntax": "SW rs2, offset(rs1)",
-        "semantics": "memory[rs1 + sign_extend(offset, 4)] = rs2",
+        "semantics": "mem[rs1 + sign_extend(offset)] = rs2",
         "implementation": "# Store word implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store 16-bit word (little endian)\nif addr + 1 < len(memory):\n    memory[addr] = rs2_val & 0xFF\n    memory[addr + 1] = (rs2_val >> 8) & 0xFF",
         "encoding": {
           "fields": [
@@ -586,7 +595,7 @@
         "format": "L-type",
         "description": "Load byte",
         "syntax": "LB rd, offset(rs2)",
-        "semantics": "rd = sign_extend(memory[rs2 + sign_extend(offset, 4)] & 0x7F, 4)",
+        "semantics": "rd = sign_extend(mem[rs2 + sign_extend(offset)][7:0])",
         "implementation": "# Load byte implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load byte and sign extend\nif addr < len(memory):\n    byte_val = memory[addr]\n    # Sign extend 8-bit to 16-bit\n    if byte_val & 0x80:\n        result = byte_val | 0xFF00\n    else:\n        result = byte_val\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -603,7 +612,7 @@
         "format": "L-type",
         "description": "Load word",
         "syntax": "LW rd, offset(rs2)",
-        "semantics": "rd = memory[rs2 + sign_extend(offset, 4)]",
+        "semantics": "rd = mem[rs2 + sign_extend(offset)]",
         "implementation": "# Load word implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load 16-bit word (little endian)\nif addr + 1 < len(memory):\n    result = memory[addr] | (memory[addr + 1] << 8)\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -620,7 +629,7 @@
         "format": "L-type",
         "description": "Load byte unsigned",
         "syntax": "LBU rd, offset(rs2)",
-        "semantics": "rd = memory[rs2 + sign_extend(offset, 4)] & 0x7F",
+        "semantics": "rd = zero_extend(mem[rs2 + sign_extend(offset)][7:0])",
         "implementation": "# Load byte unsigned implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load byte and zero extend\nif addr < len(memory):\n    result = memory[addr] & 0xFF\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -637,7 +646,7 @@
         "format": "J-type",
         "description": "Jump",
         "syntax": "J offset",
-        "semantics": "PC = PC + sign_extend(offset, 6)",
+        "semantics": "PC = PC + offset",
         "implementation": "# Jump implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFE00\ncontext.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -654,7 +663,7 @@
         "format": "J-type",
         "description": "Jump and link",
         "syntax": "JAL rd, offset",
-        "semantics": "rd = PC + 2; PC = PC + sign_extend(offset, 6)",
+        "semantics": "rd = PC + 2; PC = PC + offset",
         "implementation": "# Jump and link implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFE00\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Jump\ncontext.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -671,7 +680,7 @@
         "format": "U-type",
         "description": "Load upper immediate",
         "syntax": "LUI rd, imm",
-        "semantics": "rd = (sign_extend(imm, 6) << 7)",
+        "semantics": "rd = (imm << 7)",
         "implementation": "# Load upper immediate implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits\nresult = (imm << 7) & 0xFFFF\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -688,7 +697,7 @@
         "format": "U-type",
         "description": "Add upper immediate to PC",
         "syntax": "AUIPC rd, imm",
-        "semantics": "rd = PC + (sign_extend(imm, 6) << 7)",
+        "semantics": "rd = PC + (imm << 7)",
         "implementation": "# Add upper immediate to PC implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits and add to PC\nresult = (context.pc + (imm << 7)) & 0xFFFF\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -717,205 +726,151 @@
       }
     ],
     "directives": [
-    {
-      "name": ".org",
-      "description": "Set origin address",
-      "action": "set_origin",
-      "implementation": "# Set origin directive implementation\nif args:\n    addr = int(args[0], 0)  # Parse as hex/decimal\n    context.current_address = addr\n    assembler.context.current_address = addr\n    assembler.symbol_table.set_current_address(addr)",
-      "argument_types": ["number"],
-      "syntax": ".org address",
-      "examples": [".org 0x1000", ".org 4096"]
-    },
-    {
-      "name": ".word",
-      "description": "Define word data",
-      "action": "define_word",
-      "implementation": "# Define word directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    # Little endian 16-bit word\n    result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += 2\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
-      "argument_types": ["number"],
-      "syntax": ".word value1, value2, ...",
-      "examples": [".word 0x1234", ".word 42, 0xABCD"]
-    },
-    {
-      "name": ".byte",
-      "description": "Define byte data",
-      "action": "define_byte",
-      "implementation": "# Define byte directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    result.append(value & 0xFF)\n    context.current_address += 1\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
-      "argument_types": ["number"],
-      "syntax": ".byte value1, value2, ...",
-      "examples": [".byte 0x12", ".byte 65, 66, 67", ".byte 'A'"]
-    },
-    {
-      "name": ".ascii",
-      "description": "Define ASCII string",
-      "action": "define_ascii",
-      "implementation": "# Define ASCII string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
-      "argument_types": ["string"],
-      "syntax": ".ascii \"string\"",
-      "examples": [".ascii \"Hello, World!\"", ".ascii \"Hello\""]
-    },
-    {
-      "name": ".align",
-      "description": "Align to boundary",
-      "action": "align",
-      "implementation": "# Align directive implementation\nif args:\n    alignment = int(args[0])\n    padding = (alignment - (context.current_address % alignment)) % alignment\n    if padding > 0:\n        result = bytearray([0] * padding)\n        context.current_address += padding\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)",
-      "argument_types": ["number"],
-      "syntax": ".align boundary",
-      "examples": [".align 4", ".align 16", ".align 2"]
-    },
-    {
-      "name": ".text",
-      "description": "Code section (default)",
-      "action": "set_section",
-      "implementation": "# Text section directive implementation\ncontext.current_section = 'text'\nassembler.context.current_section = 'text'\n# Set default code start address if not already set\nif context.current_address == 0:\n    context.current_address = 32\n    assembler.context.current_address = 32",
-      "argument_types": [],
-      "syntax": ".text",
-      "examples": [".text"]
-    },
-    {
-      "name": ".data",
-      "description": "Data section",
-      "action": "set_section",
-      "implementation": "# Data section directive implementation\ncontext.current_section = 'data'\nassembler.context.current_section = 'data'\n# Set default data start address if not already set\nif context.current_address < 0x1000:\n    context.current_address = 0x1000\n    assembler.context.current_address = 0x1000",
-      "argument_types": [],
-      "syntax": ".data",
-      "examples": [".data"]
-    },
-    {
-      "name": ".bss",
-      "description": "Uninitialized data section",
-      "action": "set_section",
-      "implementation": "# BSS section directive implementation\ncontext.current_section = 'bss'\nassembler.context.current_section = 'bss'\n# Set default BSS start address if not already set\nif context.current_address < 0x2000:\n    context.current_address = 0x2000\n    assembler.context.current_address = 0x2000",
-      "argument_types": [],
-      "syntax": ".bss",
-      "examples": [".bss"]
-    },
-    {
-      "name": ".string",
-      "description": "Null-terminated string",
-      "action": "define_string",
-      "implementation": "# Define string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    # Process escape sequences\n    string = string.replace('\\\\n', '\\n').replace('\\\\t', '\\t').replace('\\\\r', '\\r')\n    result = bytearray(string.encode('ascii'))\n    result.append(0)  # Add null terminator\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
-      "argument_types": ["string"],
-      "syntax": ".string \"string\"",
-      "examples": [".string \"Hello\\n\"", ".string \"World\""]
-    },
-    {
-      "name": ".space",
-      "description": "Reserve bytes (zero-filled)",
-      "action": "reserve_space",
-      "implementation": "# Reserve space directive implementation\nif args:\n    size = int(args[0], 0)\n    result = bytearray([0] * size)\n    context.current_address += size\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
-      "argument_types": ["number"],
-      "syntax": ".space size",
-      "examples": [".space 10", ".space 0x100"]
-    },
-    {
-      "name": ".fill",
-      "description": "Fill items with value",
-      "action": "fill_data",
-      "implementation": "# Fill directive implementation\nif len(args) >= 3:\n    count = int(args[0], 0)\n    size = int(args[1], 0)\n    value = int(args[2], 0)\n    result = bytearray()\n    for i in range(count):\n        if size == 1:\n            result.append(value & 0xFF)\n        elif size == 2:\n            result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
-      "argument_types": ["number", "number", "number"],
-      "syntax": ".fill count, size, value",
-      "examples": [".fill 5, 2, 0xFFFF", ".fill 10, 1, 0x42"]
-    },
-    {
-      "name": ".equ",
-      "description": "Define constant",
-      "action": "define_constant",
-      "implementation": "# Define constant directive implementation\nif len(args) >= 2:\n    symbol = args[0]\n    value = int(args[1], 0)\n    assembler.symbol_table.define_symbol(symbol, value)\n    context.constants[symbol] = value",
-      "argument_types": ["symbol", "number"],
-      "syntax": ".equ symbol, value",
-      "examples": [".equ STACK_SIZE, 0x400", ".equ MAX_COUNT, 100"]
-    },
-    {
-      "name": ".set",
-      "description": "Define constant (same as .equ)",
-      "action": "define_constant",
-      "implementation": "# Define constant directive implementation (same as .equ)\nif len(args) >= 2:\n    symbol = args[0]\n    value = int(args[1], 0)\n    assembler.symbol_table.define_symbol(symbol, value)\n    context.constants[symbol] = value",
-      "argument_types": ["symbol", "number"],
-      "syntax": ".set symbol, value",
-      "examples": [".set MAX_COUNT, 100", ".set BUFFER_SIZE, 256"]
-    },
-    {
-      "name": ".global",
-      "description": "Export symbol",
-      "action": "export_symbol",
-      "implementation": "# Export symbol directive implementation\nif args:\n    symbol = args[0]\n    assembler.symbol_table.mark_global(symbol)\n    context.global_symbols.add(symbol)",
-      "argument_types": ["symbol"],
-      "syntax": ".global symbol",
-      "examples": [".global main", ".global _start"]
-    },
-    {
-      "name": ".extern",
-      "description": "Import external symbol",
-      "action": "import_symbol",
-      "implementation": "# Import external symbol directive implementation\nif args:\n    symbol = args[0]\n    assembler.symbol_table.mark_external(symbol)\n    context.external_symbols.add(symbol)",
-      "argument_types": ["symbol"],
-      "syntax": ".extern symbol",
-      "examples": [".extern external_func", ".extern printf"]
-    },
-    {
-      "name": ".ifdef",
-      "description": "Conditional assembly if defined",
-      "action": "conditional_ifdef",
-      "implementation": "# Conditional ifdef directive implementation\nif args:\n    symbol = args[0]\n    condition = symbol in context.constants or symbol in assembler.symbol_table.symbols\n    context.conditional_stack.append(('ifdef', condition))\n    context.skip_assembly = not condition",
-      "argument_types": ["symbol"],
-      "syntax": ".ifdef symbol",
-      "examples": [".ifdef DEBUG", ".ifdef RELEASE"]
-    },
-    {
-      "name": ".ifndef",
-      "description": "Conditional assembly if not defined",
-      "action": "conditional_ifndef",
-      "implementation": "# Conditional ifndef directive implementation\nif args:\n    symbol = args[0]\n    condition = symbol not in context.constants and symbol not in assembler.symbol_table.symbols\n    context.conditional_stack.append(('ifndef', condition))\n    context.skip_assembly = not condition",
-      "argument_types": ["symbol"],
-      "syntax": ".ifndef symbol",
-      "examples": [".ifndef RELEASE", ".ifndef DEBUG"]
-    },
-    {
-      "name": ".if",
-      "description": "Conditional assembly if expression true",
-      "action": "conditional_if",
-      "implementation": "# Conditional if directive implementation\nif args:\n    expression = ' '.join(args)\n    # Simple expression evaluation (would need full parser in real implementation)\n    try:\n        condition = eval(expression, {}, context.constants)\n        context.conditional_stack.append(('if', bool(condition)))\n        context.skip_assembly = not bool(condition)\n    except:\n        context.conditional_stack.append(('if', False))\n        context.skip_assembly = True",
-      "argument_types": ["expression"],
-      "syntax": ".if expression",
-      "examples": [".if STACK_SIZE > 0x200", ".if DEBUG == 1"]
-    },
-    {
-      "name": ".else",
-      "description": "Conditional assembly else clause",
-      "action": "conditional_else",
-      "implementation": "# Conditional else directive implementation\nif context.conditional_stack:\n    cond_type, prev_condition = context.conditional_stack[-1]\n    context.conditional_stack[-1] = (cond_type, not prev_condition)\n    context.skip_assembly = not context.conditional_stack[-1][1]",
-      "argument_types": [],
-      "syntax": ".else",
-      "examples": [".else"]
-    },
-    {
-      "name": ".endif",
-      "description": "End conditional assembly block",
-      "action": "conditional_endif",
-      "implementation": "# Conditional endif directive implementation\nif context.conditional_stack:\n    context.conditional_stack.pop()\n    # Restore previous conditional state\n    context.skip_assembly = any(not cond for _, cond in context.conditional_stack)",
-      "argument_types": [],
-      "syntax": ".endif",
-      "examples": [".endif"]
-    },
-    {
-      "name": ".include",
-      "description": "Include another file",
-      "action": "include_file",
-      "implementation": "# Include file directive implementation\nif args:\n    filename = args[0].strip('\"\\'')\n    try:\n        with open(filename, 'r') as f:\n            included_content = f.read()\n        # Process included file content\n        assembler.process_source(included_content, filename)\n    except FileNotFoundError:\n        raise AssemblerError(f'Include file not found: {filename}')",
-      "argument_types": ["string"],
-      "syntax": ".include \"filename\"",
-      "examples": [".include \"constants.asm\"", ".include \"macros.inc\""]
-    },
-    {
-      "name": ".incbin",
-      "description": "Include binary file",
-      "action": "include_binary",
-      "implementation": "# Include binary file directive implementation\nif args:\n    filename = args[0].strip('\"\\'')\n    try:\n        with open(filename, 'rb') as f:\n            binary_data = f.read()\n        result = bytearray(binary_data)\n        context.current_address += len(result)\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)\n    except FileNotFoundError:\n        raise AssemblerError(f'Binary file not found: {filename}')",
-      "argument_types": ["string"],
-      "syntax": ".incbin \"filename\"",
-      "examples": [".incbin \"data.bin\"", ".incbin \"image.raw\""]
-    }
-  ],
+      {
+        "name": ".org",
+        "description": "Set origin address",
+        "action": "set_origin",
+        "implementation": "# Set origin directive implementation\nif args:\n    addr = int(args[0], 0)  # Parse as hex/decimal\n    context.current_address = addr\n    assembler.context.current_address = addr\n    assembler.symbol_table.set_current_address(addr)",
+        "argument_types": ["number"],
+        "syntax": ".org address",
+        "examples": [".org 0x1000", ".org 4096"]
+      },
+      {
+        "name": ".word",
+        "description": "Define word data",
+        "action": "define_word",
+        "implementation": "# Define word directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    # Little endian 16-bit word\n    result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += 2\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number"],
+        "syntax": ".word value1, value2, ...",
+        "examples": [".word 0x1234", ".word 42, 0xABCD"]
+      },
+      {
+        "name": ".byte",
+        "description": "Define byte data",
+        "action": "define_byte",
+        "implementation": "# Define byte directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    result.append(value & 0xFF)\n    context.current_address += 1\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number"],
+        "syntax": ".byte value1, value2, ...",
+        "examples": [".byte 0x12", ".byte 65, 66, 67"]
+      },
+      {
+        "name": ".ascii",
+        "description": "Define ASCII string",
+        "action": "define_ascii",
+        "implementation": "# Define ASCII string directive implementation\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["string"],
+        "syntax": ".ascii \"string\"",
+        "examples": [".ascii \"Hello, World!\""]
+      },
+      {
+        "name": ".align",
+        "description": "Align to boundary",
+        "action": "align",
+        "implementation": "# Align directive implementation\nif args:\n    alignment = int(args[0])\n    padding = (alignment - (context.current_address % alignment)) % alignment\n    if padding > 0:\n        result = bytearray([0] * padding)\n        context.current_address += padding\n        assembler.context.current_address = context.current_address\n        assembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number"],
+        "syntax": ".align boundary",
+        "examples": [".align 4", ".align 16"]
+      },
+      {
+        "name": ".string",
+        "description": "Define null-terminated ASCII string",
+        "action": "define_stringz",
+        "implementation": "# Define null-terminated string\nif args:\n    string = args[0].strip('\"\\'')\n    result = bytearray(string.encode('ascii') + b'\\x00')\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["string"],
+        "syntax": ".string \"string\"",
+        "examples": [".string \"Hello\\n\""]
+      },
+      {
+        "name": ".fill",
+        "description": "Fill N items, M bytes each, with value",
+        "action": "fill",
+        "implementation": "# Fill directive\nif len(args) >= 3:\n    count = int(args[0], 0)\n    size = int(args[1], 0)\n    value = int(args[2], 0)\n    result = bytearray()\n    for _ in range(count):\n        result.extend(value.to_bytes(size, 'little'))\n    context.current_address += len(result)\n    assembler.context.current_address = context.current_address\n    assembler.symbol_table.set_current_address(context.current_address)",
+        "argument_types": ["number", "number", "number"],
+        "syntax": ".fill count, size, value",
+        "examples": [".fill 5, 2, 0xFFFF"]
+      },
+      {
+        "name": ".set",
+        "description": "Define constant (alias for .equ)",
+        "action": "define_constant",
+        "implementation": "# .set is an alias for .equ\nif len(args) >= 2:\n    symbol = args[0]\n    value = int(args[1], 0)\n    assembler.symbol_table.define_constant(symbol, value)",
+        "argument_types": ["string", "number"],
+        "syntax": ".set NAME, VALUE",
+        "examples": [".set MAX_COUNT, 100"]
+      },
+      {
+        "name": ".extern",
+        "description": "Declare external symbol",
+        "action": "declare_extern",
+        "implementation": "# Declare external symbol\nif args:\n    for symbol in args:\n        assembler.symbol_table.declare_extern(symbol)",
+        "argument_types": ["string"],
+        "syntax": ".extern symbol",
+        "examples": [".extern external_func"]
+      },
+      {
+        "name": ".ifdef",
+        "description": "If symbol is defined (conditional assembly)",
+        "action": "conditional_ifdef",
+        "implementation": "# Ifdef directive (handled by preprocessor)",
+        "argument_types": ["string"],
+        "syntax": ".ifdef SYMBOL",
+        "examples": [".ifdef DEBUG"]
+      },
+      {
+        "name": ".ifndef",
+        "description": "If symbol is not defined (conditional assembly)",
+        "action": "conditional_ifndef",
+        "implementation": "# Ifndef directive (handled by preprocessor)",
+        "argument_types": ["string"],
+        "syntax": ".ifndef SYMBOL",
+        "examples": [".ifndef RELEASE"]
+      },
+      {
+        "name": ".if",
+        "description": "If expression is true (conditional assembly)",
+        "action": "conditional_if",
+        "implementation": "# If directive (handled by preprocessor)",
+        "argument_types": ["expression"],
+        "syntax": ".if EXPR",
+        "examples": [".if STACK_SIZE > 0x200"]
+      },
+      {
+        "name": ".else",
+        "description": "Else for conditional assembly",
+        "action": "conditional_else",
+        "implementation": "# Else directive (handled by preprocessor)",
+        "argument_types": [],
+        "syntax": ".else",
+        "examples": [".else"]
+      },
+      {
+        "name": ".endif",
+        "description": "End if for conditional assembly",
+        "action": "conditional_endif",
+        "implementation": "# Endif directive (handled by preprocessor)",
+        "argument_types": [],
+        "syntax": ".endif",
+        "examples": [".endif"]
+      },
+      {
+        "name": ".include",
+        "description": "Include another assembly file",
+        "action": "include_file",
+        "implementation": "# Include directive (handled by preprocessor)",
+        "argument_types": ["string"],
+        "syntax": ".include \"file\"",
+        "examples": [".include \"constants.asm\""]
+      },
+      {
+        "name": ".incbin",
+        "description": "Include binary file",
+        "action": "include_binary",
+        "implementation": "# Incbin directive (handled by preprocessor)",
+        "argument_types": ["string"],
+        "syntax": ".incbin \"file\"",
+        "examples": [".incbin \"data.bin\""]
+      }
+    ],
     "pseudo_instructions": [
       {
         "mnemonic": "NOP",
@@ -1005,6 +960,97 @@
       "case_sensitive": false,
       "instruction_separator": "\n"
     },
+    "label_definition": {
+      "description": "Label definition syntax and scope rules for ZX16 assembly",
+      "syntax": {
+        "global_label": "label_name:",
+        "local_label": ".local_label:",
+        "data_label": "label_name: directive",
+        "section_label": "section_name:"
+      },
+      "rules": {
+        "naming": {
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "local_prefix": ".",
+          "case_sensitive": false,
+          "max_length": 64
+        },
+        "scope": {
+          "global": "Visible across all files",
+          "local": "Visible only within current file",
+          "section": "Defines section boundaries"
+        },
+        "placement": {
+          "start_of_line": true,
+          "followed_by_colon": true,
+          "can_follow_instruction": false,
+          "can_follow_directive": true
+        }
+      },
+      "examples": [
+        {
+          "type": "Global Label",
+          "description": "Main entry point, visible across all files",
+          "syntax": "main:",
+          "usage": "main:\n    LI x6, 10\n    CALL function"
+        },
+        {
+          "type": "Local Label", 
+          "description": "File-scope label, starts with dot",
+          "syntax": ".local_label:",
+          "usage": ".loop:\n    ADD x1, x2\n    BNZ x1, .loop"
+        },
+        {
+          "type": "Loop Label",
+          "description": "Common pattern for loop control",
+          "syntax": "loop:",
+          "usage": "loop:\n    ADD x1, x2\n    BNZ x1, loop\n    RET"
+        },
+        {
+          "type": "Section Label",
+          "description": "Defines code or data section",
+          "syntax": "data_section:",
+          "usage": "data_section:\n    .word 0x1234\n    .word 0x5678"
+        },
+        {
+          "type": "Data Label",
+          "description": "Label with data allocation",
+          "syntax": "buffer: .space 64",
+          "usage": "buffer: .space 64\n    .ascii \"Hello, World!\""
+        },
+        {
+          "type": "Function Label",
+          "description": "Function entry point",
+          "syntax": "function_name:",
+          "usage": "my_function:\n    PUSH x3\n    ADD x6, x7\n    POP x3\n    RET"
+        }
+      ],
+      "features": {
+        "forward_references": true,
+        "label_arithmetic": true,
+        "bitfield_extraction": true,
+        "scope_resolution": true,
+        "section_awareness": true
+      },
+      "bitfield_syntax": {
+        "description": "Extract bits from label address",
+        "pattern": "label[high:low]",
+        "examples": [
+          "label[15:9]  # Upper 7 bits",
+          "label[8:0]   # Lower 9 bits",
+          "label[7:0]   # Lower 8 bits"
+        ]
+      },
+      "arithmetic_operations": {
+        "supported": ["+", "-", "*", "/", "&", "|", "^", "<<", ">>"],
+        "examples": [
+          "end_label - start_label",
+          "(buffer + 4)",
+          "~0x0F",
+          "(value << 2) | 0x03"
+        ]
+      }
+    },
     "constants": {
       "RESET_VECTOR": 0,
       "INT_VECTORS": 0,
@@ -1015,6 +1061,14 @@
       "MEM_SIZE": 65536
     },
     "ecall_services": {
+      "0x000": {
+        "name": "print_char",
+        "description": "Print character from a0 register",
+        "parameters": {
+          "a0": "Character to print"
+        },
+        "return": "None"
+      },
       "0x001": {
         "name": "read_string",
         "description": "Read string into buffer at a0, up to a1 bytes. Output: a0=string length",

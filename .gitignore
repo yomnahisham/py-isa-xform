@@ -159,4 +159,4 @@ dist/
 *.log
 
 # Misc
-*.orig 
+*.orig test_ascii_data.bin

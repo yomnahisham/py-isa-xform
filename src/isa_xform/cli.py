@@ -6,7 +6,7 @@ import argparse
 import sys
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 import json
 
 from .core.isa_loader import ISALoader
@@ -15,6 +15,16 @@ from .core.assembler import Assembler
 from .core.disassembler import Disassembler
 from .core.symbol_table import SymbolTable
 from .utils.error_handling import ISAError, ErrorReporter, ISALoadError, ParseError, AssemblerError, DisassemblerError
+
+
+def load_isa_smart(isa_arg: str) -> Any:
+    """Load ISA definition, handling both file paths and names"""
+    loader = ISALoader()
+    isa_path = Path(isa_arg)
+    if isa_path.exists() or isa_path.is_absolute():
+        return loader.load_isa_from_file(isa_arg)
+    else:
+        return loader.load_isa(isa_arg)
 
 
 def main():
@@ -47,6 +57,7 @@ Examples:
     disassemble_parser.add_argument('--input', required=True, help='Input binary file')
     disassemble_parser.add_argument('--output', required=True, help='Output assembly file')
     disassemble_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    disassemble_parser.add_argument('--debug', action='store_true', help='Show detailed PC progression and mode switches')
     disassemble_parser.add_argument('--show-addresses', action='store_true', help='Show addresses in output')
     disassemble_parser.add_argument('--show-machine-code', action='store_true', help='Show machine code in output')
     disassemble_parser.add_argument('--start-address', type=lambda x: int(x, 0), default=0, help='Starting address for disassembly')
@@ -108,8 +119,7 @@ def assemble_command(args) -> int:
     
     try:
         # Load ISA definition
-        loader = ISALoader()
-        isa_definition = loader.load_isa(args.isa)
+        isa_definition = load_isa_smart(args.isa)
         if args.verbose:
             print(f"Loaded ISA: {isa_definition.name} v{isa_definition.version}")
         
@@ -176,8 +186,7 @@ def disassemble_command(args) -> int:
     
     try:
         # Load ISA definition
-        loader = ISALoader()
-        isa_definition = loader.load_isa(args.isa)
+        isa_definition = load_isa_smart(args.isa)
         if args.verbose:
             print(f"Loaded ISA: {isa_definition.name} v{isa_definition.version}")
         
@@ -220,7 +229,7 @@ def disassemble_command(args) -> int:
             # Ensure entry_point is an integer (0 will trigger ISA default)
             disassemble_start = entry_point if entry_point is not None else 0
             disassembler = Disassembler(isa_definition)
-            result = disassembler.disassemble(machine_code, disassemble_start)
+            result = disassembler.disassemble(machine_code, disassemble_start, debug=args.debug)
             
             # Format output
             output_text = disassembler.format_disassembly(
@@ -257,8 +266,7 @@ def validate_command(args) -> int:
     
     try:
         # Load ISA definition
-        loader = ISALoader()
-        isa_definition = loader.load_isa(args.isa)
+        isa_definition = load_isa_smart(args.isa)
         
         print(f"✓ ISA Definition: {isa_definition.name} v{isa_definition.version}")
         print(f"✓ Word size: {isa_definition.word_size} bits")
@@ -295,8 +303,7 @@ def parse_command(args) -> int:
     
     try:
         # Load ISA definition
-        loader = ISALoader()
-        isa_definition = loader.load_isa(args.isa)
+        isa_definition = load_isa_smart(args.isa)
         if args.verbose:
             print(f"Loaded ISA: {isa_definition.name} v{isa_definition.version}")
         

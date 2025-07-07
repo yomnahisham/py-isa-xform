@@ -4,6 +4,11 @@ pydantic>=2.0.0
 click>=8.0.0
 rich>=13.0.0
 
+# Build dependencies
+build>=0.10.0
+wheel>=0.40.0
+setuptools>=65.0.0
+
 # Development dependencies
 pytest>=7.0.0
 pytest-cov>=4.0.0

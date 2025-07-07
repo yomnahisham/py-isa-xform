@@ -24,21 +24,22 @@ except FileNotFoundError:
 
 setup(
     name="py-isa-xform",
-    version="0.1.0",
+    version="1.0.0",
     description="A comprehensive ISA transformation toolkit",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Group 6 Team", 
     author_email="",
     url="https://github.com/yomnahisham/py-isa-xform",
-    license="MIT",
+    license="Apache-2.0",
     
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     
     include_package_data=True,
     package_data={
-        "": ["*.json", "*.md"],
+        "isa_definitions": ["*.json"],
+        "": ["*.md"],
     },
     
     python_requires=">=3.8",
@@ -72,7 +73,7 @@ setup(
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
         "Intended Audience :: Education",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: Apache Software License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9", 

@@ -237,3 +237,21 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 This project is designed for educational and research purposes in computer architecture and compiler design. It provides a foundation for understanding instruction set architecture design and implementation.
+
+## Development and Local CLI Usage
+
+If you are developing or testing changes to the CLI or core modules, make sure to run the CLI with the local source by setting the `PYTHONPATH` environment variable:
+
+```sh
+PYTHONPATH=src python3 -m isa_xform.cli <command> [options]
+```
+
+This ensures that your changes in the `src/` directory are used, rather than any installed version of the package.
+
+For example:
+
+```sh
+PYTHONPATH=src python3 -m isa_xform.cli validate --isa src/isa_definitions/simple_risc.json
+```
+
+The `--isa` argument now accepts both ISA names (for built-in ISAs) and file paths (for custom or temporary ISAs).

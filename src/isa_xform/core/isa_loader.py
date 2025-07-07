@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field
 from jsonschema import validate, ValidationError
+import importlib.resources
 
 from isa_xform.utils.error_handling import ISALoadError, ISAValidationError
 from isa_xform.utils.bit_utils import (
@@ -172,7 +173,7 @@ class ISALoader:
     
     def __init__(self):
         self._cache: Dict[str, ISADefinition] = {}
-        self._builtin_path = Path(__file__).parent.parent.parent / "isa_definitions"
+        self._builtin_path = Path(__file__).parent.parent / "isa_definitions"
     
     def load_isa(self, isa_name: str) -> ISADefinition:
         """Load an ISA definition by name"""
@@ -180,12 +181,21 @@ class ISALoader:
             return self._cache[isa_name]
         
         isa_file = self._find_isa_file(isa_name)
-        if not isa_file:
-            raise ISALoadError(f"ISA '{isa_name}' not found")
-        
-        isa_def = self._load_from_file(isa_file)
-        self._cache[isa_name] = isa_def
-        return isa_def
+        if isa_file:
+            isa_def = self._load_from_file(isa_file)
+            self._cache[isa_name] = isa_def
+            return isa_def
+        # Try to load from package resources
+        try:
+            import importlib.resources
+            with importlib.resources.files("isa_xform.isa_definitions").joinpath(f"{isa_name}.json").open("r") as f:
+                data = json.load(f)
+            isa_def = self._parse_isa_data(data, Path(f"isa_xform/isa_definitions/{isa_name}.json"))
+            self._cache[isa_name] = isa_def
+            return isa_def
+        except Exception as e:
+            pass
+        raise ISALoadError(f"ISA '{isa_name}' not found")
     
     def load_isa_from_file(self, file_path: Union[str, Path]) -> ISADefinition:
         """Load an ISA definition from a specific file"""
@@ -198,13 +208,20 @@ class ISALoader:
     
     def _find_isa_file(self, isa_name: str) -> Optional[Path]:
         """Find an ISA file by name"""
+        # Try builtin path first (relative to this file)
         builtin_file = self._builtin_path / f"{isa_name}.json"
         if builtin_file.exists():
             return builtin_file
         
+        # Try current directory
         current_file = Path(f"{isa_name}.json")
         if current_file.exists():
             return current_file
+        
+        # Fallback: try src/isa_xform/isa_definitions/ (for development/testing)
+        src_isa_file = Path(__file__).parent.parent / "isa_definitions" / f"{isa_name}.json"
+        if src_isa_file.exists():
+            return src_isa_file
         
         return None
     
@@ -372,10 +389,19 @@ class ISALoader:
     
     def list_available_isas(self) -> List[str]:
         """List all available ISA definitions"""
-        isas = []
+        isas = set()
+        # Try importlib.resources first
+        try:
+            for file_path in importlib.resources.files("isa_xform.isa_definitions").iterdir():
+                path_obj = file_path if isinstance(file_path, Path) else Path(str(file_path))
+                if path_obj.suffix == ".json":
+                    isas.add(path_obj.stem)
+        except Exception:
+            pass
+        # Fallback to filesystem (dev mode)
         if self._builtin_path.exists():
             for file_path in self._builtin_path.glob("*.json"):
-                isas.append(file_path.stem)
+                isas.add(file_path.stem)
         return sorted(isas)
     
     def clear_cache(self):
