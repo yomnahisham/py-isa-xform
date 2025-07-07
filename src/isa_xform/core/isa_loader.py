@@ -173,7 +173,7 @@ class ISALoader:
     
     def __init__(self):
         self._cache: Dict[str, ISADefinition] = {}
-        self._builtin_path = Path(__file__).parent / "isa_definitions"
+        self._builtin_path = Path(__file__).parent.parent / "isa_definitions"
     
     def load_isa(self, isa_name: str) -> ISADefinition:
         """Load an ISA definition by name"""
@@ -208,13 +208,20 @@ class ISALoader:
     
     def _find_isa_file(self, isa_name: str) -> Optional[Path]:
         """Find an ISA file by name"""
+        # Try builtin path first (relative to this file)
         builtin_file = self._builtin_path / f"{isa_name}.json"
         if builtin_file.exists():
             return builtin_file
         
+        # Try current directory
         current_file = Path(f"{isa_name}.json")
         if current_file.exists():
             return current_file
+        
+        # Fallback: try src/isa_xform/isa_definitions/ (for development/testing)
+        src_isa_file = Path(__file__).parent.parent / "isa_definitions" / f"{isa_name}.json"
+        if src_isa_file.exists():
+            return src_isa_file
         
         return None
     
