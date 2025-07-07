@@ -10,7 +10,7 @@ COLS = SCREEN_WIDTH // TILE_SIZE   # 20
 
 TILE_MAP_ADDR = 0xF000
 TILE_DATA_ADDR = 0xF200
-PALETTE_ADDR = 0x0000
+PALETTE_ADDR = 0xFA00
 
 # ========== Palette Reader ==========
 def get_palette(memory):
