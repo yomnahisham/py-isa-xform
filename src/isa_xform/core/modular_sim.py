@@ -260,7 +260,6 @@ class Simulator:
         for addr in range(start, end + 1):
             print(f"0x{addr:04X}: {self.read_memory_byte(addr):02X}")
 
-    def run(self):
 
     def run(self, step: bool = False):
         """Runs the simulator, disassembling and executing instructions in memory"""
@@ -299,13 +298,7 @@ class Simulator:
             else:
                 print("Execution terminated by instruction")
                 break
-            print(f"Registers: {self.regs}")
-            #self.key = keyboard.read_event().name
-            alias_names = [reg.alias[0] if reg.alias else reg.name for reg in self.isa_definition.registers['general_purpose']]
-            #print(f"Registers: {': '.join(f'{name}: {value}' for name, value in zip(alias_names, self.regs))}")
-            #loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
-        print("Simulation complete")
-
+        print("Simulation completed")
 
         self.dump_memory(800, 805)  # print palette, supposed to store 3
 
