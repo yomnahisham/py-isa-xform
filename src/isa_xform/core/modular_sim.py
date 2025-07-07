@@ -138,10 +138,10 @@ class Simulator:
             else:
                 # print(f"Warning: Operand '{operand}' not found in register names or aliases.", file=sys.stderr)
                 continue
-            result = result.replace(operand, f"regs[{idx}]")
+            result = result.replace(operand, f"regs[{idx}].value")
         result = result.replace("memory", "self.memory")
         result = result.replace("PC", "self.pc")
-        result = result.replace("]", "].value")  # Ensure ctypes values are accessed correctly
+        #result = result.replace("]", "].value")  # Ensure ctypes values are accessed correctly
         return result        
     
     # def disassemble_instruction(self, instruction: int, pc: int) -> Optional[DisassembledInstruction]:
@@ -268,7 +268,7 @@ class Simulator:
         i = 0
         print(f"Code Start: {self.pc}")
         print(f"Data Start: {self.data_start} ")
-        while self.pc < len(self.memory) and (loop != 'q' or (not step)):
+        while self.pc < len(self.memory) and (loop != 'q' or (not step)) and i < len(disassembly_result.instructions):
             current_instruction = disassembly_result.instructions[i]
             # if NoneType, skip the instruction
             if i >= len(disassembly_result.instructions):
@@ -286,10 +286,10 @@ class Simulator:
                 if "NOP" in current_instruction.mnemonic:
                     continue
                 else:
-                    if step:
+                    if step or True:
                         values = [reg.value for reg in self.regs]
                         print(f"Registers: {values}")
-                        loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
+                        #loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
                     else:
                         i += 1
                         if i >= len(disassembly_result.instructions):
