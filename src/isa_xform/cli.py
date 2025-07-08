@@ -98,6 +98,10 @@ Data Region Detection:
                                               description='Disassemble binary files to assembly code. Automatically detects data regions based on ISA memory layout unless --data-regions is specified.',
                                               formatter_class=argparse.RawDescriptionHelpFormatter,
                                               epilog="""
+Disassembly Modes:
+  Smart Mode (default): Reconstructs pseudo-instructions using patterns from the ISA definition.
+  Raw Mode (--raw): Shows only real hardware instructions as encoded in the binary.
+
 Data Region Detection:
   The disassembler automatically detects data regions based on your ISA's memory layout
   when --data-regions is not specified. This includes:
@@ -109,8 +113,11 @@ Data Region Detection:
   Use --data-regions to override automatic detection with custom regions.
 
 Examples:
-  # Automatic detection (recommended)
+  # Smart disassembly with pseudo-instruction reconstruction (default)
   %(prog)s --isa zx16 --input program.bin --output program.s
+
+  # Raw disassembly (hardware instructions only)
+  %(prog)s --isa zx16 --input program.bin --output program.s --raw
 
   # Manual override with custom data regions
   %(prog)s --isa zx16 --input program.bin --output program.s --data-regions 0x100-0x200
@@ -129,6 +136,8 @@ Examples:
     disassemble_parser.add_argument('--data-regions', nargs='+', 
                                    help='Data regions as start-end pairs (e.g., 0x0-0xA 0x100-0x200). '
                                         'If not specified, automatically detects data regions based on ISA memory layout.')
+    disassemble_parser.add_argument('--raw', action='store_true', 
+                                   help='Show only real hardware instructions (no pseudo-instruction reconstruction)')
     
     # Validate command
     validate_parser = subparsers.add_parser('validate', help='Validate ISA definition')
@@ -303,32 +312,53 @@ def disassemble_command(args) -> int:
         
         # Check for ISAX header format (new format)
         if binary_data.startswith(b'ISAX'):
-            # Parse ISAX header: [magic][entry_point][code_start][code_size][data_start][data_size][code][data]
-            if len(binary_data) >= 24:  # Minimum header size
-                file_entry_point = int.from_bytes(binary_data[4:8], 'little')
-                code_start = int.from_bytes(binary_data[8:12], 'little')
-                code_size = int.from_bytes(binary_data[12:16], 'little')
-                data_start = int.from_bytes(binary_data[16:20], 'little')
-                data_size = int.from_bytes(binary_data[20:24], 'little')
+            # Check version to determine parsing
+            if len(binary_data) >= 8:
+                version = int.from_bytes(binary_data[4:8], 'little')
                 
-                # Extract code and data sections
-                code_bytes = binary_data[24:24+code_size]
-                data_bytes = binary_data[24+code_size:24+code_size+data_size]
-                
-                # For disassembly, we need the full binary with header info
-                # The disassembler will handle the ISAX header parsing
-                machine_code = binary_data  # Pass the full binary
-                
-                if args.verbose:
-                    print(f"ISAX header detected:")
-                    print(f"  Entry point: 0x{file_entry_point:X}")
-                    print(f"  Code start: 0x{code_start:X}, size: {code_size} bytes")
-                    print(f"  Data start: 0x{data_start:X}, size: {data_size} bytes")
-                    print(f"  Total binary size: {len(binary_data)} bytes")
-                
-                # Use file entry point if not specified
-                if entry_point == 0:
-                    entry_point = file_entry_point
+                if version == 2:
+                    # ISAX v2 with symbols: [magic][version][entry_point][code_start][code_size][data_start][data_size][symbol_size][code][data][symbols]
+                    if len(binary_data) >= 32:  # Minimum header size for v2
+                        file_entry_point = int.from_bytes(binary_data[8:12], 'little')
+                        code_start = int.from_bytes(binary_data[12:16], 'little')
+                        code_size = int.from_bytes(binary_data[16:20], 'little')
+                        data_start = int.from_bytes(binary_data[20:24], 'little')
+                        data_size = int.from_bytes(binary_data[24:28], 'little')
+                        symbol_size = int.from_bytes(binary_data[28:32], 'little')
+                        
+                        if args.verbose:
+                            print(f"ISAX v2 header detected:")
+                            print(f"  Entry point: 0x{file_entry_point:X}")
+                            print(f"  Code start: 0x{code_start:X}, size: {code_size} bytes")
+                            print(f"  Data start: 0x{data_start:X}, size: {data_size} bytes")
+                            print(f"  Symbol table size: {symbol_size} bytes")
+                            print(f"  Total binary size: {len(binary_data)} bytes")
+                        
+                        # Use file entry point if not specified
+                        if entry_point == 0:
+                            entry_point = file_entry_point
+                else:
+                    # ISAX v1: [magic][entry_point][code_start][code_size][data_start][data_size][code][data]
+                    if len(binary_data) >= 24:  # Minimum header size for v1
+                        file_entry_point = int.from_bytes(binary_data[4:8], 'little')
+                        code_start = int.from_bytes(binary_data[8:12], 'little')
+                        code_size = int.from_bytes(binary_data[12:16], 'little')
+                        data_start = int.from_bytes(binary_data[16:20], 'little')
+                        data_size = int.from_bytes(binary_data[20:24], 'little')
+                        
+                        if args.verbose:
+                            print(f"ISAX v1 header detected:")
+                            print(f"  Entry point: 0x{file_entry_point:X}")
+                            print(f"  Code start: 0x{code_start:X}, size: {code_size} bytes")
+                            print(f"  Data start: 0x{data_start:X}, size: {data_size} bytes")
+                            print(f"  Total binary size: {len(binary_data)} bytes")
+                        
+                        # Use file entry point if not specified
+                        if entry_point == 0:
+                            entry_point = file_entry_point
+            
+            # For both v1 and v2, pass the full binary to the disassembler
+            machine_code = binary_data
         # Check for old ISA header format
         elif binary_data.startswith(b'ISA\x01'):
             # Has header - extract machine code
@@ -376,13 +406,14 @@ def disassemble_command(args) -> int:
                 disassemble_start = 0
             
             disassembler = Disassembler(isa_definition)
-            result = disassembler.disassemble(machine_code, disassemble_start, debug=args.debug, data_regions=data_regions)
+            result = disassembler.disassemble(machine_code, disassemble_start, debug=args.debug, data_regions=data_regions, reconstruct_pseudo=not args.raw)
             
             # Format output
             output_text = disassembler.format_disassembly(
                 result, 
                 include_addresses=args.show_addresses,
-                include_machine_code=args.show_machine_code
+                include_machine_code=args.show_machine_code,
+                reconstruct_pseudo=not args.raw
             )
             
             # Write output

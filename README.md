@@ -34,6 +34,8 @@ py-isa-xform/
 │   │   │   ├── disassembler.py        # Disassembly engine
 │   │   │   ├── symbol_table.py        # Manages labels/symbols
 │   │   │   ├── directive_handler.py   # Handles assembly directives
+│   │   │   ├── directive_executor.py  # Executes custom directives
+│   │   │   ├── instruction_executor.py # Executes custom instructions
 │   │   │   └── operand_parser.py      # Operand parsing and validation
 │   │   ├── utils/
 │   │   │   ├── __init__.py
@@ -43,15 +45,19 @@ py-isa-xform/
 │   └── isa_definitions/               # Built-in ISA configurations
 │       ├── zx16.json                  # ZX16 16-bit RISC-V inspired ISA
 │       ├── simple_risc.json           # Simple RISC instruction set
-│       ├── riscv_rv32i.json           # RISC-V RV32I base integer ISA
 │       ├── modular_example.json       # Modular ISA example
-│       └── crazy_isa.json             # Experimental ISA definition
+│       ├── custom_isa_example.json    # Custom ISA example
+│       ├── custom_modular_isa.json    # Custom modular ISA
+│       ├── test_user_custom_isa.json  # Test custom ISA
+│       └── complete_user_isa_example.json # Complete user ISA example
 ├── tests/
 │   ├── TC-ZX16/                       # ZX16 test cases
-│   │   ├── test_arithmetic.s          # Comprehensive arithmetic operations
-│   │   ├── test_ecall.s               # System call services
-│   │   ├── test_branching.s           # Control flow operations
-│   │   └── README.md                  # Test documentation
+│   │   ├── ALU/                       # Arithmetic and logical operations
+│   │   ├── Branching/                 # Control flow operations
+│   │   ├── LoadStore/                 # Memory operations
+│   │   ├── Ecall/                     # System call services
+│   │   ├── Debug/                     # Debug functionality
+│   │   └── comprehensive/             # Comprehensive test suite
 │   └── [other test directories]
 ├── examples/                          # Example programs and demonstrations
 ├── docs/                              # Comprehensive documentation
@@ -122,13 +128,11 @@ The disassembled output will correctly show instructions starting at address 0x2
 
 ## Supported Instruction Set Architectures
 
-**See the [Custom ISA Definition Guide](ISA_DEFINITION_GUIDE.md) for how to write your own ISA!**
-
-### Supported ISAs
+### Built-in ISAs
+- **ZX16**: 16-bit RISC-V inspired ISA with comprehensive instruction set (by Dr. Mohamed Shalan, Professor @ AUC)
 - **Simple RISC**: Basic RISC-style instruction set for educational purposes
-- **RISC-V RV32I**: Base integer instruction set for RISC-V 32-bit processors
 - **Modular Example**: Demonstrates modular ISA design patterns
-- **ZX16**: Open-Source ISA by Dr. Mohamed Shalan (Professor @ AUC), which initially inspired this project.
+- **Custom Examples**: Various custom ISA examples for learning and testing
 
 ### Creating Your Own ISA
 
@@ -149,7 +153,7 @@ python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
   --instruction-size 16
 ```
 
-**See the [ISA Creation Guide](docs/isa-creation-guide.md) for detailed instructions and examples!**
+**See the [ISA Creation Guide](docs/isa-creation-guide.md) for detailed instructions and examples on how to make your own ISA definition from scratch!**
 
 ## Key Features
 
@@ -159,6 +163,8 @@ python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
 - **Symbol Resolution**: Advanced label and constant management
 - **Immediate Validation**: Proper handling of immediate value constraints
 - **Register Validation**: Ensures only valid registers are used
+- **Label Bitfield Extraction**: Support for `label[high:low]` syntax
+- **Forward References**: Labels can be used before definition
 
 ### Disassembly Engine
 - **Correct Operand Ordering**: Outputs operands in syntax order, not encoding order
@@ -166,6 +172,7 @@ python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
 - **Instruction Recognition**: Robust pattern matching for instruction identification
 - **Automatic Data Region Detection**: Automatically detects data vs code regions based on ISA memory layout
 - **Professional Output**: Clean, readable assembly code generation
+- **Debug Mode**: Detailed PC progression and mode switching information
 
 ### ISA Definition System
 - **JSON-Based Configuration**: Human-readable ISA specifications
@@ -174,13 +181,7 @@ python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
 - **Memory Layout Definition**: Define address space and memory regions for automatic data detection
 - **Syntax Specification**: Customizable assembly language syntax
 - **Validation Rules**: Built-in validation for ISA definitions
-
-### Automatic Data Region Detection
-- **ISA-Based Detection**: Automatically detects data regions based on ISA memory layout
-- **Memory Layout Support**: Respects interrupt vectors, data sections, code sections, and MMIO regions
-- **User Override**: Manual specification of data regions with `--data-regions` parameter
-- **Cross-ISA Compatibility**: Works with any ISA that defines a memory layout
-- **Professional Behavior**: Mimics real disassemblers like objdump, Ghidra, and IDA
+- **Custom Directives**: Define custom assembly directives with Python implementations
 
 ### Custom Instruction Implementations
 - **Python Code Semantics**: Write actual Python code to define instruction behavior
@@ -194,7 +195,7 @@ python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
 Comprehensive documentation is available in the `docs/` directory. The following are the main docs for understanding project structure:
 
 - **[Architecture Overview](docs/architecture.md)** - System design and component interaction
-- **[Custom ISA Definition Guide](ISA_DEFINITION_GUIDE.md)** - Step-by-step instructions for writing your own ISA JSON
+- **[ISA Definition Format](docs/isa-definition.md)** - Complete specification for ISA JSON format
 - **[ISA Creation Guide](docs/isa-creation-guide.md)** - Using the scaffold generator and standard template
 - **[CLI Reference](docs/cli.md)** - Command-line interface usage
 - **[Testing Guide](docs/testing.md)** - Testing framework and examples
@@ -258,11 +259,7 @@ The project is actively developed with a focus on modularity, extensibility, and
 
 ## Contributing
 
-Contributions are welcome and encouraged! Please refer to the [Contributing Guide](docs/contributing.md) for guidelines on:
-- Code style and formatting requirements
-- Testing requirements and procedures
-- Documentation standards
-- Development workflow and pull request process
+Contributions are welcome and encouraged! Please refer to the [Contributing Guide](docs/contributing.md) for more.
 
 ## License
 

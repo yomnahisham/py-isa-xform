@@ -6,6 +6,7 @@ from enum import Enum
 from dataclasses import dataclass, field
 from typing import List, Optional, Any, Union
 from .isa_loader import ISADefinition
+from .operand_parser import OperandParser
 
 
 class TokenType(Enum):
@@ -108,6 +109,9 @@ class Parser:
         # Setup syntax from ISA if available
         if isa_definition:
             self._setup_syntax_from_isa()
+            self.operand_parser = OperandParser(isa_definition)
+        else:
+            self.operand_parser = None
     
     def _setup_syntax_from_isa(self):
         """Setup parser syntax from ISA definition"""
@@ -168,6 +172,13 @@ class Parser:
         if not line:
             return None
         
+        # Check for directive (starts with .) - check this BEFORE labels
+        if line.startswith('.'):
+            parts = line.split(None, 1)  # Split on whitespace, max 1 split
+            directive_name = parts[0]
+            arguments = self._parse_directive_arguments(parts[1]) if len(parts) > 1 else []
+            return DirectiveNode(directive_name, arguments, line_num, 1, file)
+        
         # Check for label (ends with label_suffix)
         if line.endswith(self.label_suffix):
             label_name = line[:-len(self.label_suffix)].strip()
@@ -189,8 +200,7 @@ class Parser:
                     # Parse as directive
                     parts = instruction_part.split(None, 1)  # Split on whitespace, max 1 split
                     directive_name = parts[0]
-                    arguments = parts[1].split(',') if len(parts) > 1 else []
-                    arguments = [arg.strip() for arg in arguments if arg.strip()]
+                    arguments = self._parse_directive_arguments(parts[1]) if len(parts) > 1 else []
                     directive_node = DirectiveNode(directive_name, arguments, line_num, 1, file)
                     return [label_node, directive_node]
                 else:
@@ -201,37 +211,116 @@ class Parser:
             
             return label_node
         
-        # Check for directive (starts with .)
-        if line.startswith('.'):
-            parts = line.split(None, 1)  # Split on whitespace, max 1 split
-            directive_name = parts[0]
-            arguments = parts[1].split(',') if len(parts) > 1 else []
-            arguments = [arg.strip() for arg in arguments if arg.strip()]
-            return DirectiveNode(directive_name, arguments, line_num, 1, file)
-        
         # Must be an instruction
         return self._parse_instruction_part(line, line_num, file)
     
     def _parse_instruction_part(self, line: str, line_num: int, file: Optional[str]) -> Optional[InstructionNode]:
-        """Parse instruction part of a line"""
+        """Parse instruction part of a line (ISA-driven operand types, with operand count check)"""
         parts = line.split(None, 1)  # Split on whitespace, max 1 split
         if len(parts) < 1:
             return None
         
         mnemonic = parts[0]
         operands = []
+        expected_types = []
+        expected_count = None
+        # Modular: get expected operand types and count from ISA definition
+        if self.isa_definition and hasattr(self.isa_definition, 'instructions'):
+            instr = None
+            for i in self.isa_definition.instructions:
+                if hasattr(i, 'mnemonic') and i.mnemonic.upper() == mnemonic.upper():
+                    instr = i
+                    break
+            if instr and hasattr(instr, 'syntax'):
+                syntax_parts = instr.syntax.split()
+                if len(syntax_parts) > 1:
+                    operand_str = ' '.join(syntax_parts[1:])
+                    expected_types = [s.strip() for s in operand_str.split(',')]
+                    expected_count = len(expected_types)
+                else:
+                    expected_count = 0
         
         if len(parts) > 1:
             operand_str = parts[1]
             operand_parts = [part.strip() for part in operand_str.split(',')]
-            
-            for operand_part in operand_parts:
+            # Modular: check operand count
+            if expected_count is not None and len(operand_parts) != expected_count:
+                raise ValueError(f"[ISA ERROR] Instruction '{mnemonic}' expects {expected_count} operands as per ISA definition, but got {len(operand_parts)} at line {line_num} in {file or '<input>'}.")
+            for idx, operand_part in enumerate(operand_parts):
                 if operand_part:
-                    operand = self._parse_operand(operand_part, line_num, file)
+                    expected_type = expected_types[idx] if idx < len(expected_types) and expected_types[idx] is not None else ""
+                    operand = self._parse_operand_modular_typed(operand_part, line_num, file, expected_type)
                     if operand:
                         operands.append(operand)
+        else:
+            # Modular: check for zero-operand instructions
+            if expected_count is not None and expected_count != 0:
+                raise ValueError(f"[ISA ERROR] Instruction '{mnemonic}' expects {expected_count} operands as per ISA definition, but got 0 at line {line_num} in {file or '<input>'}.")
         
         return InstructionNode(mnemonic, operands, line_num, 1, file)
+
+    def _parse_operand_modular_typed(self, operand_str: str, line_num: int, file: Optional[str], expected_type: str = "") -> Optional[OperandNode]:
+        """Parse a single operand using the modular OperandParser, with robust fallback logic."""
+        if not self.operand_parser:
+            return self._parse_operand(operand_str, line_num, file)
+        
+        parsed = None
+        if expected_type:
+            # Map ISA syntax names to OperandParser types
+            type_map = {
+                'rd': 'register', 'rs1': 'register', 'rs2': 'register',
+                'imm': 'immediate', 'immediate': 'immediate', 'offset': 'immediate',
+                'address': 'address', 'label': 'label',
+            }
+            parse_type = type_map.get(expected_type.lower(), None)
+            
+            # Try parsing with expected type first
+            if parse_type == 'register':
+                parsed = self.operand_parser._parse_register(operand_str, line_num, 1)
+            elif parse_type == 'immediate':
+                parsed = self.operand_parser._parse_immediate(operand_str, line_num, 1)
+            elif parse_type == 'address':
+                parsed = self.operand_parser._parse_address(operand_str, line_num, 1)
+            elif parse_type == 'label':
+                parsed = self.operand_parser._parse_label(operand_str, line_num, 1)
+            
+            # If parsing failed (value is None or has validation errors), try fallback
+            if not parsed or parsed.value is None or parsed.validation_errors:
+                # Fallback: try parsing as register if it looks like a register name
+                if self.operand_parser._is_register_name(operand_str):
+                    parsed = self.operand_parser._parse_register(operand_str, line_num, 1)
+                    if parsed.value is not None:
+                        return OperandNode(parsed.value.name, 'register', line_num, 1, file)
+                # Fallback: try parsing as immediate if it looks like a number
+                if self.operand_parser._is_immediate_value(operand_str):
+                    parsed = self.operand_parser._parse_immediate(operand_str, line_num, 1)
+                    if parsed.value is not None:
+                        return OperandNode(str(parsed.value), 'immediate', line_num, 1, file)
+                # Fallback: try parsing as label if it looks like a label
+                if self.operand_parser._is_label_name(operand_str):
+                    parsed = self.operand_parser._parse_label(operand_str, line_num, 1)
+                    if parsed.value is not None:
+                        return OperandNode(parsed.value, 'label', line_num, 1, file)
+        
+        # If no expected type or parsing failed, use auto-detection
+        if not parsed or parsed.value is None:
+            parsed = self.operand_parser.parse_operand(operand_str, line_num, 1)
+        
+        # Map ParsedOperand to OperandNode
+        if parsed.type == 'register' and parsed.value is not None:
+            return OperandNode(parsed.value.name, 'register', line_num, 1, file)
+        elif parsed.type == 'immediate' and parsed.value is not None:
+            return OperandNode(str(parsed.value), 'immediate', line_num, 1, file)
+        elif parsed.type == 'label' and parsed.value is not None:
+            return OperandNode(parsed.value, 'label', line_num, 1, file)
+        elif parsed.type == 'address' and parsed.value is not None:
+            return OperandNode(str(parsed.value), 'address', line_num, 1, file)
+        elif parsed.type == 'mem':
+            # Not directly supported by OperandParser, fallback to legacy
+            return self._parse_operand(operand_str, line_num, file)
+        else:
+            # Fallback to legacy
+            return self._parse_operand(operand_str, line_num, file)
     
     def _parse_operand(self, operand_str: str, line_num: int, file: Optional[str]) -> Optional[OperandNode]:
         """Parse a single operand"""
@@ -332,3 +421,52 @@ class Parser:
             return True
         except ValueError:
             return False 
+
+    def _parse_directive_arguments(self, args_str: str) -> List[str]:
+        """Parse directive arguments, properly handling quoted strings"""
+        if not args_str.strip():
+            return []
+        
+        arguments = []
+        current_arg = ""
+        in_quotes = False
+        quote_char = None
+        i = 0
+        
+        while i < len(args_str):
+            char = args_str[i]
+            
+            if not in_quotes:
+                if char in ['"', "'"]:
+                    # Start of quoted string
+                    in_quotes = True
+                    quote_char = char
+                    current_arg += char
+                elif char == ',':
+                    # End of argument
+                    if current_arg.strip():
+                        arguments.append(current_arg.strip())
+                    current_arg = ""
+                else:
+                    current_arg += char
+            else:
+                # Inside quoted string
+                if char == quote_char:
+                    # End of quoted string
+                    in_quotes = False
+                    quote_char = None
+                    current_arg += char
+                elif char == '\\' and i + 1 < len(args_str):
+                    # Escaped character
+                    current_arg += char + args_str[i + 1]
+                    i += 1
+                else:
+                    current_arg += char
+            
+            i += 1
+        
+        # Add the last argument
+        if current_arg.strip():
+            arguments.append(current_arg.strip())
+        
+        return arguments 

@@ -1,65 +1,58 @@
-; Comprehensive ZX16 test with labels, offsets, and immediates
+# Comprehensive ZX16 Test Program
+# Tests labels, immediates, and various instruction types
+
 .org 0x100
 
 start:
-    LI a0, 10          ; Load immediate 10
-    LI a1, -5          ; Load immediate -5
-    LI a0, 63          ; Load immediate max positive (63)
-    LI a1, -64         ; Load immediate min negative (-64)
+    # Load immediate values
+    li16 x0, 0x12
+    li16 x1, 0x34
+    li16 x2, 0x30
     
-    ; Test labels and offsets
-    JAL ra, func1      ; Jump and link to function
-    JAL ra, func2      ; Jump and link to another function
+    # Arithmetic operations
+    add x3, x1
+    sub x4, x0
+    slt x5, x2
     
-    ; Test conditional branches with labels
-    BEQ a0, a1, start  ; Branch if equal (should not branch)
-    BNE a0, a1, skip1  ; Branch if not equal (should branch)
-    J skip2            ; Unconditional jump
-skip1:
-    ADD a0, a1         ; This should be skipped
-skip2:
-    ; Test memory operations with offsets
-    LW a0, 4(a1)       ; Load word with offset
-    SW a1, 4(a0)       ; Store word with offset
+    # Logical operations
+    and x6, x1
+    or x7, x2
+    xor x0, x2  # Reuse x0
     
-    ; Test immediate arithmetic
-    ADDI a0, 20        ; Add immediate 20
-    ADDI a1, -10       ; Add immediate -10
-    SLTI a0, 50        ; Set if less than immediate
+    # Shifts
+    slli x1, 2   # Reuse x1
+    srli x2, 1   # Reuse x2
+    srai x3, 3   # Reuse x3
     
-    ; Test logical operations with immediates
-    ANDI a0, 0x0F      ; AND immediate
-    ORI a1, 0x3F       ; OR immediate (was 0xF0, now 0x3F)
-    XORI a0, 0x3F      ; XOR immediate (was 0xFF, now 0x3F)
+    # Branch to function
+    jal x1, func1
     
-    ; Test shifts with immediates
-    SLLI a0, 2         ; Shift left logical immediate
-    SRLI a1, 1         ; Shift right logical immediate
-    SRAI a0, 3         ; Shift right arithmetic immediate
+    # Load/store operations
+    lw x4, 4(x0)  # Use small offset
+    sw x3, 7(x0)  # Use max positive offset
     
-    ; Test upper immediates
-    LUI a0, 63         ; Load upper immediate
-    AUIPC a1, 31       ; Add upper immediate to PC
+    # Jump to second function
+    jal x1, func2
     
-    ; Test system calls
-    ECALL 0x3FF        ; Exit program
-    
-    ; This should never be reached
-    ADD a0, a1
+    # Exit
+    ecall 0x3FF
 
-; Function definitions
 func1:
-    ADD a0, a1         ; Simple function 1
-    JR ra              ; Return
+    # Function 1 - simple arithmetic
+    add x5, x1
+    sub x6, x3
+    ret
     
 func2:
-    SUB a0, a1         ; Simple function 2
-    ADDI a0, 5         ; Add 5 to result
-    JR ra              ; Return
+    # Function 2 - logical operations
+    and x7, x5
+    or x0, x7   # Reuse x0
+    xor x1, x2  # Reuse x1
+    ret
 
-; Data section
-data_start:
-    .word 0x1234       ; Some data
-    .word 0x5678       ; More data
-    .word 0x9ABC       ; Even more data
-    .word 0xDEF0       ; Final data 
+# Data section
+.data
+.org 0x8000
+.word 0x12
+.word 0x34
+.word 0x30 

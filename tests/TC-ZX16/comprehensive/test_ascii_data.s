@@ -1,40 +1,16 @@
-# Test ASCII data detection
-.text
-.globl main
-
-main:
-    LI a0, 45          # ASCII 'A' (fits in 7-bit signed range)
-    ECALL 0            # Print character
-    
-    LI a0, 10          # ASCII newline
-    ECALL 0            # Print character
-    
-    LI a0, 46          # ASCII 'B' (fits in 7-bit signed range)
-    ECALL 0            # Print character
-    
-    LI a0, 10          # ASCII newline
-    ECALL 0            # Print character
-    
-    LI a0, 42          # Exit code
-    ECALL 0x3F         # Exit program (fits in 10-bit field)
-
-.data
-hello_str:
-    .ascii "Hello, World!\n"
-    .byte 0
-
-; Test ASCII string detection in disassembler
+# Test file for ASCII string detection
 .org 0x100
 
-start:
-    LI a0, 10
-    ADD a0, a1
-    JR ra
+# Some instructions
+li16 x0, 0x12
+li16 x1, 0x34
+add x2, x1
 
-; Data section with mixed content
-data_start:
-    .word 0x1234
-    .ascii "Hello, World!"
-    .word 0x5678
-    .ascii "Test String"
-    .byte 0xFF, 0x00 
+# Data section with ASCII strings
+.data
+.org 0x8000
+.asciiz "Hello World"
+.asciiz "Test String"
+.asciiz "Another string with spaces"
+.word 0x34
+.asciiz "End of strings" 

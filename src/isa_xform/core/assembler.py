@@ -124,7 +124,13 @@ class Assembler:
     def _first_pass(self, nodes: List[ASTNode]):
         """First pass: collect symbols and calculate addresses"""
         self.symbol_table.reset()
-        self.context.current_address = 0
+        
+        # Initialize with default code start address from ISA
+        code_section_start = self.isa_definition.address_space.memory_layout.get('code_section', {}).get('start', 0)
+        data_section_start = self.isa_definition.address_space.memory_layout.get('data_section', {}).get('start', 0)
+        
+        self.context.current_address = code_section_start
+        self.context.current_section = "text"
         
         for node in nodes:
             if isinstance(node, LabelNode):
@@ -145,7 +151,7 @@ class Assembler:
         data_bytes = bytearray()
         current_section = "text"
         self.context.current_address = self.context.org_address
-        
+
         for node in nodes:
             if isinstance(node, LabelNode):
                 pass
@@ -161,38 +167,38 @@ class Assembler:
                     # Use directive handler dispatch
                     handler = self.directive_handlers.get(node.name.lower())
                     if handler:
-                        if current_section == "data":
+                        # Automatically detect data directives and put them in data section
+                        data_directives = {'.word', '.byte', '.space', '.ascii', '.asciiz'}
+                        if node.name.lower() in data_directives or current_section == "data":
                             data_bytes.extend(handler(node) or b"")
                         else:
                             code_bytes.extend(handler(node) or b"")
             elif isinstance(node, InstructionNode):
-                if current_section == "text":
-                    instruction = self._find_instruction(node.mnemonic)
-                    operands = node.operands if hasattr(node, 'operands') else []
-                    if instruction is not None:
-                        encoded = self._encode_instruction(instruction, operands)
-                        if isinstance(encoded, int):
-                            word_size = self.isa_definition.instruction_size // 8
-                            endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
-                            code_bytes.extend(encoded.to_bytes(word_size, endianness))
-                        else:
-                            code_bytes.extend(encoded)
-                else:
-                    # Data section should not have instructions
-                    pass
+                code = self._assemble_instruction(node)
+                code_bytes.extend(code)
         
-        # Build header: [magic][entry_point][code_start][code_size][data_start][data_size][code][data]
+        # Serialize symbol table for inclusion in binary
+        symbol_data = self._serialize_symbol_table()
+        symbol_data_bytes = symbol_data.encode('utf-8')
+        
+        # Build enhanced ISAX header: 
+        # [magic][version][entry_point][code_start][code_size][data_start][data_size][symbol_size][code][data][symbols]
         header = bytearray()
-        header.extend(b'ISAX')  # Magic
+        header.extend(b'ISAX')  # Magic (4 bytes)
+        header.extend((2).to_bytes(4, 'little'))  # Version 2 with symbol support (4 bytes)
         entry_point = code_section_start.to_bytes(4, 'little')
-        header.extend(entry_point)
-        header.extend(code_section_start.to_bytes(4, 'little'))
-        header.extend(len(code_bytes).to_bytes(4, 'little'))
-        header.extend(data_section_start.to_bytes(4, 'little'))
-        header.extend(len(data_bytes).to_bytes(4, 'little'))
-        # Append code and data
+        header.extend(entry_point)  # Entry point (4 bytes)
+        header.extend(code_section_start.to_bytes(4, 'little'))  # Code start (4 bytes)
+        header.extend(len(code_bytes).to_bytes(4, 'little'))  # Code size (4 bytes)
+        header.extend(data_section_start.to_bytes(4, 'little'))  # Data start (4 bytes)
+        header.extend(len(data_bytes).to_bytes(4, 'little'))  # Data size (4 bytes)
+        header.extend(len(symbol_data_bytes).to_bytes(4, 'little'))  # Symbol size (4 bytes)
+        
+        # Append code, data, and symbols
         header.extend(code_bytes)
         header.extend(data_bytes)
+        header.extend(symbol_data_bytes)
+        
         return header
     
     def _single_pass(self, nodes: List[ASTNode]) -> bytearray:
@@ -216,7 +222,11 @@ class Assembler:
     def _handle_label_definition(self, node: LabelNode):
         """Handle label definition"""
         self.symbol_table.set_current_address(self.context.current_address)
-        self.symbol_table.define_label(node.name, node.line, node.column, node.file)
+        symbol = self.symbol_table.define_label(node.name, node.line, node.column, node.file)
+        # Ensure the symbol is marked as defined and has the correct value
+        if symbol:
+            symbol.defined = True
+            symbol.value = self.context.current_address
     
     def _advance_address_for_instruction(self, node: InstructionNode):
         """Advance address for instruction during first pass"""
@@ -224,6 +234,11 @@ class Assembler:
         if instruction:
             self.context.current_address += self.instruction_size_bytes
             self.symbol_table.set_current_address(self.context.current_address)
+        else:
+            # Expand pseudo-instruction and advance for each real instruction
+            expanded_nodes = self._expand_pseudo_instruction(node)
+            for n in expanded_nodes:
+                self._advance_address_for_instruction(n)
     
     def _assemble_instruction(self, node: InstructionNode) -> bytearray:
         """Assemble a single instruction, expanding pseudo-instructions if needed"""
@@ -254,6 +269,11 @@ class Assembler:
         """Encode instruction with operands using only the ISA definition's encoding.fields"""
         encoding = instruction.encoding
         instruction_word = 0
+
+        # DEBUG: Print operands and their types
+        print(f"[DEBUG] Encoding instruction: {instruction.mnemonic}")
+        for idx, op in enumerate(operands):
+            print(f"[DEBUG]   Operand {idx}: type={op.type}, value={op.value}")
 
         if isinstance(encoding, dict) and "fields" in encoding:
             # Use field-based encoding from ISA definition
@@ -362,6 +382,8 @@ class Assembler:
     
     def _resolve_operand_value(self, operand: OperandNode, field_type: str, bit_width: int, signed: bool = False, instruction_address: int = 0, field: dict = {}, instruction: Optional['Instruction'] = None) -> int:
         """Resolve operand value based on field type"""
+        # DEBUG: Print operand type and value for each field
+        print(f"[DEBUG] Resolving operand value: operand.type={operand.type}, operand.value={operand.value}, field_type={field_type}")
         field_name = field.get("name", "")
         if field_type == "register":
             return self._resolve_register_operand(operand)
@@ -396,29 +418,40 @@ class Assembler:
                 encoding_fields = instruction.encoding.get("fields", [])
                 immediate_fields = [f for f in encoding_fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
                 if len(immediate_fields) > 1:
-                    # Sort fields by order in encoding (or by width, but order is more robust)
-                    field_widths = []
-                    for f in immediate_fields:
-                        bits = f.get("bits", "")
-                        if ":" in bits:
-                            high, low = [int(x) for x in bits.split(":")]
-                        else:
-                            high = low = int(bits)
-                        width = high - low + 1
-                        field_widths.append((f["name"], width))
-                    # Use order in encoding
-                    field_widths = [(f["name"], width) for f, width in zip(immediate_fields, [w for _, w in field_widths])]
-                    # Compute bit offsets for each field (lowest bits to first field, next bits to next, etc.)
-                    bit_offsets = []
-                    offset = 0
-                    for fname, width in field_widths:
-                        bit_offsets.append((fname, offset, width))
-                        offset += width
-                    # For this field, extract the correct bits from the user immediate
-                    for fname, bit_offset, width in bit_offsets:
-                        if fname == field_name:
-                            extracted_value = (value >> bit_offset) & ((1 << width) - 1)
-                            return extracted_value
+                    # For U-type instructions like AUIPC and LUI, the immediate is split into two fields
+                    # The implementation shows: imm = (imm1 << 3) | imm2
+                    # So we need to reverse this: imm1 = imm >> 3, imm2 = imm & 0x7
+                    if field_name == "imm":
+                        # Upper field: extract bits [8:3] of the immediate
+                        return (value >> 3) & 0x3F  # 6 bits
+                    elif field_name == "imm2":
+                        # Lower field: extract bits [2:0] of the immediate
+                        return value & 0x7  # 3 bits
+                    else:
+                        # For other field names, use the original logic
+                        # Sort fields by order in encoding
+                        field_widths = []
+                        for f in immediate_fields:
+                            bits = f.get("bits", "")
+                            if ":" in bits:
+                                high, low = [int(x) for x in bits.split(":")]
+                            else:
+                                high = low = int(bits)
+                            width = high - low + 1
+                            field_widths.append((f["name"], width))
+                        # Use order in encoding
+                        field_widths = [(f["name"], width) for f, width in zip(immediate_fields, [w for _, w in field_widths])]
+                        # Compute bit offsets for each field (lowest bits to first field, next bits to next, etc.)
+                        bit_offsets = []
+                        offset = 0
+                        for fname, width in field_widths:
+                            bit_offsets.append((fname, offset, width))
+                            offset += width
+                        # For this field, extract the correct bits from the user immediate
+                        for fname, bit_offset, width in bit_offsets:
+                            if fname == field_name:
+                                extracted_value = (value >> bit_offset) & ((1 << width) - 1)
+                                return extracted_value
 
             # Validate immediate fits in bit width (for single-field immediates)
             if signed:
@@ -438,29 +471,29 @@ class Assembler:
             return self._resolve_immediate_operand(operand)
     
     def _resolve_register_operand(self, operand: OperandNode) -> int:
-        """Resolve register operand to register number"""
-        reg_name = operand.value
-        
-        # Remove register prefix if present
+        """Resolve register operand to register number (modular, supports register objects and names)"""
+        reg_val = operand.value
         syntax = self.isa_definition.assembly_syntax
-        if reg_name.startswith(syntax.register_prefix):
+        # If it's a register object (from OperandParser), match by object
+        if hasattr(reg_val, 'name') and hasattr(reg_val, 'alias'):
+            for category, registers in self.isa_definition.registers.items():
+                for i, register in enumerate(registers):
+                    if register is reg_val:
+                        return i
+        # Otherwise, treat as string (name or alias)
+        reg_name = reg_val
+        if isinstance(reg_name, str) and reg_name.startswith(syntax.register_prefix):
             reg_name = reg_name[len(syntax.register_prefix):]
-        
-        # Search all register categories
         for category, registers in self.isa_definition.registers.items():
             for i, register in enumerate(registers):
-                # Check main name
                 reg_cmp = register.name if syntax.case_sensitive else register.name.upper()
                 operand_cmp = reg_name if syntax.case_sensitive else reg_name.upper()
                 if reg_cmp == operand_cmp:
                     return i
-                
-                # Check aliases
                 for alias in register.alias:
                     alias_cmp = alias if syntax.case_sensitive else alias.upper()
                     if alias_cmp == operand_cmp:
                         return i
-        
         raise AssemblerError(f"Unknown register: {operand.value}")
     
     def _resolve_immediate_operand(self, operand: OperandNode) -> int:
@@ -472,6 +505,10 @@ class Assembler:
             value_str = offset_node.value
         else:
             value_str = operand.value
+        
+        # If the value is a register object, this is a bug in the parser or mapping
+        if hasattr(value_str, 'name') and hasattr(value_str, 'alias'):
+            raise AssemblerError(f"Register operand passed where immediate expected: {value_str.name}")
         
         syntax = self.isa_definition.assembly_syntax
         
@@ -547,9 +584,24 @@ class Assembler:
                 self.context.current_address = address
                 self.context.origin_set = True
                 self.symbol_table.set_current_address(address)
+        elif directive_name == '.data':
+            # Switch to data section address
+            data_section_start = self.isa_definition.address_space.memory_layout.get('data_section', {}).get('start', 0)
+            self.context.current_address = data_section_start
+            self.context.current_section = "data"
+            self.symbol_table.set_current_address(data_section_start)
+        elif directive_name == '.text':
+            # Switch to code section address
+            code_section_start = self.isa_definition.address_space.memory_layout.get('code_section', {}).get('start', 0)
+            self.context.current_address = code_section_start
+            self.context.current_section = "text"
+            self.symbol_table.set_current_address(code_section_start)
         elif directive_name in ['.word', '.byte']:
             # Calculate space needed
-            size = 4 if directive_name == '.word' else 1  # Use word size from ISA
+            if directive_name == '.word':
+                size = self.isa_definition.word_size // 8  # Use ISA's word size
+            else:
+                size = 1  # .byte is always 1 byte
             self.context.current_address += size * len(node.arguments)
             self.symbol_table.set_current_address(self.context.current_address)
         elif directive_name == '.space':
@@ -573,7 +625,7 @@ class Assembler:
                 
                 if action == "allocate_bytes":
                     # Word directive
-                    size = 4  # Use word size from ISA
+                    size = self.isa_definition.word_size // 8  # Use ISA's word size
                     self.context.current_address += size * len(node.arguments)
                     self.symbol_table.set_current_address(self.context.current_address)
                 elif action == "allocate_space":
@@ -846,31 +898,33 @@ class Assembler:
                 low = int(low_str)
                 width = high - low + 1
                 mask = (1 << width) - 1
-                # Only perform extraction in the second pass
-                if self.context.pass_number == 2:
-                    if operand_name == "label":
-                        try:
+                # Handle both passes
+                if operand_name == "label":
+                    try:
+                        if self.context.pass_number == 2:
                             symbol = self.symbol_table.get_symbol(v)
-                            value = self._resolve_address_operand(OperandNode(v, "label"))
-                        except Exception:
+                            value = self._resolve_address_operand(OperandNode(v, "label", 0, 0, None))
+                        else:
+                            # First pass: use 0 as placeholder
                             value = 0
-                    else:
-                        try:
-                            value = self._parse_number(v)
-                        except Exception:
-                            return match.group(0)
-                    bitfield_value = (value >> low) & mask
-                    return str(bitfield_value)
+                    except Exception:
+                        value = 0
                 else:
-                    return match.group(0)
+                    try:
+                        value = self._parse_number(v)
+                    except Exception:
+                        return match.group(0)
+                
+                bitfield_value = (value >> low) & mask
+                return str(bitfield_value)
             except Exception:
                 return match.group(0)
 
         # Replace all bitfield patterns first
         expanded_text = bitfield_pattern.sub(bitfield_replacer, expanded_text)
 
-        # Remove any remaining bitfield patterns (if not replaced)
-        expanded_text = bitfield_pattern.sub('', expanded_text)
+        # Don't remove remaining bitfield patterns - they should be handled properly
+        # expanded_text = bitfield_pattern.sub('', expanded_text)
 
         # Now do operand substitution only for standalone placeholders
         for k, v in sorted(operand_map.items(), key=lambda x: -len(x[0])):
@@ -905,3 +959,20 @@ class Assembler:
             return set_bits(instruction_word, high, low, field_value)
         except ValueError:
             return instruction_word
+
+    def _serialize_symbol_table(self) -> str:
+        """Serialize symbol table to JSON string for storage in binary"""
+        import json
+        
+        symbol_data = {}
+        for name, symbol in self.symbol_table.symbols.items():
+            if symbol.defined:  # Only include defined symbols
+                symbol_data[name] = {
+                    'name': symbol.name,
+                    'value': symbol.value,
+                    'type': symbol.type.value,
+                    'scope': symbol.scope.value,
+                    'size': symbol.size
+                }
+        
+        return json.dumps(symbol_data, separators=(',', ':'))  # Compact JSON
