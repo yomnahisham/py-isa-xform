@@ -24,7 +24,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Group 6 Team", 
-    author_email="",
+    author_email="yomnaothman@aucegypt.edu",
     url="https://github.com/yomnahisham/py-isa-xform",
     license="Apache-2.0",
     
@@ -33,7 +33,6 @@ setup(
     
     include_package_data=True,
     package_data={
-        "isa_definitions": ["*.json"],
         "isa_xform": ["*.md"],
     },
     

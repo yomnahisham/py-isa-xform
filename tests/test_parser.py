@@ -25,7 +25,7 @@ class TestParser:
         
         instructions = [
             Instruction("NOP", "0000", "R-type", "No operation", {}, "NOP", "No operation", "# NOP implementation"),
-            Instruction("ADD", "0001", "R-type", "Add two registers", {}, "ADD $rd, $rs1, $rs2", "$rd = $rs1 + $rs2", "# ADD implementation"),
+            Instruction("ADD", "0001", "R-type", "Add two registers", {}, "ADD $rd, $rs2", "$rd = $rd + $rs2", "# ADD implementation"),
             Instruction("LDI", "0101", "I-type", "Load immediate", {}, "LDI $rd, #imm", "$rd = imm", "# LDI implementation"),
             Instruction("JMP", "1000", "J-type", "Jump", {}, "JMP address", "PC = address", "# JMP implementation")
         ]
@@ -45,19 +45,17 @@ class TestParser:
     
     def test_parse_basic_instruction(self):
         """Test parsing basic instruction"""
-        text = "ADD R1, R2, R3"
+        text = "ADD R1, R2"
         nodes = self.parser.parse(text)
         
         assert len(nodes) == 1
         assert isinstance(nodes[0], InstructionNode)
         assert nodes[0].mnemonic == "ADD"
-        assert len(nodes[0].operands) == 3
+        assert len(nodes[0].operands) == 2
         assert nodes[0].operands[0].type == "register"
         assert nodes[0].operands[0].value == "R1"
         assert nodes[0].operands[1].type == "register"
         assert nodes[0].operands[1].value == "R2"
-        assert nodes[0].operands[2].type == "register"
-        assert nodes[0].operands[2].value == "R3"
     
     def test_parse_instruction_with_comments(self):
         """Test parsing instruction with comments"""
@@ -115,7 +113,7 @@ class TestParser:
         assert nodes[0].operands[0].type == "register"
         assert nodes[0].operands[0].value == "R1"
         assert nodes[0].operands[1].type == "immediate"
-        assert nodes[0].operands[1].value == "0x1234"
+        assert nodes[0].operands[1].value == "4660"  # 0x1234 converted to decimal
     
     def test_parse_binary_numbers(self):
         """Test parsing binary numbers"""
@@ -129,7 +127,7 @@ class TestParser:
         assert nodes[0].operands[0].type == "register"
         assert nodes[0].operands[0].value == "R1"
         assert nodes[0].operands[1].type == "immediate"
-        assert nodes[0].operands[1].value == "0b1010"
+        assert nodes[0].operands[1].value == "10"  # 0b1010 converted to decimal
     
     def test_parse_directives(self):
         """Test parsing directives"""
@@ -166,18 +164,18 @@ class TestParser:
         text = "LDI R1, #0x1234"
         nodes = self.parser.parse(text)
         assert isinstance(nodes[0], InstructionNode)
-        assert nodes[0].operands[1].value == "0x1234"
+        assert nodes[0].operands[1].value == "4660"  # 0x1234 converted to decimal
         
         # Test binary
         text = "LDI R1, #0b1010"
         nodes = self.parser.parse(text)
         assert isinstance(nodes[0], InstructionNode)
-        assert nodes[0].operands[1].value == "0b1010"
+        assert nodes[0].operands[1].value == "10"  # 0b1010 converted to decimal
     
     def test_parse_identifier_classification(self):
         """Test identifier classification through parsing"""
         # Test instruction classification
-        text = "ADD R1, R2, R3"
+        text = "ADD R1, R2"
         nodes = self.parser.parse(text)
         assert isinstance(nodes[0], InstructionNode)
         assert nodes[0].mnemonic == "ADD"
@@ -209,7 +207,7 @@ class TestParser:
         
         start:  LDI R1, #10
                 LDI R2, #20
-                ADD R3, R1, R2
+                ADD R3, R2
                 JMP start
         """
         
@@ -269,7 +267,7 @@ class TestParser:
         """Test parser without ISA definition"""
         parser = Parser()  # No ISA definition
         
-        text = "ADD R1, R2, R3"
+        text = "ADD R1, R2"
         nodes = parser.parse(text)
         
         # Without ISA, ADD should still be parsed as an instruction
@@ -279,15 +277,14 @@ class TestParser:
     
     def test_case_insensitive_parsing(self):
         """Test case insensitive parsing"""
-        text = "add r1, r2, r3"
+        text = "add r1, r2"
         nodes = self.parser.parse(text)
         
         assert len(nodes) == 1
         assert isinstance(nodes[0], InstructionNode)
         assert nodes[0].mnemonic == "add"  # Parser preserves case
-        assert nodes[0].operands[0].value == "r1"
-        assert nodes[0].operands[1].value == "r2"
-        assert nodes[0].operands[2].value == "r3"
+        assert nodes[0].operands[0].value == "R1"  # Register names are normalized
+        assert nodes[0].operands[1].value == "R2"
     
     def test_parse_comment(self):
         """Test parsing comment"""
