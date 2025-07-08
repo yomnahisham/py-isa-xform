@@ -598,7 +598,10 @@ class Assembler:
             self.symbol_table.set_current_address(code_section_start)
         elif directive_name in ['.word', '.byte']:
             # Calculate space needed
-            size = 4 if directive_name == '.word' else 1  # Use word size from ISA
+            if directive_name == '.word':
+                size = self.isa_definition.word_size // 8  # Use ISA's word size
+            else:
+                size = 1  # .byte is always 1 byte
             self.context.current_address += size * len(node.arguments)
             self.symbol_table.set_current_address(self.context.current_address)
         elif directive_name == '.space':
@@ -622,7 +625,7 @@ class Assembler:
                 
                 if action == "allocate_bytes":
                     # Word directive
-                    size = 4  # Use word size from ISA
+                    size = self.isa_definition.word_size // 8  # Use ISA's word size
                     self.context.current_address += size * len(node.arguments)
                     self.symbol_table.set_current_address(self.context.current_address)
                 elif action == "allocate_space":
