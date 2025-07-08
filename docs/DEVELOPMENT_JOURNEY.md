@@ -4,7 +4,9 @@ This document chronicles the development journey of py-isa-xform, a comprehensiv
 
 ## Project Genesis and Initial Vision
 
-The py-isa-xform project began with a vision to create a professional-grade toolkit for working with custom instruction set architectures. The initial goal was to build a system that could handle any ISA definition through a declarative JSON format, providing assembler and disassembler capabilities that were both powerful and educational. The project was designed to serve multiple audiences: computer architecture students learning about ISAs, researchers prototyping new architectures, and developers building custom processor toolchains. It was also done in completion of the course project requirement for CSCE2303: Computer Organization and Assembly Language Programming @ AUC, Egypt.
+The py-isa-xform project began with a vision to create a professional-grade toolkit for working with custom instruction set architectures. The initial goal was to build a system that could handle any ISA definition through a declarative JSON format, providing assembler and disassembler capabilities that were both powerful and educational. The project was designed to serve multiple audiences: computer architecture students learning about ISAs, researchers prototyping new architectures, and developers building custom processor toolchains. 
+
+*It was also done for completion of the course project requirement for CSCE2303: Computer Organization and Assembly Language Programming @ The American University in Cairo (AUC), New Cairo, Egypt.*
 
 The foundation was built around the ZX16 ISA, a 16-bit RISC-V inspired instruction set developed by Dr. Mohamed Shalan, Professor at AUC. This ISA served as our primary test case and reference implementation, providing a realistic and comprehensive instruction set that included arithmetic operations, memory access, control flow, and system calls. The choice of ZX16 was strategic - it was complex enough to test all aspects of our toolkit while remaining accessible for educational purposes.
 

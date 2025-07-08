@@ -13,7 +13,7 @@ def test_zx16_all_types():
     isa = loader.load_isa('zx16')
     program = '''
 .org 0x100
-LI a0, 7
+LI16 a0, 7
 ADD a0, a1
 SUB a0, a1
 SLT a0, a1
@@ -25,8 +25,8 @@ OR a0, a1
 AND a0, a1
 XOR a0, a1
 MV a0, a1
-LW a0
-SW a1
+LW a0, 0(a1)
+SW a1, 0(a0)
 ADDI a0, 7
 SLTI a0, -8
 ANDI a0, 7
