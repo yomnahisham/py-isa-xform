@@ -412,29 +412,40 @@ class Assembler:
                 encoding_fields = instruction.encoding.get("fields", [])
                 immediate_fields = [f for f in encoding_fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
                 if len(immediate_fields) > 1:
-                    # Sort fields by order in encoding (or by width, but order is more robust)
-                    field_widths = []
-                    for f in immediate_fields:
-                        bits = f.get("bits", "")
-                        if ":" in bits:
-                            high, low = [int(x) for x in bits.split(":")]
-                        else:
-                            high = low = int(bits)
-                        width = high - low + 1
-                        field_widths.append((f["name"], width))
-                    # Use order in encoding
-                    field_widths = [(f["name"], width) for f, width in zip(immediate_fields, [w for _, w in field_widths])]
-                    # Compute bit offsets for each field (lowest bits to first field, next bits to next, etc.)
-                    bit_offsets = []
-                    offset = 0
-                    for fname, width in field_widths:
-                        bit_offsets.append((fname, offset, width))
-                        offset += width
-                    # For this field, extract the correct bits from the user immediate
-                    for fname, bit_offset, width in bit_offsets:
-                        if fname == field_name:
-                            extracted_value = (value >> bit_offset) & ((1 << width) - 1)
-                            return extracted_value
+                    # For U-type instructions like AUIPC and LUI, the immediate is split into two fields
+                    # The implementation shows: imm = (imm1 << 3) | imm2
+                    # So we need to reverse this: imm1 = imm >> 3, imm2 = imm & 0x7
+                    if field_name == "imm":
+                        # Upper field: extract bits [8:3] of the immediate
+                        return (value >> 3) & 0x3F  # 6 bits
+                    elif field_name == "imm2":
+                        # Lower field: extract bits [2:0] of the immediate
+                        return value & 0x7  # 3 bits
+                    else:
+                        # For other field names, use the original logic
+                        # Sort fields by order in encoding
+                        field_widths = []
+                        for f in immediate_fields:
+                            bits = f.get("bits", "")
+                            if ":" in bits:
+                                high, low = [int(x) for x in bits.split(":")]
+                            else:
+                                high = low = int(bits)
+                            width = high - low + 1
+                            field_widths.append((f["name"], width))
+                        # Use order in encoding
+                        field_widths = [(f["name"], width) for f, width in zip(immediate_fields, [w for _, w in field_widths])]
+                        # Compute bit offsets for each field (lowest bits to first field, next bits to next, etc.)
+                        bit_offsets = []
+                        offset = 0
+                        for fname, width in field_widths:
+                            bit_offsets.append((fname, offset, width))
+                            offset += width
+                        # For this field, extract the correct bits from the user immediate
+                        for fname, bit_offset, width in bit_offsets:
+                            if fname == field_name:
+                                extracted_value = (value >> bit_offset) & ((1 << width) - 1)
+                                return extracted_value
 
             # Validate immediate fits in bit width (for single-field immediates)
             if signed:
@@ -871,7 +882,7 @@ class Assembler:
                     try:
                         if self.context.pass_number == 2:
                             symbol = self.symbol_table.get_symbol(v)
-                            value = self._resolve_address_operand(OperandNode(v, "label"))
+                            value = self._resolve_address_operand(OperandNode(v, "label", 0, 0, None))
                         else:
                             # First pass: use 0 as placeholder
                             value = 0

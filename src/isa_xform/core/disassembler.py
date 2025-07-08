@@ -1122,7 +1122,7 @@ class Disassembler:
                         if include_addresses:
                             lines.append(f"    {current_pos:04X}: {word_directive} 0x{value:04X}")
                         else:
-                            lines.append(f"    {current_pos:04X}: {word_directive} 0x{value:04X}")
+                            lines.append(f"    {word_directive} 0x{value:04X}")
                         i += word_size
                     else:
                         # Output remaining bytes as .byte
@@ -1139,21 +1139,69 @@ class Disassembler:
         return "\n".join(lines)
     
     def _reconstruct_pseudo_instructions(self, instructions: List[DisassembledInstruction]) -> List[DisassembledInstruction]:
-        """Reconstruct pseudo-instructions from hardware instructions"""
+        """Reconstruct pseudo-instructions from hardware instructions, modular and ISA-driven."""
         if not self.pseudo_patterns:
             return instructions
         
         reconstructed = []
         i = 0
-        
         while i < len(instructions):
             instr = instructions[i]
-            
-            # Check if this instruction matches a pseudo-pattern
             pseudo_mnemonic = self._check_pseudo_pattern(instr, instructions, i)
-            
-            if pseudo_mnemonic:
-                # Replace with pseudo-instruction
+            # Special handling for LA and other multi-instruction pseudo-instructions
+            if pseudo_mnemonic in ['LA', 'LI'] and i + 1 < len(instructions):
+                # Try to combine the two instructions' field values using the ISA's implementation
+                first = instr
+                second = instructions[i + 1]
+                # Extract field values from both
+                fv1 = self._extract_field_values(first)
+                fv2 = self._extract_field_values(second)
+                # Merge field values (imm, imm2, etc.)
+                field_values = fv1.copy()
+                field_values.update(fv2)
+                
+                # For LA pseudo-instruction, reconstruct the full address
+                if pseudo_mnemonic == 'LA':
+                    # LA expansion: AUIPC rd, label[15:9]; ADDI rd, label[8:0]
+                    # So we need: (upper_bits << 9) | lower_bits
+                    upper_bits = fv1.get('imm', 0)  # From AUIPC
+                    lower_bits = fv2.get('imm', 0)  # From ADDI
+                    full_address = (upper_bits << 9) | lower_bits
+                else:
+                    # For other pseudo-instructions, use the instruction's implementation
+                    if first.instruction and hasattr(first.instruction, 'implementation'):
+                        full_imm = self._reconstruct_immediate_from_implementation(first.instruction, field_values)
+                    else:
+                        full_imm = 0
+                    full_address = full_imm
+                
+                # Use standard disassembler convention: just the address
+                operand_str = f"0x{full_address:X}"
+                # Add label info as comment if available
+                label_str = self._resolve_address_to_label(full_address)
+                if label_str != f"0x{full_address:X}":
+                    comment = f"pseudo: {pseudo_mnemonic} ; {label_str}"
+                else:
+                    comment = f"pseudo: {pseudo_mnemonic}"
+                # Use the register from the first instruction
+                reg_str = None
+                for op in first.operands:
+                    if op.startswith('x'):
+                        reg_str = op
+                        break
+                if not reg_str:
+                    reg_str = 'x0'
+                reconstructed.append(DisassembledInstruction(
+                    address=first.address,
+                    machine_code=first.machine_code,
+                    mnemonic=pseudo_mnemonic,
+                    operands=[reg_str, operand_str],
+                    instruction=first.instruction,
+                    comment=comment
+                ))
+                i += 2  # Skip the next instruction
+                continue
+            elif pseudo_mnemonic:
                 reconstructed.append(DisassembledInstruction(
                     address=instr.address,
                     machine_code=instr.machine_code,
@@ -1162,16 +1210,11 @@ class Disassembler:
                     instruction=instr.instruction,
                     comment=f"pseudo: {pseudo_mnemonic}"
                 ))
-                
-                # Skip the next instruction if it was part of the pseudo-instruction
-                # (e.g., LA expands to AUIPC + ADDI)
                 if pseudo_mnemonic in ['LA', 'LI'] and i + 1 < len(instructions):
                     i += 1  # Skip the second instruction
             else:
                 reconstructed.append(instr)
-            
             i += 1
-        
         return reconstructed
     
     def _check_pseudo_pattern(self, instr: DisassembledInstruction, instructions: List[DisassembledInstruction], index: int) -> Optional[str]:
