@@ -124,7 +124,13 @@ class Assembler:
     def _first_pass(self, nodes: List[ASTNode]):
         """First pass: collect symbols and calculate addresses"""
         self.symbol_table.reset()
-        self.context.current_address = 0
+        
+        # Initialize with default code start address from ISA
+        code_section_start = self.isa_definition.address_space.memory_layout.get('code_section', {}).get('start', 0)
+        data_section_start = self.isa_definition.address_space.memory_layout.get('data_section', {}).get('start', 0)
+        
+        self.context.current_address = code_section_start
+        self.context.current_section = "text"
         
         for node in nodes:
             if isinstance(node, LabelNode):
@@ -578,6 +584,18 @@ class Assembler:
                 self.context.current_address = address
                 self.context.origin_set = True
                 self.symbol_table.set_current_address(address)
+        elif directive_name == '.data':
+            # Switch to data section address
+            data_section_start = self.isa_definition.address_space.memory_layout.get('data_section', {}).get('start', 0)
+            self.context.current_address = data_section_start
+            self.context.current_section = "data"
+            self.symbol_table.set_current_address(data_section_start)
+        elif directive_name == '.text':
+            # Switch to code section address
+            code_section_start = self.isa_definition.address_space.memory_layout.get('code_section', {}).get('start', 0)
+            self.context.current_address = code_section_start
+            self.context.current_section = "text"
+            self.symbol_table.set_current_address(code_section_start)
         elif directive_name in ['.word', '.byte']:
             # Calculate space needed
             size = 4 if directive_name == '.word' else 1  # Use word size from ISA
