@@ -355,7 +355,7 @@ except FileNotFoundError:
 The project includes several built-in ISA definitions:
 
 ### ZX16
-- **Description**: 16-bit RISC-V inspired instruction set
+- **Description**: 16-bit RISC-V inspired instruction set by Dr. Mohamed Shalan (Professor @ AUC)
 - **Features**: 8 registers, 16-bit instructions, comprehensive instruction set
 - **Use Case**: Primary demonstration ISA with complete toolchain support
 
@@ -364,20 +364,30 @@ The project includes several built-in ISA definitions:
 - **Features**: Simple instruction formats, basic operations
 - **Use Case**: Learning and educational demonstrations
 
-### RISC-V RV32I
-- **Description**: Base integer instruction set for RISC-V 32-bit processors
-- **Features**: Standard RISC-V instruction set, 32-bit operations
-- **Use Case**: RISC-V compatibility and reference implementation
-
 ### Modular Example
 - **Description**: Demonstrates modular ISA design patterns
 - **Features**: Modular instruction encoding, extensible design
 - **Use Case**: Advanced ISA design examples
 
-### Crazy ISA
-- **Description**: Experimental instruction set for testing edge cases
-- **Features**: Unusual instruction formats, complex encoding
-- **Use Case**: Testing and validation of toolchain robustness
+### Custom ISA Example
+- **Description**: Example custom ISA definition
+- **Features**: Custom instruction set with various instruction types
+- **Use Case**: Learning how to create custom ISAs
+
+### Custom Modular ISA
+- **Description**: Modular custom ISA example
+- **Features**: Modular design with custom instructions
+- **Use Case**: Advanced custom ISA design examples
+
+### Test User Custom ISA
+- **Description**: Test custom ISA for validation
+- **Features**: Custom instructions and directives for testing
+- **Use Case**: Testing and validation of custom ISA features
+
+### Complete User ISA Example
+- **Description**: Complete example of a user-defined ISA
+- **Features**: Comprehensive instruction set with all features
+- **Use Case**: Reference implementation for creating complete ISAs
 
 ## Performance Considerations
 
