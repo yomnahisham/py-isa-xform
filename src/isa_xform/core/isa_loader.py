@@ -4,18 +4,13 @@ ISA Loader: Loads and validates instruction set architecture definitions
 
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field
 from jsonschema import validate, ValidationError
 import importlib.resources
 
-from isa_xform.utils.error_handling import ISALoadError, ISAValidationError
-from isa_xform.utils.bit_utils import (
-    extract_bits, set_bits, sign_extend, parse_bit_range,
-    create_mask, bytes_to_int, int_to_bytes
-)
+from ..utils.error_handling import ISALoadError, ISAValidationError
 
 
 @dataclass
@@ -37,6 +32,7 @@ class Instruction:
     encoding: Dict[str, Any]
     syntax: str
     semantics: str
+    implementation: str  # Required Python code for instruction behavior
     flags_affected: List[str] = field(default_factory=list)
 
 
@@ -67,6 +63,7 @@ class Directive:
     name: str
     description: str
     action: str
+    implementation: str  # Required Python code for directive behavior
     argument_types: List[str] = field(default_factory=list)
     handler: Optional[str] = None
     syntax: str = ""
@@ -164,7 +161,7 @@ class ISADefinition:
     assembly_syntax: AssemblySyntax = field(default_factory=AssemblySyntax)
     address_space: AddressSpace = field(default_factory=AddressSpace)
     constants: Dict[str, Constant] = field(default_factory=dict)
-    ecall_services: Dict[str, ECallService] = field(default_factory=dict) 
+    ecall_services: Dict[str, ECallService] = field(default_factory=dict)
     validation_rules: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -203,7 +200,6 @@ class ISALoader:
         if not file_path.exists():
             raise ISALoadError(f"ISA file not found: {file_path}")
         
-        return self._load_from_file(file_path)
         return self._load_from_file(file_path)
     
     def _find_isa_file(self, isa_name: str) -> Optional[Path]:
@@ -261,6 +257,10 @@ class ISALoader:
         # Parse instructions
         instructions = []
         for instr_data in data.get("instructions", []):
+            # Validate that implementation is present
+            if "implementation" not in instr_data:
+                raise ISALoadError(f"Instruction '{instr_data['mnemonic']}' missing required 'implementation' field")
+            
             instruction = Instruction(
                 mnemonic=instr_data["mnemonic"],
                 opcode=instr_data.get("opcode", ""),
@@ -269,6 +269,7 @@ class ISALoader:
                 encoding=instr_data["encoding"],
                 syntax=instr_data["syntax"],
                 semantics=instr_data["semantics"],
+                implementation=instr_data["implementation"],
                 flags_affected=instr_data.get("flags_affected", [])
             )
             instructions.append(instruction)
@@ -288,16 +289,22 @@ class ISALoader:
         directives = {}
         for directive_data in data.get("directives", []):
             if isinstance(directive_data, dict):
+                # Validate that implementation is present
+                if "implementation" not in directive_data:
+                    raise ISALoadError(f"Directive '{directive_data['name']}' missing required 'implementation' field")
+                
                 directive = Directive(
                     name=directive_data["name"],
                     description=directive_data["description"],
-                    argument_types=directive_data.get("argument_types", []),
                     action=directive_data["action"],
+                    implementation=directive_data["implementation"],
+                    argument_types=directive_data.get("argument_types", []),
                     handler=directive_data.get("handler"),
                     syntax=directive_data.get("syntax", ""),
                     examples=directive_data.get("examples", []),
                     validation_rules=directive_data.get("validation_rules", {})
                 )
+                directives[directive.name] = directive
 
         # Parse addressing modes
         addressing_modes = []

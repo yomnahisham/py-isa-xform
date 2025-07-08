@@ -35,7 +35,4 @@ __all__ = [
     # Modular Components
     'OperandParser', 'ParsedOperand',
     'DirectiveHandler', 'DirectiveContext', 'DirectiveResult',
-
-    # Simulator
-    'Simulator', 'SimulationResult', 'SimulationContext',
 ] 
