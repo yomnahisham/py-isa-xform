@@ -250,6 +250,10 @@ class Simulator:
                 return True
         return True
         
+    def dump_memory(self, start: int, end: int):
+        for addr in range(start, end + 1):
+            print(f"0x{addr:04X}: {self.read_memory_byte(addr):02X}")
+            
 
     def run(self, step: bool = False):
         """Runs the simulator, disassembling and executing instructions in memory"""
@@ -289,4 +293,6 @@ class Simulator:
                 print("Execution terminated by instruction")
                 break
         print("Simulation completed")
+        self.dump_memory(0xFA00, 0xFA03)  # print palette, supposed to store 3
+
 

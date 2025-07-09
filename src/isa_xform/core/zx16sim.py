@@ -7,6 +7,11 @@ from isa_xform.core.disassembler import Disassembler, DisassembledInstruction
 from isa_xform.core.isa_loader import ISADefinition, ISALoader
 from isa_xform.core.symbol_table import SymbolTable
 from isa_xform.core.modular_sim import Simulator
+import threading
+from graphics import run_graphics
+
+def run_simulator(simulator):
+    simulator.run(False)
 
 
 def main():
@@ -29,7 +34,12 @@ def main():
     simulator = Simulator(isa_loader.load_isa("zx16"), symbol_table, disassembler)
     if not simulator.load_memory_from_file(filename):
         sys.exit(1)
-    simulator.run(True)
+
+    sim_thread = threading.Thread(target=run_simulator, args=(simulator,), daemon=True)
+    sim_thread.start()
+
+    # ✅ Run graphics on the main thread (must be main thread on macOS!)
+    run_graphics(simulator.memory)
     return 0
 
 
