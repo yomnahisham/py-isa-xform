@@ -1,12 +1,13 @@
-
-.data
-words: .word 0xABCD, 0x1111
-name: .ascii "Hello, World!\n"
-
 .text
+.org 0x0020
 .global main
 main:
-    LI16 x1, 0x1234
     la t0, words
-    la x0, name
+    lw x1, 0(t0)  # Load first word
+    lw x3, 4(t0)  # Load second word
     ecall 10
+
+.data
+.org 0x0040  # Place data very close to code (only 32 bytes away)
+words: .word 0xABCD, 0x1111
+name: .ascii "Hello, World!\n"
