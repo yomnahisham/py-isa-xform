@@ -135,10 +135,13 @@ class Assembler:
         for node in nodes:
             if isinstance(node, LabelNode):
                 self._handle_label_definition(node)
+                print(f"[DEBUG] After LabelNode {getattr(node, 'name', '')}: address = {self.context.current_address}")
             elif isinstance(node, InstructionNode):
                 self._advance_address_for_instruction(node)
+                print(f"[DEBUG] After InstructionNode {getattr(node, 'mnemonic', '')}: address = {self.context.current_address}")
             elif isinstance(node, DirectiveNode):
                 self._handle_directive_first_pass(node)
+                print(f"[DEBUG] After DirectiveNode {getattr(node, 'name', '')}: address = {self.context.current_address}")
     
     def _second_pass(self, nodes: List[ASTNode]) -> bytearray:
         """Second pass: generate machine code with section header"""
@@ -150,7 +153,11 @@ class Assembler:
         code_bytes = bytearray()
         data_bytes = bytearray()
         current_section = "text"
-        self.context.current_address = self.context.org_address
+        # Use code section start address, not org_address
+        self.context.current_address = code_section_start
+        logical_code_address = code_section_start  # Track logical code address for instructions
+        logical_data_address = data_section_start  # Track logical data address for data
+        actual_data_start = data_section_start  # Track actual data start address for ISAX header
 
         for node in nodes:
             if isinstance(node, LabelNode):
@@ -158,11 +165,20 @@ class Assembler:
             elif isinstance(node, DirectiveNode):
                 if node.name.lower() == '.data':
                     current_section = "data"
+                    self.context.current_address = data_section_start
                 elif node.name.lower() == '.text':
                     current_section = "text"
+                    self.context.current_address = code_section_start
                 elif node.name.lower() == '.org':
-                    # .org handled in first pass
-                    pass
+                    # Handle .org directive in second pass to set correct address
+                    if node.arguments:
+                        address = self._parse_number(node.arguments[0])
+                        if current_section == "data":
+                            logical_data_address = address
+                            actual_data_start = address  # Update actual data start for ISAX header
+                        else:
+                            logical_code_address = address
+                        self.context.current_address = address
                 else:
                     # Use directive handler dispatch
                     handler = self.directive_handlers.get(node.name.lower())
@@ -170,12 +186,21 @@ class Assembler:
                         # Automatically detect data directives and put them in data section
                         data_directives = {'.word', '.byte', '.space', '.ascii', '.asciiz'}
                         if node.name.lower() in data_directives or current_section == "data":
+                            # Use logical data address for data
+                            self.context.current_address = logical_data_address
                             data_bytes.extend(handler(node) or b"")
+                            logical_data_address = self.context.current_address
                         else:
+                            # Use logical code address for code
+                            self.context.current_address = logical_code_address
                             code_bytes.extend(handler(node) or b"")
+                            logical_code_address = self.context.current_address
             elif isinstance(node, InstructionNode):
+                # Use logical code address for instruction encoding
+                self.context.current_address = logical_code_address
                 code = self._assemble_instruction(node)
                 code_bytes.extend(code)
+                logical_code_address = self.context.current_address
         
         # Serialize symbol table for inclusion in binary
         symbol_data = self._serialize_symbol_table()
@@ -190,7 +215,7 @@ class Assembler:
         header.extend(entry_point)  # Entry point (4 bytes)
         header.extend(code_section_start.to_bytes(4, 'little'))  # Code start (4 bytes)
         header.extend(len(code_bytes).to_bytes(4, 'little'))  # Code size (4 bytes)
-        header.extend(data_section_start.to_bytes(4, 'little'))  # Data start (4 bytes)
+        header.extend(actual_data_start.to_bytes(4, 'little'))  # Data start (4 bytes)
         header.extend(len(data_bytes).to_bytes(4, 'little'))  # Data size (4 bytes)
         header.extend(len(symbol_data_bytes).to_bytes(4, 'little'))  # Symbol size (4 bytes)
         
@@ -236,7 +261,7 @@ class Assembler:
             self.symbol_table.set_current_address(self.context.current_address)
         else:
             # Expand pseudo-instruction and advance for each real instruction
-            expanded_nodes = self._expand_pseudo_instruction(node)
+            expanded_nodes = self._expand_pseudo_instruction(node, self.context.current_address)
             for n in expanded_nodes:
                 self._advance_address_for_instruction(n)
     
@@ -245,7 +270,8 @@ class Assembler:
         instruction = self._find_instruction(node.mnemonic)
         if not instruction:
             # Try pseudo-instruction expansion
-            expanded_nodes = self._expand_pseudo_instruction(node)
+            # Pass the current instruction address to the expansion
+            expanded_nodes = self._expand_pseudo_instruction(node, self.context.current_address)
             code = bytearray()
             for n in expanded_nodes:
                 code.extend(self._assemble_instruction(n))
@@ -585,11 +611,13 @@ class Assembler:
                 self.context.origin_set = True
                 self.symbol_table.set_current_address(address)
         elif directive_name == '.data':
-            # Switch to data section address
-            data_section_start = self.isa_definition.address_space.memory_layout.get('data_section', {}).get('start', 0)
-            self.context.current_address = data_section_start
+            # Switch to data section, but don't set address yet - wait for .org directive
             self.context.current_section = "data"
-            self.symbol_table.set_current_address(data_section_start)
+            # Only set default address if we haven't seen an .org directive yet
+            if not self.context.origin_set:
+                data_section_start = self.isa_definition.address_space.memory_layout.get('data_section', {}).get('start', 0)
+                self.context.current_address = data_section_start
+                self.symbol_table.set_current_address(data_section_start)
         elif directive_name == '.text':
             # Switch to code section address
             code_section_start = self.isa_definition.address_space.memory_layout.get('code_section', {}).get('start', 0)
@@ -849,7 +877,7 @@ class Assembler:
         # Default to address 0 if no entry point found
         return 0
 
-    def _expand_pseudo_instruction(self, node: InstructionNode) -> List[InstructionNode]:
+    def _expand_pseudo_instruction(self, node: InstructionNode, instruction_address: Optional[int] = None) -> List[InstructionNode]:
         """Expand a pseudo-instruction node into real instructions, recursively if needed."""
         pseudo = None
         for p in getattr(self.isa_definition, 'pseudo_instructions', []):
@@ -861,6 +889,13 @@ class Assembler:
         expansion = pseudo.expansion
         if not expansion:
             raise AssemblerError(f"Pseudo-instruction '{node.mnemonic}' has no expansion defined")
+        
+        # Store the current address for LA instruction expansion
+        # Use the passed instruction address if available, otherwise use current address
+        if instruction_address is not None:
+            la_instruction_address = instruction_address
+        else:
+            la_instruction_address = self.context.current_address
         
         # Build operand map based on pseudo-instruction syntax
         operand_map = {}
@@ -889,35 +924,71 @@ class Assembler:
         # Replace all bitfield patterns in the expansion string
         def bitfield_replacer(match):
             operand_name, high_str, low_str = match.group(1), match.group(2), match.group(3)
+            print(f"[DEBUG] Bitfield extraction: operand_name={operand_name}, high={high_str}, low={low_str}")
             key = f"${operand_name}" if f"${operand_name}" in operand_map else operand_name
             if key not in operand_map:
+                print(f"[DEBUG] Bitfield: key {key} not found in operand_map")
                 return match.group(0)  # leave as is if not found
             v = operand_map[key]
+            print(f"[DEBUG] Bitfield: value={v}")
             try:
                 high = int(high_str)
                 low = int(low_str)
                 width = high - low + 1
                 mask = (1 << width) - 1
                 # Handle both passes
-                if operand_name == "label":
+                # Check if this is a label (either operand_name is "label" or the value is a symbol)
+                # In first pass, assume any non-numeric value is a label
+                # In second pass, check if it's actually a symbol
+                try:
+                    # Try to parse as number
+                    test_value = self._parse_number(v)
+                    is_label = False
+                except:
+                    # If it's not a number, it's probably a label
+                    is_label = True
+                
+                # In second pass, also check if it's a defined symbol
+                if self.context.pass_number == 2 and self.symbol_table.get_symbol(v) is not None:
+                    is_label = True
+                
+                print(f"[DEBUG] Bitfield: is_label={is_label}, pass_number={self.context.pass_number}")
+                
+                if is_label:
                     try:
                         if self.context.pass_number == 2:
                             symbol = self.symbol_table.get_symbol(v)
                             value = self._resolve_address_operand(OperandNode(v, "label", 0, 0, None))
+                            # Modular fix: for LA, use (label_address - current_PC) for bitfield extraction
+                            if node.mnemonic.upper() == "LA":
+                                offset = value - la_instruction_address
+                                print(f"[DEBUG] LA bitfield: label={v}, label_addr={value}, la_addr={la_instruction_address}, offset={offset}")
+                                print(f"[DEBUG] LA bitfield: high={high}, low={low}, width={width}, mask={mask}")
+                                bitfield_value = (offset >> low) & mask
+                                print(f"[DEBUG] LA bitfield: result={bitfield_value}")
+                                return str(bitfield_value)
+                            else:
+                                bitfield_value = (value >> low) & mask
+                                print(f"[DEBUG] Label bitfield: value={value}, result={bitfield_value}")
+                                return str(bitfield_value)
                         else:
                             # First pass: use 0 as placeholder
-                            value = 0
-                    except Exception:
-                        value = 0
+                            print(f"[DEBUG] First pass label bitfield: returning 0")
+                            return "0"
+                    except Exception as e:
+                        print(f"[DEBUG] Label bitfield error: {e}")
+                        return "0"
                 else:
                     try:
                         value = self._parse_number(v)
-                    except Exception:
+                        bitfield_value = (value >> low) & mask
+                        print(f"[DEBUG] Immediate bitfield: value={value}, result={bitfield_value}")
+                        return str(bitfield_value)
+                    except Exception as e:
+                        print(f"[DEBUG] Immediate bitfield error: {e}")
                         return match.group(0)
-                
-                bitfield_value = (value >> low) & mask
-                return str(bitfield_value)
-            except Exception:
+            except Exception as e:
+                print(f"[DEBUG] Bitfield general error: {e}")
                 return match.group(0)
 
         # Replace all bitfield patterns first

@@ -936,7 +936,7 @@
         "mnemonic": "LA",
         "description": "Load address",
         "syntax": "LA rd, label",
-        "expansion": "AUIPC rd, label[15:9]; ADDI rd, label[8:0]"
+        "expansion": "AUIPC rd, label[15:7]; ADDI rd, label[6:0]"
       },
       {
         "mnemonic": "PUSH",
