@@ -1162,11 +1162,15 @@ class Disassembler:
                 
                 # For LA pseudo-instruction, reconstruct the full address
                 if pseudo_mnemonic == 'LA':
-                    # LA expansion: AUIPC rd, label[15:9]; ADDI rd, label[8:0]
-                    # So we need: (upper_bits << 9) | lower_bits
+                    # LA expansion: AUIPC rd, label[15:7]; ADDI rd, label[6:0]
+                    # The immediates are relative offsets from the current PC
+                    # We need to reconstruct the offset and add it to the LA instruction address
                     upper_bits = fv1.get('imm', 0)  # From AUIPC
                     lower_bits = fv2.get('imm', 0)  # From ADDI
-                    full_address = (upper_bits << 9) | lower_bits
+                    # Combine the offset: (upper_bits << 7) | lower_bits
+                    offset = (upper_bits << 7) | lower_bits
+                    # Add offset to the LA instruction address to get target address
+                    full_address = first.address + offset
                 else:
                     # For other pseudo-instructions, use the instruction's implementation
                     if first.instruction and hasattr(first.instruction, 'implementation'):
@@ -1247,24 +1251,35 @@ class Disassembler:
         if not isinstance(encoding, dict) or 'fields' not in encoding:
             return field_values
         
-        # Parse operands to extract field values
-        # This is a simplified approach - in a full implementation, you'd decode the machine code
-        if instr.operands:
-            # For now, try to extract register numbers from operand strings
-            for i, operand in enumerate(instr.operands):
-                if operand.startswith('x'):
-                    try:
-                        reg_num = int(operand[1:])
-                        field_values[f'rd'] = reg_num if i == 0 else field_values.get('rd', 0)
-                        field_values[f'rs{i+1}'] = reg_num
-                    except ValueError:
-                        pass
-                elif operand.isdigit() or operand.startswith('0x'):
-                    try:
-                        imm_val = int(operand, 16) if operand.startswith('0x') else int(operand)
-                        field_values['imm'] = imm_val
-                    except ValueError:
-                        pass
+        # Extract field values from the raw instruction bytes using the encoding fields
+        endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+        instr_word = bytes_to_int(instr.machine_code, endianness)
+        
+        for field in encoding['fields']:
+            field_name = field.get('name', '')
+            if field_name == 'opcode':
+                continue  # Skip opcode field
+            
+            # Skip fields that have a fixed value
+            if 'value' in field and 'type' not in field:
+                continue
+            
+            bits = field.get('bits', '')
+            if not bits:
+                continue
+            
+            try:
+                high, low = parse_bit_range(bits)
+                bit_width = high - low + 1
+                value = extract_bits(instr_word, high, low)
+                
+                # Handle signed immediates
+                if field.get('signed', False) and (value & (1 << (bit_width - 1))):
+                    value = sign_extend(value, bit_width)
+                
+                field_values[field_name] = value
+            except ValueError:
+                continue
         
         return field_values
     
