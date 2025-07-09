@@ -646,7 +646,7 @@
         "format": "J-type",
         "description": "Jump",
         "syntax": "J offset",
-        "semantics": "PC = (PC + sign_extend(offset, 6)) & 0xFFFF",
+        "semantics": "PC = (PC + sign_extend(offset, 9)) & 0xFFFF",
         "implementation": "# Jump implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFE00\ncontext.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -663,7 +663,7 @@
         "format": "J-type",
         "description": "Jump and link",
         "syntax": "JAL rd, offset",
-        "semantics": "rd = PC + 2; PC = (PC + sign_extend(offset, 6)) & 0xFFFF",
+        "semantics": "rd = PC + 2; PC = (PC + sign_extend(offset, 9)) & 0xFFFF",
         "implementation": "# Jump and link implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFE00\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Jump\ncontext.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -680,7 +680,7 @@
         "format": "U-type",
         "description": "Load upper immediate",
         "syntax": "LUI rd, imm",
-        "semantics": "rd = (sign_extend(imm, 6) << 7) & 0xFFFF",
+        "semantics": "rd = (sign_extend(imm, 9) << 7) & 0xFFFF",
         "implementation": "# Load upper immediate implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits\nresult = (imm << 7) & 0xFFFF\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -697,7 +697,7 @@
         "format": "U-type",
         "description": "Add upper immediate to PC",
         "syntax": "AUIPC rd, imm",
-        "semantics": "rd = (PC + (sign_extend(imm, 6) << 7)) & 0xFFFF",
+        "semantics": "rd = (PC + (sign_extend(imm, 9) << 7)) & 0xFFFF",
         "implementation": "# Add upper immediate to PC implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits and add to PC\nresult = (context.pc + (imm << 7)) & 0xFFFF\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -930,13 +930,13 @@
         "mnemonic": "LI16",
         "description": "Load 16-bit immediate",
         "syntax": "LI16 rd, imm",
-        "expansion": "LUI rd, imm[15:9]; ORI rd, imm[8:0]"
+        "expansion": "LUI rd, imm[15:7]; ORI rd, imm[6:0]"
       },
       {
         "mnemonic": "LA",
         "description": "Load address",
         "syntax": "LA rd, label",
-        "expansion": "AUIPC rd, label[15:9]; ADDI rd, label[8:0]"
+        "expansion": "AUIPC rd, label[15:7]; ADDI rd, label[6:0]"
       },
       {
         "mnemonic": "PUSH",

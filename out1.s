@@ -3,9 +3,13 @@
 ; Endianness: little
 
 main:
-    0020: LA x0, 0x8000 ; pseudo: LA ; words
-    0024: LA x0, 0x8004 ; pseudo: LA ; name
-    0028: ECALL 10
+    0020: LUI x1, 36
+    0022: ORI x1, 52
+    0024: AUIPC x0, 256
+    0026: ADDI x0, 0
+    0028: AUIPC x0, 256
+    002A: ADDI x0, 4
+    002C: ECALL 10
 
 ; Data sections:
     ; Data section at 0x8000
