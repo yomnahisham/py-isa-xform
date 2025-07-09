@@ -3,8 +3,9 @@
 .global main
 main:
     la t0, words
+    addi x7, 51
+    sw x7, 0(t0)  # Store value 151 at address of words
     lw x1, 0(t0)  # Load first word
-    lw x3, 4(t0)  # Load second word
     ecall 10
 
 .data

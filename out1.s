@@ -4,9 +4,10 @@
 
 main:
     0020: LA x0, 0x40 ; pseudo: LA ; words
-    0024: POP x1, 0(x0) ; pseudo: POP
-    0026: POP x3, 4(x0) ; pseudo: POP
-    0028: ECALL 10
+    0024: INC x7, 51 ; pseudo: INC
+    0026: SW x7, 0(x0)
+    0028: POP x1, 0(x0) ; pseudo: POP
+    002A: ECALL 10
 
 ; Data sections:
     ; Data section at 0x0040

@@ -31,7 +31,8 @@ def main():
         sys.exit(1)
     simulator.run(True)
     for i in range(0, 300):
-        print(f"Memory[{i:04X}]: {simulator.memory[i]}")
+        if simulator.memory[i] != 0:
+            print(f"Memory[{i:04X}]: {simulator.memory[i]}")
     return 0
 
 
