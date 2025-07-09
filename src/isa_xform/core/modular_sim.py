@@ -293,6 +293,6 @@ class Simulator:
                 print("Execution terminated by instruction")
                 break
         print("Simulation completed")
-        self.dump_memory(0xFA00, 0xFA03)  # print palette, supposed to store 3
+        self.dump_memory(0xFA00, 0xFA02)  # print palette, supposed to store 3
 
 
