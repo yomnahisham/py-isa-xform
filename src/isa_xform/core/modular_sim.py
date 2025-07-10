@@ -42,6 +42,34 @@ class Simulator:
         self.regs[self.sp_index] = self.stack_start  # Initialize stack pointer to stack start address
         self.key = "start"
 
+    def check_key_press(self, target_key: str) -> bool:
+        """Checks if a specific key is pressed"""
+        key_pressed = False
+        def on_press(key):
+            nonlocal key_pressed
+            try:
+                # For alphanumeric keys
+                if key.char == target_key:
+                    print(f"You pressed '{target_key}'!")
+                    key_pressed = True
+                    return False  # Stop the listener
+            except AttributeError:
+                # For special keys
+                if key == getattr(Key, target_key, None):
+                    print(f"You pressed {target_key}!")
+                    key_pressed = True
+                    return False
+        
+        listener = Listener(on_press=on_press)
+        listener.start()
+        listener.join(0.01)  # Wait for a short time to allow the listener to process events
+        if listener.is_alive():
+            listener.stop()
+        
+        self.key = 1 if key_pressed else 0
+        return key_pressed
+        
+
     def listen_for_key(self, target_key):
         def on_press(key):
             try:
@@ -256,7 +284,7 @@ class Simulator:
                     print("Audio playback stopped")
                 elif name == "read_keyboard":
                     #self.regs[7] = self.get_key(chr(self.regs[6])) # a0 register is the key to read, a1 register will hold the result
-                    self.listen_for_key(chr(self.regs[6]))
+                    self.check_key_press(chr(self.regs[6]))
                     self.regs[7] = self.key
                 elif name == "registers_dump":
                     for i, reg in enumerate(self.regs):
@@ -278,10 +306,6 @@ class Simulator:
                 instruction = disassembled_instruction.instruction
                 actual_assembly = f"{instruction.mnemonic}  {', '.join(disassembled_instruction.operands)}"
                 code = instruction.semantics
-                # generic_assembly = disassembled_instruction.instructions[0].instruction.syntax
-                # instruction = disassembled_instruction.instructions[0]
-                # actual_assembly = f"{instruction.mnemonic}  {', '.join(instruction.operands)}"
-                # code = disassembled_instruction.instructions[0].instruction.semantics
 
                 generic_parameters = self.extract_parameters(generic_assembly)
                 actual_parameters = self.extract_parameters(actual_assembly)
@@ -306,8 +330,8 @@ class Simulator:
         print(f"Data Start: {self.data_start} ")
         #print(f"Memory: {self.memory} ")
 
-        while self.pc < len(self.memory) and (loop != 'q' or (not step)):
-            
+        #while self.pc < len(self.memory) and (loop != 'q' or (not step)):
+        while self.pc < len(self.memory): 
             current_instruction = instuctions_map[self.pc] if self.pc in instuctions_map else None
             if current_instruction is None:
                 print(f"Skipping instruction at PC: {self.pc} (NoneType)")
@@ -325,7 +349,7 @@ class Simulator:
                         values = [reg for reg in self.regs]
                         print(self.regs)
                         #print(f"Registers: {', '.join(f'{name}: {value}' for name, value in zip(self.reg_names, values))}")
-                        loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
+                        #loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
                     else:
                         if self.pc >= len(disassembly_result.instructions):
                             print("Reached end of disassembled instructions")
