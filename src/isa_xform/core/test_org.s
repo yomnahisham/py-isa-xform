@@ -18,19 +18,16 @@ Row13: .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0
 Row14: .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 
 #scores for players A/B
-scoreA: .byte 0
+scoreA: .byte 0     #0xF12C
 scoreB: .byte 0
 
 #X/Y coordinates for players A/B and the p - pong ball
-xA: .byte 0
-yA: .byte 8 
-xB: .byte 19
-yB: .byte 8
-xp: .byte 1
-yp: .byte 8
+A: .word 0x0008         #0xF12E -> x,y (0, 8)
+B: .word 0x1308         #0xF130 -> x,y (19,8)
+p: .word 0x0108         #0xF132 -> x,y (19,8)
 
 #current ball Path
-path: .byte 0
+path: .word 0           #0xF134
 
 #Extracts
 extra0: .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
@@ -68,23 +65,43 @@ c1: .byte 0xFF
 
 .text
 main:
-    #place padel 
-    lui t0, 0xF0
-    slli t0, 1
-    li t1, 1
-    sb t1, 0(t0)
+    li a0, 1        #put ball tile
+    call updateBallTile 
+    ecall 10
 
-    loop:
-    call moveball
-    j loop
+updateBallTile:
+        #load y and x into s0, s1
+        lui t0, 0xF1        #y -> 0xF133
+        slli t0, 1
+        addi t0, 0x33
+        lb s0, 0(t0)
+
+        addi t0, -1         #x -> 0xF132
+        lb s1, 0(t0)
+
+        lui s0, 0xF0
+        slli s0, 1    #t0 = 0xF000
+
+    multiply:          #t0 += 20*y
+        bz s0, add
+        addi t0, 20
+        addi s0, -1
+        j multiply
+    add:
+        add t0, s1      #t0 += x
+        sb a0, 0(t0)    #store argument
+    ret
+
 
 moveball:
         li a0, 0        #remove ball tile
         call updateBallTile
 
-        la t0, path
+        lui t0, 0xF1
+        slli t0, 1
+        #finish address
         lb s0, 0(t0)
-        
+
     #path 0 -> right
         bnz s0, path1
 
@@ -139,13 +156,16 @@ moveball:
         addi t1, 1
 
     update_coo:
-        la s0, yp
+        lui s0, 0xF1        #y -> 0xF133
+        slli s0, 1
+        addi s0, 0x33
         lb s1, 0(s0)
         add s1, t1
         sb s1, 0(s0)
+        mv t1, s0
         mv s0, s1       #save new y coordinates in s0
 
-        la t1, xp
+        addi t1, -1
         lb s1, 0(t1)
         add s1, t0
         sb s1, 0(t1)    #save new x coordinates in s1
@@ -154,21 +174,3 @@ moveball:
         call updateBallTile
     ret
 
-updateBallTile:
-        #load y and x into s0, s1
-        la t0, yp
-        lb s0, 0(t0)
-        
-        la t0, xp
-        lb s1, 0(t0)
-
-        la t0, Row0    #t0 = 0xF000
-    multiply:          #t0 += 20*y
-        bz s0, add
-        addi t0, 20
-        addi s0, -1
-        j multiply
-    add:
-        add t0, s1      #t0 += x
-        sb a0, 0(t0)    #store argument
-    ret
