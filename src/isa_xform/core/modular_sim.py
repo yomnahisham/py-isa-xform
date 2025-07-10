@@ -30,7 +30,7 @@ class Simulator:
         self.isa_definition = isa_definition
         self.symbol_table = symbol_table if symbol_table else SymbolTable()
         self.disassembler = disassembler if disassembler else Disassembler(isa_definition, self.symbol_table)
-        self.memory = bytearray(300)  # 64KB memory
+        self.memory = bytearray(65535)  # 64KB memory
         self.pc = isa_definition.address_space.default_code_start
         self.data_start = isa_definition.address_space.default_data_start
         self.stack_start = isa_definition.address_space.default_stack_start
@@ -335,6 +335,6 @@ class Simulator:
                 print("Execution terminated by instruction")
                 break
         print("Simulation completed")
-        self.dump_memory(0xFA00, 0xFA02)  # print palette, supposed to store 3
+        self.dump_memory(0xFA00, 0xFA07)  # print palette, supposed to store 3
 
 

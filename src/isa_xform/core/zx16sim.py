@@ -11,7 +11,7 @@ import threading
 from graphics import run_graphics
 
 def run_simulator(simulator):
-    simulator.run(False)
+    simulator.run(True)
 
 
 def main():
