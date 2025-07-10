@@ -35,11 +35,15 @@ def main():
     if not simulator.load_memory_from_file(filename):
         sys.exit(1)
 
-    sim_thread = threading.Thread(target=run_simulator, args=(simulator,), daemon=True)
+    sim_thread = threading.Thread(target=run_simulator, args=(simulator,))
     sim_thread.start()
 
-    # ✅ Run graphics on the main thread (must be main thread on macOS!)
+    # Run graphics on main thread (as required by macOS)
     run_graphics(simulator)
+
+    # 🚨 Wait for the simulator thread to finish before exit
+    sim_thread.join()
+
     return 0
 
 

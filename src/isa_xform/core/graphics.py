@@ -70,10 +70,12 @@ def run_graphics(simulator):
     simulator.key_state = {code: 0 for code in monitored_keys.values()}
 
     while True:
+        print("Graphics running")
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                simulator.running = False  # 🛑 tell simulator to stop
                 pygame.quit()
-                sys.exit()
+                return
 
         keys = pygame.key.get_pressed()
 

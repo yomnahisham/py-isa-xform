@@ -41,6 +41,7 @@ class Simulator:
         self.regs[self.sp_index] = self.stack_start  # Initialize stack pointer to stack start address
         self.key = "start"
         self.key_state = {}
+        self.running = True
 
 
     def check_key_press(self, target_key: str) -> bool:
@@ -326,7 +327,7 @@ class Simulator:
         #print(f"Memory: {self.memory} ")
 
         #while self.pc < len(self.memory) and (loop != 'q' or (not step)):
-        while self.pc < len(self.memory): 
+        while self.pc < len(self.memory) and self.running: 
             current_instruction = instuctions_map[self.pc] if self.pc in instuctions_map else None
             if current_instruction is None:
                 print(f"Skipping instruction at PC: {self.pc} (NoneType)")
