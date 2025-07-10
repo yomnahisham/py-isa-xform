@@ -30,7 +30,7 @@ class Simulator:
         self.isa_definition = isa_definition
         self.symbol_table = symbol_table if symbol_table else SymbolTable()
         self.disassembler = disassembler if disassembler else Disassembler(isa_definition, self.symbol_table)
-        self.memory = bytearray(65536)  # 64KB memory
+        self.memory = bytearray(300)  # 64KB memory
         self.pc = isa_definition.address_space.default_code_start
         self.data_start = isa_definition.address_space.default_data_start
         self.stack_start = isa_definition.address_space.default_stack_start
@@ -63,18 +63,60 @@ class Simulator:
 
 
     def load_memory_from_file(self, filename: str) -> bool:
+        """Loads machine code from a file into memory"""
+        if not Path(filename).exists():
+            print(f"Error: File '{filename}' not found", file=sys.stderr)
+            return False
         try:
-            with open(filename, 'rb') as f:
-                data = f.read()
-                if len(data) > len(self.memory):
-                    print(f"Error: File '{filename}' exceeds memory size", file=sys.stderr)
-                    return False
-                self.memory[:len(data)] = data
+            # check for endiannness
+            if self.isa_definition.endianness == 'little':
+                with open(filename, 'rb') as f:
+                    data = f.read()
+                    if len(data) > len(self.memory):
+                        print(f"Error: File '{filename}' exceeds memory size", file=sys.stderr)
+                        return False
+                    entry_point = data[8:12]
+                    entry_point = int.from_bytes(entry_point, byteorder='little')
+                    code_start = data[12:16]
+                    code_start = int.from_bytes(code_start, byteorder='little')
+                    code_size = data[16:20]
+                    code_size = int.from_bytes(code_size, byteorder='little')
+                    self.memory[code_start:code_start + code_size] = data[entry_point:entry_point + code_size]
+                    print(self.memory[self.pc:self.pc + code_size])
+                    entry_point += code_size
+                    data_start = data[20:24]
+                    data_start = int.from_bytes(data_start, byteorder='little')
+                    data_size = data[24:28]
+                    data_size = int.from_bytes(data_size, byteorder='little')
+                    print(f"Data Start: {data_start} Data Size: {data_size}")
+                    self.memory[data_start:data_start + data_size] = data[entry_point:entry_point + data_size]
+                    print(self.memory[data_start:data_start + data_size])
+                    #self.memory[:len(data)] = data
+            else:
+                with open(filename, 'rb') as f:
+                    data = f.read()
+                    if len(data) > len(self.memory):
+                        print(f"Error: File '{filename}' exceeds memory size", file=sys.stderr)
+                        return False
+                    code_start = data[12:16]
+                    code_start = int.from_bytes(code_start, byteorder='big')
+                    code_size = data[16:20]
+                    code_size = int.from_bytes(code_size, byteorder='big')
+                    self.memory[self.pc:self.pc + code_size] = data[code_start:code_start + code_size]
+                    data_start = data[20:24]
+                    data_start = int.from_bytes(data_start, byteorder='big')
+                    data_size = data[24:28]
+                    data_size = int.from_bytes(data_size, byteorder='big')
+                    self.memory[self.data_start:self.data_start + data_size] = data[data_start:data_start + data_size]
+                    # Reverse the byte order for big-endian
+                    #self.memory[:len(data)] = data[::-1]
             print(f"Loaded {len(data)} bytes from '{filename}' into memory")
             return True
         except FileNotFoundError:
             print(f"Error: File '{filename}' not found", file=sys.stderr)
             return False
+        
+
     
     def read_memory_byte(self, addr: int) -> int:
         if 0 <= addr < len(self.memory):

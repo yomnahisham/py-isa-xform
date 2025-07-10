@@ -1163,14 +1163,20 @@ class Disassembler:
                 # For LA pseudo-instruction, reconstruct the full address
                 if pseudo_mnemonic == 'LA':
                     # LA expansion: AUIPC rd, label[15:7]; ADDI rd, label[6:0]
-                    # The immediates are relative offsets from the current PC
-                    # We need to reconstruct the offset and add it to the LA instruction address
-                    upper_bits = fv1.get('imm', 0)  # From AUIPC
-                    lower_bits = fv2.get('imm', 0)  # From ADDI
-                    # Combine the offset: (upper_bits << 7) | lower_bits
-                    offset = (upper_bits << 7) | lower_bits
-                    # Add offset to the LA instruction address to get target address
-                    full_address = first.address + offset
+                    # AUIPC: imm = (imm1 << 3) | imm2, then shift left by 7
+                    # ADDI: add the lower 7 bits
+                    auipc_imm = fv1.get('imm', 0)  # From AUIPC (bits 14:9)
+                    auipc_imm2 = fv1.get('imm2', 0)  # From AUIPC (bits 5:3)
+                    addi_imm = fv2.get('imm', 0)  # From ADDI (bits 15:7)
+                    
+                    # Reconstruct AUIPC immediate: (imm << 3) | imm2
+                    auipc_full = (auipc_imm << 3) | auipc_imm2
+                    # Shift left by 7 as per AUIPC semantics
+                    auipc_offset = auipc_full << 7
+                    # Add ADDI immediate
+                    total_offset = auipc_offset + addi_imm
+                    # Add to LA instruction address to get target address
+                    full_address = first.address + total_offset
                 else:
                     # For other pseudo-instructions, use the instruction's implementation
                     if first.instruction and hasattr(first.instruction, 'implementation'):
