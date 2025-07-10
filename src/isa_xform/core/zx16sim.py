@@ -8,7 +8,7 @@ from isa_xform.core.isa_loader import ISADefinition, ISALoader
 from isa_xform.core.symbol_table import SymbolTable
 from isa_xform.core.modular_sim import Simulator
 import threading
-from graphics import run_graphics
+from isa_xform.core.graphics import run_graphics
 
 def run_simulator(simulator):
     simulator.run(True)

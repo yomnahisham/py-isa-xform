@@ -68,14 +68,7 @@ c1: .byte 0xFF
 
 .text
 main:
-start_game:
-    #reset positions
-    #call placePadels
-    #call placeBall
-    
     #wait for key hit
     ecall 7
-    bz a1, start_game
-
-
-ecall 10 
+    addi t0, 0
+    ecall 10 
