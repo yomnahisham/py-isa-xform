@@ -39,7 +39,7 @@ def main():
     sim_thread.start()
 
     # ✅ Run graphics on the main thread (must be main thread on macOS!)
-    run_graphics(simulator.memory)
+    run_graphics(simulator)
     return 0
 
 

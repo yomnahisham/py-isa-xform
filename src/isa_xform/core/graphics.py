@@ -5,8 +5,8 @@ import sys
 SCREEN_WIDTH = 320
 SCREEN_HEIGHT = 240
 TILE_SIZE = 16
-ROWS = SCREEN_HEIGHT // TILE_SIZE  # 15
-COLS = SCREEN_WIDTH // TILE_SIZE   # 20
+ROWS = SCREEN_HEIGHT // TILE_SIZE
+COLS = SCREEN_WIDTH // TILE_SIZE
 
 TILE_MAP_ADDR = 0xF000
 TILE_DATA_ADDR = 0xF200
@@ -47,11 +47,27 @@ def draw_screen(screen, memory):
                     screen.set_at((col * TILE_SIZE + x, row * TILE_SIZE + y), color)
 
 # ========== Public Function ==========
-def run_graphics(memory):
+def run_graphics(simulator):
+    """
+    Runs the Pygame graphics loop in the main thread.
+    Updates simulator.key_state as {key_code: 1 or 0}.
+    No hardcoded logic in simulator itself.
+    """
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption("ZX16 Graphics Display")
     clock = pygame.time.Clock()
+
+    # Dictionary of keys we want to monitor and their internal codes
+    monitored_keys = {
+        pygame.K_w: 0x77,         # 'w'
+        pygame.K_s: 0x73,         # 's'
+        pygame.K_UP: 0x26,        # up arrow
+        pygame.K_DOWN: 0x28       # down arrow
+    }
+
+    # Initialize simulator key state mapping (code -> pressed)
+    simulator.key_state = {code: 0 for code in monitored_keys.values()}
 
     while True:
         for event in pygame.event.get():
@@ -59,6 +75,12 @@ def run_graphics(memory):
                 pygame.quit()
                 sys.exit()
 
-        draw_screen(screen, memory)
+        keys = pygame.key.get_pressed()
+
+        # Update key_state for each monitored key
+        for pygame_key, internal_code in monitored_keys.items():
+            simulator.key_state[internal_code] = 1 if keys[pygame_key] else 0
+
+        draw_screen(screen, simulator.memory)
         pygame.display.flip()
         clock.tick(30)

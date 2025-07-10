@@ -2,7 +2,6 @@ import sys
 import struct
 import re
 import numpy as np
-import keyboard
 from pynput.keyboard import Key, Listener
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -41,6 +40,8 @@ class Simulator:
         self.sp_index = self.reg_names.index('sp') if 'sp' in self.reg_names else -1
         self.regs[self.sp_index] = self.stack_start  # Initialize stack pointer to stack start address
         self.key = "start"
+        self.key_state = {}
+
 
     def check_key_press(self, target_key: str) -> bool:
         """Checks if a specific key is pressed"""
@@ -215,12 +216,6 @@ class Simulator:
         return result        
     
     
-    def get_key(self, target_key: str) -> int:
-        event = keyboard.read_event()
-        if event.event_type == keyboard.KEY_DOWN:
-            if event.name == target_key:
-                return 1
-        return 0
     
     def map_disassembly_result_to_pc(self, disassembly_result: DisassemblyResult) -> Dict[int, DisassembledInstruction]:
         """Maps disassembled instructions to their program counter (PC) addresses"""
@@ -284,8 +279,8 @@ class Simulator:
                     print("Audio playback stopped")
                 elif name == "read_keyboard":
                     #self.regs[7] = self.get_key(chr(self.regs[6])) # a0 register is the key to read, a1 register will hold the result
-                    self.check_key_press(chr(self.regs[6]))
-                    self.regs[7] = self.key
+                    key_code = self.regs[6]  # Key code requested by user program
+                    self.regs[7] = self.key_state.get(key_code, 0)
                 elif name == "registers_dump":
                     for i, reg in enumerate(self.regs):
                         print(f"{self.reg_names[i]}: {reg}")
