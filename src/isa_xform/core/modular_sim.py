@@ -404,11 +404,18 @@ def run_simulator_with_graphics(simulator, step=False):
             simulator.key_state[internal_code] = 1 if keys[pygame_key] else 0
 
         # Fetch and execute instruction
-        current_instruction = instructions_map.get(simulator.pc)
-        if current_instruction is None:
-            print(f"Skipping instruction at PC: {simulator.pc} (NoneType)")
-            simulator.pc += simulator.pc_step
-            continue
+        if simulator.pc not in instructions_map:
+            if simulator.pc >= len(simulator.memory):
+                print(f"PC {simulator.pc:04X} out of memory bounds (max: {len(simulator.memory) - 1:04X})")
+                simulator.running = False
+                break
+            else:
+                print(f"Skipping instruction at PC: {simulator.pc:04X} (no instruction found)")
+                simulator.pc += simulator.pc_step
+                continue
+
+        current_instruction = instructions_map[simulator.pc]
+
 
         print(f"PC: {simulator.pc:04X} - {current_instruction.mnemonic} {', '.join(current_instruction.operands)}")
         temp_pc = simulator.pc

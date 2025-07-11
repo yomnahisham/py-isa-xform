@@ -20,82 +20,89 @@ main:
     003C: SB x6, 0(x0)
     003E: LI x6, 63
     0040: INC x6, 56 ; pseudo: INC
-    0042: LI x7, 0
 loop:
-    0044: BNZ x7, 6
-    0046: ECALL 7
-    0048: JMP 0x7FFFFFFE0 ; pseudo: JMP
+    0042: ECALL 7
+    0044: BZ x7, 0xFFFFFFFE
 start:
-    004A: ECALL 10
-updateBallTile:
-    004C: LI16 x0, 241 ; pseudo: LI16
-    004E: SLLI x0, 1
-    0050: INC x0, 51 ; pseudo: INC
-    0052: LB x4, 0(x0)
-    0054: INC x0, 0xFFFFFFFF ; pseudo: INC
-    0056: LB x3, 0(x0)
-    0058: LI16 x0, 240 ; pseudo: LI16
-    005A: SLLI x0, 1
+    0046: LI x6, 0
+    0048: LI16 x0, 241 ; pseudo: LI16
+    004A: SLLI x0, 1
+    004C: INC x0, 51 ; pseudo: INC
+    004E: LB x4, 0(x0)
+    0050: INC x0, 0xFFFFFFFF ; pseudo: INC
+    0052: LB x3, 0(x0)
+    0054: LI16 x0, 240 ; pseudo: LI16
+    0056: SLLI x0, 1
+    0058: SLLI x3, 2
+    005A: ADD x0, x3
     005C: SLLI x3, 2
     005E: ADD x0, x3
-    0060: SLLI x3, 2
-    0062: ADD x0, x3
-    0064: ADD x0, x4
-    0066: SB x6, 0(x0)
-    0068: RET x1 ; pseudo: RET
-moveball:
-    006A: LI x6, 0
-    006C: CALL x1, 0x7FFFFFF00 ; pseudo: CALL
-    006E: LI16 x0, 241 ; pseudo: LI16
-    0070: SLLI x0, 1
-    0072: LB x3, 0(x0)
-    0074: BNZ x3, 0xFFFFFFF8
-    0076: INC x0, 1 ; pseudo: INC
-    0078: INC x5, 0 ; pseudo: INC
-    007A: JMP 0x7FFFFFF70 ; pseudo: JMP
+    0060: ADD x0, x4
+    0062: SB x6, 0(x0)
+    0064: LI16 x0, 241 ; pseudo: LI16
+    0066: SLLI x0, 1
+    0068: LB x3, 0(x0)
+    006A: BNZ x3, 0xFFFFFFF8
+    006C: LI x0, 1
+    006E: LI x5, 0
+    0070: JMP 0x7FFFFFF70 ; pseudo: JMP
 path1:
-    007C: LI x0, 1
-    007E: BNE x3, x0, 0xFFFFFFF8
-    0080: INC x0, 0xFFFFFFFF ; pseudo: INC
-    0082: INC x5, 0 ; pseudo: INC
-    0084: JMP 0x7FFFFFF20 ; pseudo: JMP
+    0072: LI x0, 1
+    0074: BNE x3, x0, 0xFFFFFFF8
+    0076: LI x0, 0xFFFFFFFF
+    0078: LI x5, 0
+    007A: JMP 0x7FFFFFF20 ; pseudo: JMP
 path2:
-    0086: LI x0, 2
-    0088: BNE x3, x0, 0xFFFFFFF8
-    008A: INC x0, 1 ; pseudo: INC
-    008C: INC x5, 0xFFFFFFFF ; pseudo: INC
-    008E: JMP 0xD0 ; pseudo: JMP
+    007C: LI x0, 2
+    007E: BNE x3, x0, 0xFFFFFFF8
+    0080: LI x0, 1
+    0082: LI x5, 0xFFFFFFFF
+    0084: JMP 0xD0 ; pseudo: JMP
 path3:
-    0090: LI x0, 3
-    0092: BNE x3, x0, 0xFFFFFFF8
-    0094: INC x0, 0xFFFFFFFF ; pseudo: INC
-    0096: INC x5, 0xFFFFFFFF ; pseudo: INC
-    0098: JMP 0x80 ; pseudo: JMP
+    0086: LI x0, 3
+    0088: BNE x3, x0, 0xFFFFFFF8
+    008A: LI x0, 0xFFFFFFFF
+    008C: LI x5, 0xFFFFFFFF
+    008E: JMP 0x80 ; pseudo: JMP
 path4:
-    009A: LI x0, 4
-    009C: BNE x3, x0, 0xFFFFFFF8
-    009E: INC x0, 1 ; pseudo: INC
-    00A0: INC x5, 1 ; pseudo: INC
-    00A2: JMP 0x30 ; pseudo: JMP
+    0090: LI x0, 4
+    0092: BNE x3, x0, 0xFFFFFFF8
+    0094: LI x0, 1
+    0096: LI x5, 1
+    0098: JMP 0x30 ; pseudo: JMP
 path5:
-    00A4: INC x0, 0xFFFFFFFF ; pseudo: INC
-    00A6: INC x5, 1 ; pseudo: INC
+    009A: LI x0, 0xFFFFFFFF
+    009C: LI x5, 1
 update_coo:
-    00A8: LI16 x3, 241 ; pseudo: LI16
-    00AA: SLLI x3, 1
-    00AC: INC x3, 51 ; pseudo: INC
-    00AE: LB x4, 0(x3)
-    00B0: ADD x4, x5
-    00B2: SB x4, 0(x3)
-    00B4: MV x5, x3
-    00B6: MV x3, x4
-    00B8: INC x5, 0xFFFFFFFF ; pseudo: INC
-    00BA: LB x4, 0(x5)
-    00BC: NOP x4, x0 ; pseudo: NOP
-    00BE: SB x4, 0(x5)
-    00C0: LI x6, 1
-    00C2: CALL x1, 0x50 ; pseudo: CALL
-    00C4: RET x1 ; pseudo: RET
+    009E: ECALL 10
+    00A0: LI16 x3, 241 ; pseudo: LI16
+    00A2: SLLI x3, 1
+    00A4: INC x3, 51 ; pseudo: INC
+    00A6: LB x4, 0(x3)
+    00A8: ADD x4, x5
+    00AA: SB x4, 0(x3)
+    00AC: MV x5, x3
+    00AE: MV x3, x4
+    00B0: INC x5, 0xFFFFFFFF ; pseudo: INC
+    00B2: LB x4, 0(x5)
+    00B4: NOP x4, x0 ; pseudo: NOP
+    00B6: SB x4, 0(x5)
+    00B8: LI x6, 1
+    00BA: LI16 x0, 241 ; pseudo: LI16
+    00BC: SLLI x0, 1
+    00BE: INC x0, 51 ; pseudo: INC
+    00C0: LB x4, 0(x0)
+    00C2: INC x0, 0xFFFFFFFF ; pseudo: INC
+    00C4: LB x3, 0(x0)
+    00C6: LI16 x0, 240 ; pseudo: LI16
+    00C8: SLLI x0, 1
+    00CA: SLLI x3, 2
+    00CC: ADD x0, x3
+    00CE: SLLI x3, 2
+    00D0: ADD x0, x3
+    00D2: ADD x0, x4
+    00D4: SB x6, 0(x0)
+    00D6: ECALL 10
 
 ; Data sections:
     ; Data section at 0xF000

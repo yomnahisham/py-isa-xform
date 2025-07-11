@@ -68,6 +68,7 @@ main:
 
     li a0, 1        #put ball tile
     #call updateBallTile 
+
     #load y and x into s0, s1
         lui t0, 0xF1        #y -> 0xF133
         slli t0, 1
@@ -87,44 +88,35 @@ main:
         add t0, s1    # t0 += x
         sb a0, 0(t0)
 
-        #check for w press
-        li a0, 63
-        addi a0, 56
-        li a1, 0
+    #check for w press
+    li a0, 63
+    addi a0, 56
 
 loop:
-        bnz a1, start
-        ecall 7
-        j loop
+    ecall 7
+    bz a1, loop
 start:
-    ecall 10
-
-
-updateBallTile:
-    #load y and x into s0, s1
-    lui t0, 0xF1        #y -> 0xF133
-    slli t0, 1
-    addi t0, 0x33
-    lb s1, 0(t0)
-
-    addi t0, -1         #x -> 0xF132
-    lb s0, 0(t0)
-
-    lui t0, 0xF0
-    slli t0, 1    #t0 = 0xF000
-    
-    slli s0, 2    # y*4
-    add t0, s0    # t0 += y*4
-    slli s0, 2    # y*16
-    add t0, s0    # t0 += y*16
-    add t0, s1    # t0 += x
-    sb a0, 0(t0)
-    ret
-
-
-moveball:
+    #call moveball
         li a0, 0        #remove ball tile
-        call updateBallTile
+        #call updateBallTile
+            #load y and x into s0, s1
+            lui t0, 0xF1        #y -> 0xF133
+            slli t0, 1
+            addi t0, 0x33
+            lb s1, 0(t0)
+
+            addi t0, -1         #x -> 0xF132
+            lb s0, 0(t0)
+
+            lui t0, 0xF0
+            slli t0, 1    #t0 = 0xF000
+        
+            slli s0, 2    # y*4
+            add t0, s0    # t0 += y*4
+            slli s0, 2    # y*16
+            add t0, s0    # t0 += y*16
+            add t0, s1    # t0 += x
+            sb a0, 0(t0)
 
         lui t0, 0xF1
         slli t0, 1
@@ -134,57 +126,62 @@ moveball:
     #path 0 -> right
         bnz s0, path1
 
-        addi t0, 1
-        addi t1, 0
+        li t0, 1
+        li t1, 0
 
-        j update_coo
+        bnz t0, jumpl
 
     #path 1 -> left
     path1:
         li t0, 1
         bne s0, t0, path2
 
-        addi t0, -1
-        addi t1, 0
+        li t0, -1
+        li t1, 0
 
-        j update_coo
+        bnz t0, jumpl
 
     #path 2 -> right down
     path2:
         li t0, 2
         bne s0, t0, path3
 
-        addi t0, 1
-        addi t1, -1
-
-        j update_coo
+        li t0, 1
+        li t1, -1
+    jumpl:
+        bnz t0, jumpl2
 
     #path 3 -> left down
     path3:
         li t0, 3
         bne s0, t0, path4
 
-        addi t0, -1
-        addi t1, -1
-
-        j update_coo
+        li t0, -1
+        li t1, -1
+        
+jumpl2:
+        bnz t0, update_coo
 
     #path 4 -> right up
     path4:
         li t0, 4
         bne s0, t0, path5
 
-        addi t0, 1
-        addi t1, 1
+        li t0, 1
+        li t1, 1
 
-        j update_coo
+        bnz t0, update_coo
 
     #path 5 -> left up
     path5:
-        addi t0, -1
-        addi t1, 1
+        li t0, -1
+        li t1, 1
 
     update_coo:
+
+    ecall 10
+
+
         lui s0, 0xF1        #y -> 0xF133
         slli s0, 1
         addi s0, 0x33
@@ -200,6 +197,26 @@ moveball:
         sb s1, 0(t1)    #save new x coordinates in s1
 
         li a0, 1        #put ball tile
-        call updateBallTile
-    ret
+        #call updateBallTile
+            #load y and x into s0, s1
+            lui t0, 0xF1        #y -> 0xF133
+            slli t0, 1
+            addi t0, 0x33
+            lb s1, 0(t0)
+
+            addi t0, -1         #x -> 0xF132
+            lb s0, 0(t0)
+
+            lui t0, 0xF0
+            slli t0, 1    #t0 = 0xF000
+        
+            slli s0, 2    # y*4
+            add t0, s0    # t0 += y*4
+            slli s0, 2    # y*16
+            add t0, s0    # t0 += y*16
+            add t0, s1    # t0 += x
+            sb a0, 0(t0)
+
+    ecall 10
+
 
