@@ -482,7 +482,7 @@ class Assembler:
                 # Treat as literal immediate value
                 value = self._resolve_immediate_operand(operand)
 
-            # Handle multi-field immediates
+            # Handle multi-field immediates using ISA-driven logic
             if field and "bits" in field and instruction and hasattr(instruction, "encoding"):
                 encoding_fields = instruction.encoding.get("fields", [])
                 immediate_fields = [f for f in encoding_fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
@@ -492,47 +492,12 @@ class Assembler:
                 if len(immediate_fields) > 1:
                     print(f"[DEBUG] Multi-field immediate detected for {instruction.mnemonic}, field={field_name}, value={value}")
                     print(f"[DEBUG] Immediate fields: {[f['name'] for f in immediate_fields]}")
-                    # For instructions with split immediates (like J, JAL, LUI, AUIPC)
-                    # We need to extract the correct bits based on the field's actual bit position
-                    if field_name in ["imm", "imm2"]:
-                        # Get the bit range for this specific field
-                        field_bits = field.get("bits", "")
-                        if ":" in field_bits:
-                            high, low = [int(x) for x in field_bits.split(":")]
-                            width = high - low + 1
-                            # For other instructions, extract the bits from the user's immediate value
-                            extracted_value = (value >> low) & ((1 << width) - 1)
-                            return extracted_value
-                        else:
-                            high = low = int(field_bits)
-                            width = 1
-                            extracted_value = (value >> low) & 1
-                            return extracted_value
-                    else:
-                        # For other field names, use the original logic
-                        # Sort fields by order in encoding
-                        field_widths = []
-                        for f in immediate_fields:
-                            bits = f.get("bits", "")
-                            if ":" in bits:
-                                high, low = [int(x) for x in bits.split(":")]
-                            else:
-                                high = low = int(bits)
-                            width = high - low + 1
-                            field_widths.append((f["name"], width))
-                        # Use order in encoding
-                        field_widths = [(f["name"], width) for f, width in zip(immediate_fields, [w for _, w in field_widths])]
-                        # Compute bit offsets for each field (lowest bits to first field, next bits to next, etc.)
-                        bit_offsets = []
-                        offset = 0
-                        for fname, width in field_widths:
-                            bit_offsets.append((fname, offset, width))
-                            offset += width
-                        # For this field, extract the correct bits from the user immediate
-                        for fname, bit_offset, width in bit_offsets:
-                            if fname == field_name:
-                                extracted_value = (value >> bit_offset) & ((1 << width) - 1)
-                                return extracted_value
+                    
+                    # Use ISA-driven multi-field immediate encoding based on instruction implementation
+                    # This is fully modular - the ISA definition tells us how to split the immediate
+                    field_value = self._split_multi_field_immediate(instruction, field_name, value, immediate_fields)
+                    if field_value is not None:
+                        return field_value
 
             # Validate immediate fits in bit width (for single-field immediates)
             if signed:
@@ -544,13 +509,59 @@ class Assembler:
                 if value < 0 or value >= (1 << bit_width):
                     raise AssemblerError(f"Immediate value {value} doesn't fit in {bit_width}-bit unsigned field")
             return value & create_mask(bit_width)  # Ensure proper bit width
-        elif field_type == "address":
+
+        if field_type == "address":
             # For address fields, use absolute address
             return self._resolve_address_operand(operand)
         else:
             # Default to immediate value
             return self._resolve_immediate_operand(operand)
     
+    def _split_multi_field_immediate(self, instruction: Instruction, field_name: str, value: int, immediate_fields: List[Dict[str, Any]]) -> Optional[int]:
+        """Split multi-field immediate using ISA-driven logic based on instruction implementation"""
+        # Get the instruction's implementation to understand how to split the immediate
+        implementation = getattr(instruction, 'implementation', '')
+        
+        # For ZX16 LUI/AUIPC: imm = (imm1 << 3) | imm2
+        if instruction.mnemonic in ['LUI', 'AUIPC'] and 'imm1' in implementation and 'imm2' in implementation:
+            # Extract field widths
+            imm1_field = next((f for f in immediate_fields if f['name'] == 'imm'), None)
+            imm2_field = next((f for f in immediate_fields if f['name'] == 'imm2'), None)
+            
+            if imm1_field and imm2_field:
+                imm1_width = self._get_bit_width(imm1_field['bits'])
+                imm2_width = self._get_bit_width(imm2_field['bits'])
+                
+                if field_name == 'imm':  # This is imm1 (upper bits)
+                    # Extract upper bits: value >> imm2_width
+                    return (value >> imm2_width) & ((1 << imm1_width) - 1)
+                elif field_name == 'imm2':  # This is imm2 (lower bits)
+                    # Extract lower bits: value & ((1 << imm2_width) - 1)
+                    return value & ((1 << imm2_width) - 1)
+        
+        # For other instructions, use a generic approach based on field order
+        # Sort fields by their bit position in the instruction
+        field_specs = []
+        for f in immediate_fields:
+            bits = f.get("bits", "")
+            if ":" in bits:
+                high, low = [int(x) for x in bits.split(":")]
+            else:
+                high = low = int(bits)
+            field_specs.append((f["name"], low, high - low + 1))
+        
+        # Sort by bit position (LSB first)
+        field_specs.sort(key=lambda x: x[1])
+        
+        # Extract bits based on field position in the logical immediate
+        bit_offset = 0
+        for name, _, width in field_specs:
+            if name == field_name:
+                return (value >> bit_offset) & ((1 << width) - 1)
+            bit_offset += width
+        
+        return None
+
     def _resolve_register_operand(self, operand: OperandNode) -> int:
         """Resolve register operand to register number using ISA JSON configuration"""
         reg_val = operand.value

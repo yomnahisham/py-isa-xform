@@ -175,6 +175,11 @@ class Disassembler:
             if not hasattr(pseudo, 'expansion') or not pseudo.expansion:
                 continue
             
+            # Skip multi-instruction pseudo-instructions - they're handled separately
+            disassembly_config = getattr(pseudo, 'disassembly', {})
+            if disassembly_config.get('reconstruction_type') == 'multi_instruction':
+                continue
+            
             # Parse the expansion to understand the pattern
             expansion_lines = pseudo.expansion.strip().split('\n')
             if not expansion_lines:
@@ -1346,6 +1351,24 @@ class Disassembler:
         
         mnemonic = instr.instruction.mnemonic.upper()
         
+        # First, check if this instruction could be part of a multi-instruction pseudo-instruction
+        # by looking at the ISA definition's pseudo-instructions
+        for pseudo in getattr(self.isa_definition, 'pseudo_instructions', []):
+            disassembly_config = getattr(pseudo, 'disassembly', {})
+            if disassembly_config.get('reconstruction_type') == 'multi_instruction':
+                instruction_list = disassembly_config.get('instructions', [])
+                if mnemonic == instruction_list[0].upper() and len(instruction_list) > 1:
+                    # This could be the first instruction of a multi-instruction pseudo
+                    # Check if the next instruction matches the second instruction in the sequence
+                    if index + 1 < len(instructions):
+                        next_instr = instructions[index + 1]
+                        if (next_instr.instruction and 
+                            next_instr.instruction.mnemonic.upper() == instruction_list[1].upper()):
+                            # Check if they use the same register (for LI16, LA, etc.)
+                            if self._check_multi_instruction_pseudo(instr, next_instr, pseudo):
+                                return pseudo.mnemonic
+        
+        # Fallback to simple pattern matching for single-instruction pseudo-instructions
         if mnemonic not in self.pseudo_patterns:
             return None
         
@@ -1357,6 +1380,32 @@ class Disassembler:
                 return pattern['pseudo_mnemonic']
         
         return None
+    
+    def _check_multi_instruction_pseudo(self, first_instr: DisassembledInstruction, second_instr: DisassembledInstruction, pseudo: Any) -> bool:
+        """Check if two consecutive instructions form a multi-instruction pseudo-instruction"""
+        # Extract field values from both instructions
+        first_fields = self._extract_field_values(first_instr)
+        second_fields = self._extract_field_values(second_instr)
+        
+        # For LI16, check if both instructions use the same register
+        # LI16 expansion: LUI rd, imm[15:9]; ORI rd, imm[8:0]
+        if pseudo.mnemonic == 'LI16':
+            # Check if both instructions target the same register
+            first_rd = first_fields.get('rd', -1)
+            second_rd = second_fields.get('rd', -1)
+            return first_rd == second_rd
+        
+        # For LA, check if both instructions use the same register
+        # LA expansion: AUIPC rd, label[15:7]; ADDI rd, label[6:0]
+        elif pseudo.mnemonic == 'LA':
+            # Check if both instructions target the same register
+            first_rd = first_fields.get('rd', -1)
+            second_rd = second_fields.get('rd', -1)
+            return first_rd == second_rd
+        
+        # Default: assume they form a pseudo-instruction if they're consecutive
+        # and match the instruction sequence
+        return True
     
     def _extract_field_values(self, instr: DisassembledInstruction) -> Dict[str, int]:
         """Extract field values from a disassembled instruction"""
@@ -1545,7 +1594,55 @@ class Disassembler:
         encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
         immediate_fields = [f for f in encoding_fields if f.get('type') == 'immediate' and f.get('name') != 'opcode']
         if len(immediate_fields) > 1:
-            # 1. Compute total width and sign bit
+            # Use ISA-specific implementation logic by parsing the implementation field
+            implementation = getattr(instruction, 'implementation', '')
+            
+            # Parse the implementation to find immediate reconstruction logic
+            # Look for patterns like "imm = (imm1 << 3) | imm2" or similar
+            import re
+            
+            # First, try to find variable assignments to understand the mapping
+            # Look for patterns like "imm1 = operands['imm']" or "imm1 = operands['imm']"
+            var_mapping = {}
+            var_pattern = r'(\w+)\s*=\s*operands\[[\'"]([^\'"]+)[\'"]\]'
+            for match in re.finditer(var_pattern, implementation):
+                var_name = match.group(1)
+                field_name = match.group(2)
+                var_mapping[var_name] = field_name
+            
+            # Common patterns for multi-field immediate reconstruction
+            patterns = [
+                # Pattern: imm = (imm1 << N) | imm2
+                r'imm\s*=\s*\((\w+)\s*<<\s*(\d+)\)\s*\|\s*(\w+)',
+                # Pattern: imm = imm1 << N | imm2
+                r'imm\s*=\s*(\w+)\s*<<\s*(\d+)\s*\|\s*(\w+)',
+                # Pattern: result = (imm1 << N) | imm2
+                r'result\s*=\s*\((\w+)\s*<<\s*(\d+)\)\s*\|\s*(\w+)',
+                # Pattern: result = imm1 << N | imm2
+                r'result\s*=\s*(\w+)\s*<<\s*(\d+)\s*\|\s*(\w+)',
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, implementation)
+                if match:
+                    var1_name = match.group(1)
+                    shift_amount = int(match.group(2))
+                    var2_name = match.group(3)
+                    
+                    # Map variable names to actual field names
+                    field1_name = var_mapping.get(var1_name, var1_name)
+                    field2_name = var_mapping.get(var2_name, var2_name)
+                    
+                    # Get the field values
+                    field1_val = field_values.get(field1_name, 0)
+                    field2_val = field_values.get(field2_name, 0)
+                    
+                    # Reconstruct using the ISA's logic: (field1 << shift) | field2
+                    combined = (field1_val << shift_amount) | field2_val
+                    return combined
+            
+            # If no pattern matches, fall back to generic field reconstruction
+            # Sort fields by their bit position in the instruction
             field_specs = []
             for f in immediate_fields:
                 bits = f.get("bits", "")
@@ -1555,22 +1652,27 @@ class Disassembler:
                     high = low = int(bits)
                 width = high - low + 1
                 field_specs.append((f["name"], low, width))
+            
             # Sort by low bit (LSB first)
             field_specs.sort(key=lambda x: x[1])
             total_width = sum(w for _, _, w in field_specs)
             sign_bit = 1 << (total_width - 1)
             mask = (1 << total_width) - 1
-            # 2. Combine fields into a single value
+            
+            # Combine fields into a single value
             combined = 0
             for name, low, width in field_specs:
                 val = field_values.get(name, 0) & ((1 << width) - 1)
                 combined |= val << (low - field_specs[0][1])
-            # 3. Sign-extend if needed
+            
+            # Sign-extend if needed
             if combined & sign_bit:
                 combined = combined - (1 << total_width)
             return combined
+        
         # If single-field immediate, return the value directly
         elif len(immediate_fields) == 1:
             return field_values.get(immediate_fields[0]['name'], 0)
+        
         # If no immediate fields, return 0
-        return 0 
+        return 0
