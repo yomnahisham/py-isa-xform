@@ -232,7 +232,14 @@ class Simulator:
                 exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'np': np})
                 return True
         return True
-        
+    
+    def read_memory_byte(self, addr: int) -> int:
+        if 0 <= addr < len(self.memory):
+            return self.memory[addr]
+        else:
+            print(f"Warning: Attempted to read from invalid memory address 0x{addr:04X}")
+            return 0
+
     def dump_memory(self, start: int, end: int):
         for addr in range(start, end + 1):
             print(f"0x{addr:04X}: {self.read_memory_byte(addr):02X}")
@@ -360,7 +367,7 @@ def run_simulator_with_graphics(simulator, step=False):
         clock.tick(30)
 
     print("Simulation completed")
-    #simulator.dump_memory(0xF0A0, 0xF0AF)
+    simulator.dump_memory(0xF0A0, 0xF0AF)
 
 
 

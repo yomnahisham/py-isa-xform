@@ -96,6 +96,8 @@ loop:
     ecall 7
     bz a1, loop
 start:
+    ecall 10
+
     #call moveball
         li a0, 0        #remove ball tile
         #call updateBallTile
@@ -179,7 +181,6 @@ jumpl2:
 
     update_coo:
 
-    ecall 10
 
 
         lui s0, 0xF1        #y -> 0xF133
