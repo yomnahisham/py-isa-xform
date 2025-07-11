@@ -680,7 +680,7 @@
         "format": "S-type",
         "description": "Store word",
         "syntax": "SW rs2, offset(rs1)",
-        "semantics": "memory[rs1 + sign_extend(offset)] = rs2",
+        "semantics": "memory[rs1 + sign_extend(offset)] = rs2 & 0xFF; memory[rs1 + sign_extend(offset) + 1] = (rs2 >> 8) & 0xFF",
         "implementation": "# Store word implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) \n# Store 16-bit word (little endian)\nif addr + 1 < len(memory):\n    memory[addr] = rs2_val & 0xFF\n    memory[addr + 1] = (rs2_val >> 8) & 0xFF",
         "encoding": {
           "fields": [
@@ -714,7 +714,7 @@
         "format": "L-type",
         "description": "Load word",
         "syntax": "LW rd, offset(rs2)",
-        "semantics": "rd = memory[rs2 + sign_extend(offset)]",
+        "semantics": "rd = memory[rs2 + sign_extend(offset) + 1] | memory[rs2 + sign_extend(offset)] << 8",
         "implementation": "# Load word implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) \n# Load 16-bit word (little endian)\nif addr + 1 < len(memory):\n    result = memory[addr] | (memory[addr + 1] << 8)\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [

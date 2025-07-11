@@ -30,7 +30,7 @@ class Simulator:
         self.isa_definition = isa_definition
         self.symbol_table = symbol_table if symbol_table else SymbolTable()
         self.disassembler = disassembler if disassembler else Disassembler(isa_definition, self.symbol_table)
-        self.memory = bytearray(300)  # 64KB memory
+        self.memory = bytearray(65536)  # 64KB memory
         self.pc = isa_definition.address_space.default_code_start
         self.data_start = isa_definition.address_space.default_data_start
         self.stack_start = isa_definition.address_space.default_stack_start
@@ -284,9 +284,14 @@ class Simulator:
                         print(' '.join(f"{name}: {value}" for name, value in zip(self.reg_names, values)))
                         loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
                     else:
+                        values = [reg for reg in self.regs]
+                        print(' '.join(f"{name}: {value}" for name, value in zip(self.reg_names, values)))
                         if self.pc >= len(disassembly_result.instructions):
                             print("Reached end of disassembled instructions")
                             break
+                    for i in range(0, 65536, 2):
+                        if self.memory[i] | (self.memory[i+1] << 8) != 0:
+                            print(f"Memory[{i:04X}]: {self.memory[i] | (self.memory[i+1] << 8) if i+1 < len(self.memory) else 0}")
                 
             else:
                 print("Execution terminated by instruction")
