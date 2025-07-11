@@ -413,6 +413,7 @@ def run_simulator_with_graphics(simulator, step=False):
             else:
                 print(f"Skipping instruction at PC: {simulator.pc:04X} (no instruction found)")
                 simulator.pc += simulator.pc_step
+                break
                 continue
 
         current_instruction = instructions_map[simulator.pc]
