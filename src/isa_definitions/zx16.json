@@ -519,7 +519,7 @@
         "format": "B-type",
         "description": "Branch if equal",
         "syntax": "BEQ rs1, rs2, offset",
-        "semantics": "if rs1 == rs2: PC = PC + offset",
+        "semantics": "if rs1 == rs2: PC = offset",
         "implementation": "# Branch if equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val == rs2_val:\n    context.pc = (context.pc + offset) ",
         "encoding": {
           "fields": [
@@ -537,7 +537,7 @@
         "format": "B-type",
         "description": "Branch if not equal",
         "syntax": "BNE rs1, rs2, offset",
-        "semantics": "if rs1 != rs2: PC = PC + offset",
+        "semantics": "if rs1 != rs2: PC = offset",
         "implementation": "# Branch if not equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val != rs2_val:\n    context.pc = (context.pc + offset) ",
         "encoding": {
           "fields": [
@@ -555,7 +555,7 @@
         "format": "B-type",
         "description": "Branch if zero",
         "syntax": "BZ rs1, offset",
-        "semantics": "if rs1 == 0: PC = PC + offset",
+        "semantics": "if rs1 == 0: PC = offset",
         "implementation": "# Branch if zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val == 0:\n    context.pc = (context.pc + offset) ",
         "encoding": {
           "fields": [
@@ -573,7 +573,7 @@
         "format": "B-type",
         "description": "Branch if not zero",
         "syntax": "BNZ rs1, offset",
-        "semantics": "if rs1 != 0: PC = PC + offset",
+        "semantics": "if rs1 != 0: PC = offset",
         "implementation": "# Branch if not zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val != 0:\n    context.pc = (context.pc + offset) ",
         "encoding": {
           "fields": [
@@ -591,7 +591,7 @@
         "format": "B-type",
         "description": "Branch if less than (signed)",
         "syntax": "BLT rs1, rs2, offset",
-        "semantics": "if rs1 < rs2: PC = PC + offset",
+        "semantics": "if rs1 < rs2: PC = offset",
         "implementation": "# Branch if less than (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed < rs2_signed:\n    context.pc = (context.pc + offset) ",
         "encoding": {
           "fields": [
@@ -609,7 +609,7 @@
         "format": "B-type",
         "description": "Branch if greater or equal (signed)",
         "syntax": "BGE rs1, rs2, offset",
-        "semantics": "if rs1 >= rs2: PC = PC + offset",
+        "semantics": "if rs1 >= rs2: PC = offset",
         "implementation": "# Branch if greater or equal (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed >= rs2_signed:\n    context.pc = (context.pc + offset) ",
         "encoding": {
           "fields": [
@@ -627,7 +627,7 @@
         "format": "B-type",
         "description": "Branch if less than (unsigned)",
         "syntax": "BLTU rs1, rs2, offset",
-        "semantics": "if unsigned(rs1) < unsigned(rs2) : PC = PC + offset",
+        "semantics": "if unsigned(rs1) < unsigned(rs2) : PC = offset",
         "implementation": "# Branch if less than (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val < rs2_val:\n    context.pc = (context.pc + offset) ",
         "encoding": {
           "fields": [
@@ -645,7 +645,7 @@
         "format": "B-type",
         "description": "Branch if greater or equal (unsigned)",
         "syntax": "BGEU rs1, rs2, offset",
-        "semantics": "if unsigned(rs1) >= unsigned(rs2): PC = PC + offset",
+        "semantics": "if unsigned(rs1) >= unsigned(rs2): PC = offset",
         "implementation": "# Branch if greater or equal (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val >= rs2_val:\n    context.pc = (context.pc + offset) ",
         "encoding": {
           "fields": [
@@ -663,7 +663,7 @@
         "format": "S-type",
         "description": "Store byte",
         "syntax": "SB rs2, offset(rs1)",
-        "semantics": "memory[rs1 + sign_extend(offset)] = rs2[7:0]",
+        "semantics": "memory[rs1 + sign_extend(offset)] = rs2",
         "implementation": "# Store byte implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) \n# Store low byte\nif addr < len(memory):\n    memory[addr] = rs2_val & 0xFF",
         "encoding": {
           "fields": [
