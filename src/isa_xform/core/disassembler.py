@@ -97,10 +97,10 @@ class Disassembler:
                 
                 # Categorize control flow instructions
                 mnemonic = instruction.mnemonic.upper()
-                if any(keyword in mnemonic for keyword in ['JMP', 'CALL', 'JAL', 'J']):
+                if self._is_jump_instruction(mnemonic):
                     self.jump_instructions.add(mnemonic)
                     self.control_flow_instructions.add(mnemonic)
-                elif any(keyword in mnemonic for keyword in ['BEQ', 'BNE', 'BLT', 'BGE', 'BLTU', 'BGEU', 'BZ', 'BNZ']):
+                elif self._is_control_flow_instruction(mnemonic):
                     self.branch_instructions.add(mnemonic)
                     self.control_flow_instructions.add(mnemonic)
                     self.relative_branch_instructions.add(mnemonic)
@@ -220,7 +220,7 @@ class Disassembler:
         for instr in instructions:
             if instr.instruction:
                 mnemonic = instr.instruction.mnemonic.upper()
-                if any(keyword in mnemonic for keyword in ['JMP', 'CALL', 'BEQ', 'BNE', 'JZ', 'JNZ', 'JAL', 'J']):
+                if self._is_control_flow_instruction(mnemonic):
                     # Extract target address from operands
                     for operand in instr.operands:
                         if operand.startswith('0x'):
@@ -1077,22 +1077,22 @@ class Disassembler:
                 line_parts.append(f"[{machine_code_str}]")
             
             # Check if this address has a symbol or label
+            label_output = False
             if instr.address in result.symbols:
                 lines.append(f"{result.symbols[instr.address]}:")
+                label_output = True
             elif result.label_map and instr.address in result.label_map:
                 lines.append(f"{result.label_map[instr.address]}:")
-            
+                label_output = True
             # Format instruction
             instr_str = instr.mnemonic
             if instr.operands:
                 instr_str += f" {', '.join(instr.operands)}"
-            
             line_parts.append(instr_str)
-            
             # Add comment if available
             if instr.comment:
                 line_parts.append(f"; {instr.comment}")
-            
+            # Always output the instruction line, even if a label was output above
             lines.append("    " + " ".join(line_parts))
         
         # Add data sections with enhanced formatting
@@ -1158,6 +1158,7 @@ class Disassembler:
             return instructions
         
         reconstructed = []
+        pseudo_jump_targets = set()
         i = 0
         while i < len(instructions):
             instr = instructions[i]
@@ -1226,15 +1227,33 @@ class Disassembler:
                 i += 2  # Skip the next instruction
                 continue
             elif pseudo_mnemonic:
-                # For pseudo-instructions, determine if we should show operands
-                # Some pseudo-instructions like CLR, RET, NOP should not show raw operands
-                should_show_operands = pseudo_mnemonic not in ['CLR', 'RET', 'NOP', 'INC', 'DEC', 'NOT', 'NEG']
-                
-                if should_show_operands:
-                    operands = instr.operands
-                else:
-                    operands = []
-                
+                # Get pseudo-instruction metadata from ISA definition
+                pseudo_obj = None
+                print(f"[DEBUG] Looking for pseudo-instruction: {pseudo_mnemonic}")
+                print(f"[DEBUG] Available pseudo-instructions: {[getattr(p, 'mnemonic', '') for p in getattr(self.isa_definition, 'pseudo_instructions', [])]}")
+                for pseudo in getattr(self.isa_definition, 'pseudo_instructions', []):
+                    if getattr(pseudo, 'mnemonic', '').upper() == pseudo_mnemonic.upper():
+                        pseudo_obj = pseudo
+                        print(f"[DEBUG] Found pseudo_obj: {pseudo_obj}")
+                        break
+                if not pseudo_obj:
+                    print(f"[DEBUG] No pseudo_obj found for {pseudo_mnemonic}")
+                # Determine operands based on JSON metadata
+                operands = self._get_pseudo_operands_for_disassembly(pseudo_mnemonic, pseudo_obj, instr)
+                # If this is a jump/call pseudo-instruction, record the computed target address
+                if pseudo_obj is not None:
+                    disassembly_config = getattr(pseudo_obj, 'disassembly', {})
+                    reconstruction_type = disassembly_config.get('reconstruction_type', '')
+                    if reconstruction_type in ('jump', 'jump_with_return') and operands:
+                        # The first operand is the resolved label or address
+                        op = operands[0]
+                        # If it's a hex address, convert to int
+                        if isinstance(op, str) and op.startswith('0x'):
+                            try:
+                                pseudo_jump_targets.add(int(op, 16))
+                            except Exception:
+                                pass
+                        # If it's a label, we will resolve it later
                 reconstructed.append(DisassembledInstruction(
                     address=instr.address,
                     machine_code=instr.machine_code,
@@ -1248,6 +1267,14 @@ class Disassembler:
             else:
                 reconstructed.append(instr)
             i += 1
+        # After reconstructing, update the label map with any jump/call targets that match a label in the symbol table
+        if hasattr(self, 'label_map') and hasattr(self, 'symbol_table') and self.symbol_table:
+            for addr in pseudo_jump_targets:
+                symbol = self.symbol_table.get_symbol_at_address(addr)
+                if symbol and symbol.name:
+                    self.label_map[addr] = symbol.name
+        # Rebuild the label map from the reconstructed instructions to ensure all targets are included
+        self.label_map = self._build_label_map_from_symbols(reconstructed)
         return reconstructed
     
     def _check_pseudo_pattern(self, instr: DisassembledInstruction, instructions: List[DisassembledInstruction], index: int) -> Optional[str]:
@@ -1321,6 +1348,122 @@ class Disassembler:
                 return False
         return True
     
+    def _should_show_pseudo_operands(self, pseudo_mnemonic: str) -> bool:
+        """Check if pseudo-instruction should show operands in disassembly based on ISA metadata"""
+        # Check ISA metadata first
+        for pseudo in getattr(self.isa_definition, 'pseudo_instructions', []):
+            if getattr(pseudo, 'mnemonic', '').upper() == pseudo_mnemonic.upper():
+                disassembly_config = getattr(pseudo, 'disassembly', {})
+                if isinstance(disassembly_config, dict):
+                    return not disassembly_config.get('hide_operands', False)
+        # Fallback to hardcoded list for backward compatibility
+        hardcoded_hide_list = ['CLR', 'RET', 'NOP', 'INC', 'DEC', 'NOT', 'NEG']
+        return pseudo_mnemonic.upper() not in [i.upper() for i in hardcoded_hide_list]
+
+    def _get_pseudo_operands_for_disassembly(self, pseudo_mnemonic: str, pseudo_obj, instr: DisassembledInstruction) -> List[str]:
+        """Get operands for pseudo-instruction disassembly based on JSON metadata"""
+        print(f"[DEBUG] Getting operands for {pseudo_mnemonic}")
+        if not pseudo_obj:
+            # Fallback: check if operands should be hidden
+            should_show_operands = self._should_show_pseudo_operands(pseudo_mnemonic)
+            print(f"[DEBUG] No pseudo_obj, should_show_operands={should_show_operands}")
+            return instr.operands if should_show_operands else []
+        
+        disassembly_config = getattr(pseudo_obj, 'disassembly', {})
+        print(f"[DEBUG] disassembly_config: {disassembly_config}")
+        
+        # Check if operands should be completely hidden
+        if disassembly_config.get('hide_operands', False):
+            print(f"[DEBUG] hide_operands=True, returning []")
+            return []
+        
+        # Check reconstruction type for special handling
+        reconstruction_type = disassembly_config.get('reconstruction_type', '')
+        print(f"[DEBUG] reconstruction_type: {reconstruction_type}")
+        
+        if reconstruction_type == 'jump' or reconstruction_type == 'jump_with_return':
+            # For jump instructions, show the target address
+            # Extract the immediate value and calculate target address
+            field_values = self._extract_field_values(instr)
+            if instr.instruction and hasattr(instr.instruction, 'implementation'):
+                offset = self._reconstruct_immediate_from_implementation(instr.instruction, field_values, instr.address)
+                implementation = getattr(instr.instruction, 'implementation', '')
+                semantics = getattr(instr.instruction, 'semantics', '')
+                impl_no_space = implementation.replace(' ', '').lower()
+                sem_no_space = semantics.replace(' ', '').lower()
+                # Robust ISA-driven check for PC-relative offset
+                if ('context.pc=(context.pc+offset)' in impl_no_space or
+                    'pc=pc+offset' in impl_no_space or
+                    'pc=pc+offset' in sem_no_space):
+                    target_address = (instr.address + offset) & 0xFFFF
+                    print(f"[DEBUG] ISA-driven: PC = PC + offset, target_address=0x{target_address:X}")
+                elif 'pc=pc+2+offset' in impl_no_space or 'pc=pc+2+offset' in sem_no_space:
+                    target_address = (instr.address + 2 + offset) & 0xFFFF
+                    print(f"[DEBUG] ISA-driven: PC = PC + 2 + offset, target_address=0x{target_address:X}")
+                else:
+                    pc_config = getattr(self.isa_definition, 'pc_behavior', {})
+                    pc_offset = pc_config.get('offset_for_jumps', 0)
+                    target_address = (instr.address + pc_offset + offset) & 0xFFFF
+                    print(f"[DEBUG] ISA-driven: fallback, pc_offset={pc_offset}, target_address=0x{target_address:X}")
+            else:
+                # Fallback: try to extract from operands
+                target_address = 0
+                for operand in instr.operands:
+                    if operand.startswith('0x'):
+                        try:
+                            target_address = int(operand, 16)
+                            break
+                        except ValueError:
+                            pass
+            # Always return the hex address for jump/call instructions
+            result = [f"0x{target_address:X}"]
+            print(f"[DEBUG] Returning jump operands: {result}")
+            return result
+        
+        elif reconstruction_type == 'multi_instruction':
+            # For multi-instruction pseudo-instructions, show operands from underlying instruction
+            return instr.operands
+        
+        elif reconstruction_type == 'address_reconstruction':
+            # For address reconstruction (like LA), show the reconstructed address
+            # This is handled in the special LA/LI case above
+            return instr.operands
+        
+        elif reconstruction_type == 'stack_operation':
+            # For stack operations, show the register operand
+            # Extract register from operands
+            for operand in instr.operands:
+                if operand.startswith('x'):
+                    return [operand]
+            return []
+        
+        else:
+            # Default: check show_operands_in_disassembly setting
+            show_ops = disassembly_config.get('show_operands_in_disassembly', [])
+            if show_ops:
+                # Map operand names to values if possible (future-proofing)
+                # For now, return underlying operands
+                return instr.operands
+            else:
+                # Default: no operands
+                return []
+
+    def _is_control_flow_instruction(self, mnemonic: str) -> bool:
+        """Check if instruction is control flow based on ISA metadata"""
+        categories = getattr(self.isa_definition, 'instruction_categories', {})
+        control_flow = categories.get('control_flow', {})
+        
+        for category, instructions in control_flow.items():
+            if mnemonic.upper() in [i.upper() for i in instructions]:
+                return True
+        return False
+
+    def _is_jump_instruction(self, mnemonic: str) -> bool:
+        """Check if instruction is a jump based on ISA metadata"""
+        categories = getattr(self.isa_definition, 'instruction_categories', {})
+        control_flow = categories.get('control_flow', {})
+        return mnemonic.upper() in [i.upper() for i in control_flow.get('jumps', [])]
+
     def _reconstruct_immediate_from_implementation(self, instruction: Instruction, field_values: Dict[str, int], address: int) -> int:
         """Reconstruct the full immediate value from instruction implementation"""
         # Parse the implementation to understand how to combine immediate fields

@@ -18,6 +18,10 @@
         "mmio": {"start": 61440, "end": 65535}
       }
     },
+    "pc_behavior": {
+      "points_to": "next_instruction",
+      "offset_for_jumps": 2
+    },
     "registers": {
       "general_purpose": [
         {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved scratch)"},
@@ -876,79 +880,141 @@
         "mnemonic": "NOP",
         "description": "No operation",
         "syntax": "NOP",
-        "expansion": "ADD x0, x0"
+        "expansion": "ADD x0, x0",
+        "disassembly": {
+          "hide_operands": true,
+          "show_as_pseudo": true
+        }
       },
       {
         "mnemonic": "CLR",
         "description": "Clear register",
         "syntax": "CLR rd",
-        "expansion": "XOR rd, rd"
+        "expansion": "XOR rd, rd",
+        "disassembly": {
+          "hide_operands": true,
+          "show_as_pseudo": true
+        }
       },
       {
         "mnemonic": "INC",
         "description": "Increment register",
         "syntax": "INC rd",
-        "expansion": "ADDI rd, 1"
+        "expansion": "ADDI rd, 1",
+        "disassembly": {
+          "hide_operands": true,
+          "show_as_pseudo": true
+        }
       },
       {
         "mnemonic": "DEC",
         "description": "Decrement register",
         "syntax": "DEC rd",
-        "expansion": "ADDI rd, -1"
+        "expansion": "ADDI rd, -1",
+        "disassembly": {
+          "hide_operands": true,
+          "show_as_pseudo": true
+        }
       },
       {
         "mnemonic": "NOT",
         "description": "Bitwise NOT",
         "syntax": "NOT rd",
-        "expansion": "XORI rd, -1"
+        "expansion": "XORI rd, -1",
+        "disassembly": {
+          "hide_operands": true,
+          "show_as_pseudo": true
+        }
       },
       {
         "mnemonic": "NEG",
         "description": "Negate register",
         "syntax": "NEG rd",
-        "expansion": "XORI rd, -1; ADDI rd, 1"
+        "expansion": "XORI rd, -1; ADDI rd, 1",
+        "disassembly": {
+          "hide_operands": true,
+          "show_as_pseudo": true
+        }
       },
       {
         "mnemonic": "CALL",
         "description": "Call function",
         "syntax": "CALL label",
-        "expansion": "JAL x1, label"
+        "expansion": "JAL x1, label",
+        "disassembly": {
+          "hide_operands": false,
+          "show_as_pseudo": true,
+          "reconstruction_type": "jump_with_return"
+        }
       },
       {
         "mnemonic": "RET",
         "description": "Return from function",
         "syntax": "RET",
-        "expansion": "JR x1"
+        "expansion": "JR x1",
+        "disassembly": {
+          "hide_operands": true,
+          "show_as_pseudo": true
+        }
       },
       {
         "mnemonic": "JMP",
         "description": "Unconditional jump",
         "syntax": "JMP label",
-        "expansion": "J label"
+        "expansion": "J label",
+        "disassembly": {
+          "hide_operands": false,
+          "show_as_pseudo": true,
+          "reconstruction_type": "jump"
+        }
       },
       {
         "mnemonic": "LI16",
         "description": "Load 16-bit immediate",
         "syntax": "LI16 rd, imm",
-        "expansion": "LUI rd, imm[15:9]; ORI rd, imm[8:0]"
+        "expansion": "LUI rd, imm[15:9]; ORI rd, imm[8:0]",
+        "disassembly": {
+          "hide_operands": false,
+          "show_as_pseudo": true,
+          "reconstruction_type": "multi_instruction",
+          "instructions": ["LUI", "ORI"],
+          "combine_fields": ["imm", "imm2"]
+        }
       },
       {
         "mnemonic": "LA",
         "description": "Load address",
         "syntax": "LA rd, label",
-        "expansion": "AUIPC rd, label[15:7]; ADDI rd, label[6:0]"
+        "expansion": "AUIPC rd, label[15:7]; ADDI rd, label[6:0]",
+        "disassembly": {
+          "hide_operands": false,
+          "show_as_pseudo": true,
+          "reconstruction_type": "address_reconstruction",
+          "instructions": ["AUIPC", "ADDI"],
+          "combine_fields": ["imm", "imm2"]
+        }
       },
       {
         "mnemonic": "PUSH",
         "description": "Push register to stack",
         "syntax": "PUSH rd",
-        "expansion": "ADDI x2, -2; SW rd, 0(x2)"
+        "expansion": "ADDI x2, -2; SW rd, 0(x2)",
+        "disassembly": {
+          "hide_operands": false,
+          "show_as_pseudo": true,
+          "reconstruction_type": "stack_operation"
+        }
       },
       {
         "mnemonic": "POP",
         "description": "Pop from stack to register",
         "syntax": "POP rd",
-        "expansion": "LW rd, 0(x2); ADDI x2, 2"
+        "expansion": "LW rd, 0(x2); ADDI x2, 2",
+        "disassembly": {
+          "hide_operands": false,
+          "show_as_pseudo": true,
+          "reconstruction_type": "stack_operation"
+        }
       }
     ],
     "assembly_syntax": {
@@ -1049,6 +1115,35 @@
           "~0x0F",
           "(value << 2) | 0x03"
         ]
+      }
+    },
+    "instruction_categories": {
+      "control_flow": {
+        "jumps": ["J", "JAL", "JMP", "JR"],
+        "branches": ["BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ"],
+        "calls": ["CALL", "JAL"],
+        "returns": ["RET", "JR"]
+      },
+      "arithmetic": {
+        "add": ["ADD", "ADDI", "AUIPC"],
+        "subtract": ["SUB"],
+        "multiply": ["MUL"],
+        "divide": ["DIV", "DIVU"],
+        "remainder": ["REM", "REMU"]
+      },
+      "logical": {
+        "and": ["AND", "ANDI"],
+        "or": ["OR", "ORI"],
+        "xor": ["XOR", "XORI"],
+        "shift": ["SLL", "SLLI", "SRL", "SRLI", "SRA", "SRAI"]
+      },
+      "memory": {
+        "load": ["LW", "LB", "LBU", "LH", "LHU"],
+        "store": ["SW", "SB", "SH"]
+      },
+      "system": {
+        "ecall": ["ECALL"],
+        "ebreak": ["EBREAK"]
       }
     },
     "constants": {
