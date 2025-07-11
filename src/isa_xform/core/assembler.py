@@ -396,10 +396,10 @@ class Assembler:
                         mapping[field_name] = operand_node
                         break
         
-        # --- PATCH: For multi-field immediates (like LUI), map the same immediate operand to all immediate fields ---
-        # If there is exactly one immediate operand and multiple immediate fields, map to all
+        # --- PATCH: For multi-field immediates (like LUI, J, JAL), map the same operand to all immediate fields ---
+        # If there is exactly one immediate/label operand and multiple immediate fields, map to all
         immediate_fields = [f for f in fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
-        immediate_operands = [op for op in operands if getattr(op, 'type', None) == 'immediate']
+        immediate_operands = [op for op in operands if getattr(op, 'type', None) in ['immediate', 'label']]
         if len(immediate_operands) == 1 and len(immediate_fields) > 1:
             for field in immediate_fields:
                 mapping[field["name"]] = immediate_operands[0]
@@ -434,6 +434,23 @@ class Assembler:
                 else:
                     # fallback to current
                     offset = target_address - instruction_address
+                
+                # Handle multi-field immediates for label operands
+                if field and "bits" in field and instruction and hasattr(instruction, "encoding"):
+                    encoding_fields = instruction.encoding.get("fields", [])
+                    immediate_fields = [f for f in encoding_fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
+                    if len(immediate_fields) > 1:
+                        print(f"[DEBUG] Multi-field immediate detected for {instruction.mnemonic}, field={field_name}, offset={offset}")
+                        # For J/JAL instructions, the implementation shows: offset = (imm1 << 3) | imm2
+                        # So we need to reverse this: imm1 = offset >> 3, imm2 = offset & 0x7
+                        if instruction.mnemonic.upper() in ["J", "JAL"]:
+                            if field_name == "imm":
+                                # Upper field: extract bits [8:3] of the offset
+                                return (offset >> 3) & 0x3F  # 6 bits
+                            elif field_name == "imm2":
+                                # Lower field: extract bits [2:0] of the offset
+                                return offset & 0x7  # 3 bits
+                
                 return offset
             else:
                 # Treat as literal immediate value
@@ -443,16 +460,34 @@ class Assembler:
             if field and "bits" in field and instruction and hasattr(instruction, "encoding"):
                 encoding_fields = instruction.encoding.get("fields", [])
                 immediate_fields = [f for f in encoding_fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
+                print(f"[DEBUG] Checking multi-field for {instruction.mnemonic}, field={field_name}, value={value}")
+                print(f"[DEBUG] All fields: {[f['name'] for f in encoding_fields]}")
+                print(f"[DEBUG] Immediate fields: {[f['name'] for f in immediate_fields]}")
                 if len(immediate_fields) > 1:
-                    # For U-type instructions like AUIPC and LUI, the immediate is split into two fields
-                    # The implementation shows: imm = (imm1 << 3) | imm2
-                    # So we need to reverse this: imm1 = imm >> 3, imm2 = imm & 0x7
-                    if field_name == "imm":
-                        # Upper field: extract bits [8:3] of the immediate
-                        return (value >> 3) & 0x3F  # 6 bits
-                    elif field_name == "imm2":
-                        # Lower field: extract bits [2:0] of the immediate
-                        return value & 0x7  # 3 bits
+                    print(f"[DEBUG] Multi-field immediate detected for {instruction.mnemonic}, field={field_name}, value={value}")
+                    print(f"[DEBUG] Immediate fields: {[f['name'] for f in immediate_fields]}")
+                    # For instructions with split immediates (like J, JAL, LUI, AUIPC)
+                    # We need to extract the correct bits based on the field's actual bit position
+                    if field_name in ["imm", "imm2"]:
+                        # Get the bit range for this specific field
+                        field_bits = field.get("bits", "")
+                        if ":" in field_bits:
+                            high, low = [int(x) for x in field_bits.split(":")]
+                            width = high - low + 1
+                            # For J/JAL instructions, the implementation shows: offset = (imm1 << 3) | imm2
+                            # So we need to reverse this: imm1 = offset >> 3, imm2 = offset & 0x7
+                            if instruction.mnemonic.upper() in ["J", "JAL"]:
+                                if field_name == "imm":
+                                    # Upper field: extract bits [8:3] of the offset
+                                    return (value >> 3) & 0x3F  # 6 bits
+                                elif field_name == "imm2":
+                                    # Lower field: extract bits [2:0] of the offset
+                                    return value & 0x7  # 3 bits
+                            else:
+                                # For other instructions, extract the bits from the user's immediate value
+                                # The user provides the full immediate, we extract the part for this field
+                                extracted_value = (value >> low) & ((1 << width) - 1)
+                                return extracted_value
                     else:
                         # For other field names, use the original logic
                         # Sort fields by order in encoding
