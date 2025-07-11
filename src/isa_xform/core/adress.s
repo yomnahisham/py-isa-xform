@@ -3,83 +3,99 @@
 ; Endianness: little
 
 main:
-    0020: LI16 x0, 240 ; pseudo: LI16
-    0022: SLLI x0, 1
-    0024: LI x5, 1
-    0026: SB x5, 0(x0)
+    0020: LI x6, 1
+    0022: LI16 x0, 241 ; pseudo: LI16
+    0024: SLLI x0, 1
+    0026: INC x0, 51 ; pseudo: INC
+    0028: LB x4, 0(x0)
+    002A: INC x0, 0xFFFFFFFF ; pseudo: INC
+    002C: LB x3, 0(x0)
+    002E: LI16 x0, 240 ; pseudo: LI16
+    0030: SLLI x0, 1
+    0032: SLLI x3, 2
+    0034: ADD x0, x3
+    0036: SLLI x3, 2
+    0038: ADD x0, x3
+    003A: ADD x0, x4
+    003C: SB x6, 0(x0)
+    003E: LI x6, 63
+    0040: INC x6, 56 ; pseudo: INC
+    0042: LI x7, 0
 loop:
-    0028: CALL x1, 0x20 ; pseudo: CALL
-    002A: JMP 0x7FFFFFFF0 ; pseudo: JMP
-moveball:
-    002C: LI x6, 0
-    002E: CALL x1, 0xC0 ; pseudo: CALL
-    0030: LI16 x0, 241 ; pseudo: LI16
-    0032: SLLI x0, 1
-    0034: LB x3, 0(x0)
-    0036: BNZ x3, 0xFFFFFFF8
-    0038: INC x0, 1 ; pseudo: INC
-    003A: INC x5, 0 ; pseudo: INC
-    003C: JMP 0x7FFFFFF70 ; pseudo: JMP
-path1:
-    003E: LI x0, 1
-    0040: BNE x3, x0, 0xFFFFFFF8
-    0042: INC x0, 0xFFFFFFFF ; pseudo: INC
-    0044: INC x5, 0 ; pseudo: INC
-    0046: JMP 0x7FFFFFF20 ; pseudo: JMP
-path2:
-    0048: LI x0, 2
-    004A: BNE x3, x0, 0xFFFFFFF8
-    004C: INC x0, 1 ; pseudo: INC
-    004E: INC x5, 0xFFFFFFFF ; pseudo: INC
-    0050: JMP 0xD0 ; pseudo: JMP
-path3:
-    0052: LI x0, 3
-    0054: BNE x3, x0, 0xFFFFFFF8
-    0056: INC x0, 0xFFFFFFFF ; pseudo: INC
-    0058: INC x5, 0xFFFFFFFF ; pseudo: INC
-    005A: JMP 0x80 ; pseudo: JMP
-path4:
-    005C: LI x0, 4
-    005E: BNE x3, x0, 0xFFFFFFF8
-    0060: INC x0, 1 ; pseudo: INC
-    0062: INC x5, 1 ; pseudo: INC
-    0064: JMP 0x30 ; pseudo: JMP
-path5:
-    0066: INC x0, 0xFFFFFFFF ; pseudo: INC
-    0068: INC x5, 1 ; pseudo: INC
-update_coo:
-    006A: LI16 x3, 241 ; pseudo: LI16
-    006C: SLLI x3, 1
-    006E: LB x4, 0(x3)
-    0070: ADD x4, x5
-    0072: SB x4, 0(x3)
-    0074: MV x3, x4
-    0076: LI16 x3, 241 ; pseudo: LI16
-    0078: SLLI x3, 1
-    007A: LB x4, 0(x5)
-    007C: NOP x4, x0 ; pseudo: NOP
-    007E: SB x4, 0(x5)
-    0080: LI x6, 1
-    0082: CALL x1, 0x20 ; pseudo: CALL
-    0084: RET x1 ; pseudo: RET
+    0044: BNZ x7, 6
+    0046: ECALL 7
+    0048: JMP 0x7FFFFFFE0 ; pseudo: JMP
+start:
+    004A: ECALL 10
 updateBallTile:
-    0086: LI16 x3, 241 ; pseudo: LI16
-    0088: SLLI x3, 1
-    008A: LB x3, 0(x0)
-    008C: LI16 x3, 241 ; pseudo: LI16
-    008E: SLLI x3, 1
-    0090: LB x4, 0(x0)
-    0092: LI16 x3, 240 ; pseudo: LI16
-    0094: SLLI x3, 1
-multiply:
-    0096: BZ x3, 0xFFFFFFF8
-    0098: INC x0, 20 ; pseudo: INC
-    009A: INC x3, 0xFFFFFFFF ; pseudo: INC
-    009C: JMP 0x7FFFFFFD0 ; pseudo: JMP
-add:
-    009E: ADD x0, x4
-    00A0: SB x6, 0(x0)
-    00A2: RET x1 ; pseudo: RET
+    004C: LI16 x0, 241 ; pseudo: LI16
+    004E: SLLI x0, 1
+    0050: INC x0, 51 ; pseudo: INC
+    0052: LB x4, 0(x0)
+    0054: INC x0, 0xFFFFFFFF ; pseudo: INC
+    0056: LB x3, 0(x0)
+    0058: LI16 x0, 240 ; pseudo: LI16
+    005A: SLLI x0, 1
+    005C: SLLI x3, 2
+    005E: ADD x0, x3
+    0060: SLLI x3, 2
+    0062: ADD x0, x3
+    0064: ADD x0, x4
+    0066: SB x6, 0(x0)
+    0068: RET x1 ; pseudo: RET
+moveball:
+    006A: LI x6, 0
+    006C: CALL x1, 0x7FFFFFF00 ; pseudo: CALL
+    006E: LI16 x0, 241 ; pseudo: LI16
+    0070: SLLI x0, 1
+    0072: LB x3, 0(x0)
+    0074: BNZ x3, 0xFFFFFFF8
+    0076: INC x0, 1 ; pseudo: INC
+    0078: INC x5, 0 ; pseudo: INC
+    007A: JMP 0x7FFFFFF70 ; pseudo: JMP
+path1:
+    007C: LI x0, 1
+    007E: BNE x3, x0, 0xFFFFFFF8
+    0080: INC x0, 0xFFFFFFFF ; pseudo: INC
+    0082: INC x5, 0 ; pseudo: INC
+    0084: JMP 0x7FFFFFF20 ; pseudo: JMP
+path2:
+    0086: LI x0, 2
+    0088: BNE x3, x0, 0xFFFFFFF8
+    008A: INC x0, 1 ; pseudo: INC
+    008C: INC x5, 0xFFFFFFFF ; pseudo: INC
+    008E: JMP 0xD0 ; pseudo: JMP
+path3:
+    0090: LI x0, 3
+    0092: BNE x3, x0, 0xFFFFFFF8
+    0094: INC x0, 0xFFFFFFFF ; pseudo: INC
+    0096: INC x5, 0xFFFFFFFF ; pseudo: INC
+    0098: JMP 0x80 ; pseudo: JMP
+path4:
+    009A: LI x0, 4
+    009C: BNE x3, x0, 0xFFFFFFF8
+    009E: INC x0, 1 ; pseudo: INC
+    00A0: INC x5, 1 ; pseudo: INC
+    00A2: JMP 0x30 ; pseudo: JMP
+path5:
+    00A4: INC x0, 0xFFFFFFFF ; pseudo: INC
+    00A6: INC x5, 1 ; pseudo: INC
+update_coo:
+    00A8: LI16 x3, 241 ; pseudo: LI16
+    00AA: SLLI x3, 1
+    00AC: INC x3, 51 ; pseudo: INC
+    00AE: LB x4, 0(x3)
+    00B0: ADD x4, x5
+    00B2: SB x4, 0(x3)
+    00B4: MV x5, x3
+    00B6: MV x3, x4
+    00B8: INC x5, 0xFFFFFFFF ; pseudo: INC
+    00BA: LB x4, 0(x5)
+    00BC: NOP x4, x0 ; pseudo: NOP
+    00BE: SB x4, 0(x5)
+    00C0: LI x6, 1
+    00C2: CALL x1, 0x50 ; pseudo: CALL
+    00C4: RET x1 ; pseudo: RET
 
 ; Data sections:
     ; Data section at 0xF000
@@ -234,9 +250,9 @@ add:
     F128: .word 0x0000
     F12A: .word 0x0000
     F12C: .word 0x0000
-    F12E: .word 0x0800
-    F130: .word 0x0813
-    F132: .word 0x0801
+    F12E: .word 0x0008
+    F130: .word 0x1308
+    F132: .word 0x0108
     F134: .word 0x0000
     F136: .word 0x0000
     F138: .word 0x0000
@@ -403,7 +419,7 @@ add:
     F27A: .word 0x0000
     F27C: .word 0x0000
     F27E: .word 0x0000
-    F280: .word 0x1111
+    F280: .word 0x1100
     F282: .word 0x1111
     F284: .word 0x1111
     F286: .word 0x1111
@@ -467,7 +483,7 @@ add:
     F2FA: .word 0x1111
     F2FC: .word 0x1111
     F2FE: .word 0x1111
-    F300: .word 0x0000
+    F300: .word 0x0011
     F302: .word 0x0000
     F304: .word 0x0000
     F306: .word 0x0000
@@ -1364,3 +1380,4 @@ add:
     F9FC: .word 0x0000
     F9FE: .word 0x0000
     FA00: .word 0xFF00
+    FA02: .byte 0x00

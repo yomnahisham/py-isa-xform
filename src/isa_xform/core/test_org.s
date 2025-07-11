@@ -87,17 +87,18 @@ main:
         add t0, s1    # t0 += x
         sb a0, 0(t0)
 
-        li a1, 0
         #check for w press
         li a0, 63
         addi a0, 56
+        li a1, 0
+
 loop:
         bnz a1, start
         ecall 7
         j loop
 start:
-
     ecall 10
+
 
 updateBallTile:
     #load y and x into s0, s1

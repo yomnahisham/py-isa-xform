@@ -6,12 +6,9 @@ from dataclasses import dataclass
 from isa_xform.core.disassembler import Disassembler, DisassembledInstruction
 from isa_xform.core.isa_loader import ISADefinition, ISALoader
 from isa_xform.core.symbol_table import SymbolTable
-from isa_xform.core.modular_sim import Simulator
+from isa_xform.core.modular_sim import Simulator, run_simulator_with_graphics
 import threading
 from isa_xform.core.graphics import run_graphics
-
-def run_simulator(simulator):
-    simulator.run(True)
 
 
 def main():
@@ -28,21 +25,14 @@ def main():
         print(f"Error: File '{filename}' not found", file=sys.stderr)
         sys.exit(1)
     
-    isa_loader = ISALoader();
-    symbol_table = SymbolTable();
+    isa_loader = ISALoader()
+    symbol_table = SymbolTable()
     disassembler = Disassembler(isa_loader.load_isa("zx16"), symbol_table)
     simulator = Simulator(isa_loader.load_isa("zx16"), symbol_table, disassembler)
     if not simulator.load_memory_from_file(filename):
         sys.exit(1)
 
-    sim_thread = threading.Thread(target=run_simulator, args=(simulator,))
-    sim_thread.start()
-
-    # Run graphics on main thread (as required by macOS)
-    run_graphics(simulator)
-
-    # 🚨 Wait for the simulator thread to finish before exit
-    sim_thread.join()
+    run_simulator_with_graphics(simulator)
 
     return 0
 

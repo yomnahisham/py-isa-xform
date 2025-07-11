@@ -317,44 +317,121 @@ class Simulator:
             print(f"0x{addr:04X}: {self.read_memory_byte(addr):02X}")
             
 
-    def run(self, step: bool = False):
-        """Runs the simulator, disassembling and executing instructions in memory"""
-        disassembly_result = self.disassembler.disassemble(self.memory, self.pc)
-        instuctions_map = self.map_disassembly_result_to_pc(disassembly_result)
-        loop = "start"
-        print(f"Code Start: {self.pc}")
-        print(f"Data Start: {self.data_start} ")
-        #print(f"Memory: {self.memory} ")
+    ###################### GRAPHICS ######################
+import pygame
 
-        #while self.pc < len(self.memory) and (loop != 'q' or (not step)):
-        while self.pc < len(self.memory) and self.running: 
-            current_instruction = instuctions_map[self.pc] if self.pc in instuctions_map else None
-            if current_instruction is None:
-                print(f"Skipping instruction at PC: {self.pc} (NoneType)")
+# ========== Constants ==========
+SCREEN_WIDTH = 320
+SCREEN_HEIGHT = 240
+TILE_SIZE = 16
+ROWS = SCREEN_HEIGHT // TILE_SIZE
+COLS = SCREEN_WIDTH // TILE_SIZE
+
+TILE_MAP_ADDR = 0xF000
+TILE_DATA_ADDR = 0xF200
+PALETTE_ADDR = 0xFA00
+
+# ========== Palette Reader ==========
+def get_palette(memory):
+    palette = []
+    for i in range(16):
+        byte = memory[PALETTE_ADDR + i]
+        r = ((byte >> 5) & 0b111) * 255 // 7
+        g = ((byte >> 2) & 0b111) * 255 // 7
+        b = (byte & 0b11) * 255 // 3
+        palette.append((r, g, b))
+    return palette
+
+# ========== Tile Reader ==========
+def get_tile(memory, tile_index):
+    base = TILE_DATA_ADDR + tile_index * 128
+    pixels = []
+    for i in range(128):
+        if base + i >= len(memory):
+            pixels.append(0)  # default to color index 0 (black)
+            pixels.append(0)
+        else:
+            byte = memory[base + i]
+            pixels.append(byte & 0x0F)
+            pixels.append((byte >> 4) & 0x0F)
+    return pixels
+
+# ========== Draw Screen ==========
+def draw_screen(screen, memory):
+    palette = get_palette(memory)
+    for row in range(ROWS):
+        for col in range(COLS):
+            tile_index = memory[TILE_MAP_ADDR + row * COLS + col]
+            tile_pixels = get_tile(memory, tile_index)
+            for y in range(TILE_SIZE):
+                for x in range(TILE_SIZE):
+                    color_index = tile_pixels[y * TILE_SIZE + x]
+                    color = palette[color_index]
+                    screen.set_at((col * TILE_SIZE + x, row * TILE_SIZE + y), color)
+    
+def run_simulator_with_graphics(simulator, step=False):
+    disassembly_result = simulator.disassembler.disassemble(simulator.memory, simulator.pc)
+    instructions_map = simulator.map_disassembly_result_to_pc(disassembly_result)
+    simulator.running = True
+
+    # Init pygame
+    pygame.init()
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("ZX16 Simulator + Graphics")
+    clock = pygame.time.Clock()
+
+    monitored_keys = {
+        pygame.K_w: 0x77,         # 'w'
+        pygame.K_s: 0x73,         # 's'
+        pygame.K_UP: 0x26,        # up arrow
+        pygame.K_DOWN: 0x28       # down arrow
+    }
+    simulator.key_state = {code: 0 for code in monitored_keys.values()}
+
+    print(f"Code Start: {simulator.pc}")
+    print(f"Data Start: {simulator.data_start} ")
+
+    while simulator.pc < len(simulator.memory) and simulator.running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                simulator.running = False
+                pygame.quit()
+                return
+
+        # Update keys
+        keys = pygame.key.get_pressed()
+        for pygame_key, internal_code in monitored_keys.items():
+            simulator.key_state[internal_code] = 1 if keys[pygame_key] else 0
+
+        # Fetch and execute instruction
+        current_instruction = instructions_map.get(simulator.pc)
+        if current_instruction is None:
+            print(f"Skipping instruction at PC: {simulator.pc} (NoneType)")
+            simulator.pc += simulator.pc_step
+            continue
+
+        print(f"PC: {simulator.pc:04X} - {current_instruction.mnemonic} {', '.join(current_instruction.operands)}")
+        temp_pc = simulator.pc
+
+        if simulator.execute_instruction(current_instruction):
+            if temp_pc == simulator.pc:
+                simulator.pc += simulator.pc_step
+
+            if "NOP" in current_instruction.mnemonic:
                 continue
 
-            print(f"PC: {self.pc:04X} - {current_instruction.mnemonic} {', '.join(current_instruction.operands)}")
-            temp_pc = self.pc
-            if self.execute_instruction(current_instruction):
-                if temp_pc == self.pc:
-                    self.pc += self.pc_step
-                if "NOP" in current_instruction.mnemonic:
-                    continue
-                else:
-                    if step:
-                        values = [reg for reg in self.regs]
-                        print(self.regs)
-                        #print(f"Registers: {', '.join(f'{name}: {value}' for name, value in zip(self.reg_names, values))}")
-                        #loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
-                    else:
-                        if self.pc >= len(disassembly_result.instructions):
-                            print("Reached end of disassembled instructions")
-                            break
-                
-            else:
-                print("Execution terminated by instruction")
-                break
-        print("Simulation completed")
-        self.dump_memory(0xFA00, 0xFA07)  # print palette, supposed to store 3
+            print(f"Registers: {simulator.regs}")
+
+        else:
+            print("Execution terminated by instruction")
+            break
+
+        draw_screen(screen, simulator.memory)
+        pygame.display.flip()
+        clock.tick(30)
+
+    print("Simulation completed")
+    simulator.dump_memory(0xF0A0, 0xF0AF)
+
 
 
