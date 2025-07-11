@@ -155,6 +155,17 @@ Examples:
     list_parser = subparsers.add_parser('list-isas', help='List available ISA definitions')
     list_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
     
+    # Scaffold command
+    scaffold_parser = subparsers.add_parser('scaffold', help='Generate a new ISA scaffold definition')
+    scaffold_parser.add_argument('--name', required=True, help='Name of the ISA')
+    scaffold_parser.add_argument('--instructions', required=True, help='Comma-separated list of instructions to include')
+    scaffold_parser.add_argument('--directives', help='Comma-separated list of directives to include')
+    scaffold_parser.add_argument('--word-size', type=int, default=16, help='Word size in bits (default: 16)')
+    scaffold_parser.add_argument('--instruction-size', type=int, default=16, help='Instruction size in bits (default: 16)')
+    scaffold_parser.add_argument('--register-count', type=int, default=8, help='Number of general-purpose registers (default: 8)')
+    scaffold_parser.add_argument('--registers', help='Comma-separated list of register names (overrides --register-count)')
+    scaffold_parser.add_argument('--output', help='Output file path (default: {name}_isa.json)')
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -172,6 +183,8 @@ Examples:
             return parse_command(args)
         elif args.command == 'list-isas':
             return list_isas_command(args)
+        elif args.command == 'scaffold':
+            return scaffold_command(args)
         else:
             print(f"Unknown command: {args.command}")
             return 1
@@ -563,6 +576,30 @@ def list_isas_command(args) -> int:
     except Exception as e:
         print(f"Error listing ISAs: {e}", file=sys.stderr)
         return 1
+
+
+def scaffold_command(args) -> int:
+    """Handle scaffold command by invoking the scaffold generator module"""
+    import subprocess
+    import shlex
+    cmd = [sys.executable, '-m', 'src.isa_xform.core.isa_scaffold',
+           '--name', args.name,
+           '--instructions', args.instructions]
+    if args.directives:
+        cmd += ['--directives', args.directives]
+    if args.word_size:
+        cmd += ['--word-size', str(args.word_size)]
+    if args.instruction_size:
+        cmd += ['--instruction-size', str(args.instruction_size)]
+    if args.register_count:
+        cmd += ['--register-count', str(args.register_count)]
+    if args.registers:
+        cmd += ['--registers', args.registers]
+    if args.output:
+        cmd += ['--output', args.output]
+    print('Running:', ' '.join(shlex.quote(c) for c in cmd))
+    result = subprocess.run(cmd)
+    return result.returncode
 
 
 if __name__ == "__main__":
