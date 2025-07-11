@@ -42,6 +42,7 @@ class Simulator:
         self.key = "start"
         self.key_state = {}
         self.running = True
+        self.PCrange = isa_definition.address_space.memory_layout["code_section"]["end"]
 
 
     def check_key_press(self, target_key: str) -> bool:
@@ -405,7 +406,7 @@ def run_simulator_with_graphics(simulator, step=False):
 
         # Fetch and execute instruction
         if simulator.pc not in instructions_map:
-            if simulator.pc >= len(simulator.memory):
+            if simulator.pc >= simulator.PCrange:
                 print(f"PC {simulator.pc:04X} out of memory bounds (max: {len(simulator.memory) - 1:04X})")
                 simulator.running = False
                 break
