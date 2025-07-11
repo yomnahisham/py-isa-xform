@@ -13,16 +13,16 @@ from ..utils.bit_utils import (
     create_mask, bytes_to_int, int_to_bytes
 )
 
-def sign_extend(value: int, bits: int) -> int:
-    """Sign extend a value from specified number of bits to 16 bits"""
-    if value & (1 << (bits - 1)):
-        mask = (1 << bits) - 1
-        return value | (~mask)
-    return value & ((1 << bits) - 1)
+# def sign_extend(value: int, bits: int) -> int:
+#     """Sign extend a value from specified number of bits to 16 bits"""
+#     if value & (1 << (bits - 1)):
+#         mask = (1 << bits) - 1
+#         return value | (~mask)
+#     return value & ((1 << bits) - 1)
 
-def unsigned(value: int) -> int:
-    unsigned = np.uint16(value)
-    return unsigned
+# def unsigned(value: int) -> int:
+#     unsigned = np.uint16(value)
+#     return unsigned
 class Simulator:
     def __init__(self, isa_definition: ISADefinition, symbol_table: Optional[SymbolTable] = None, disassembler: Optional[Disassembler] = None):
         self.isa_definition = isa_definition
@@ -33,7 +33,7 @@ class Simulator:
         self.data_start = isa_definition.address_space.default_data_start
         self.stack_start = isa_definition.address_space.default_stack_start
         self.pc_step = self.isa_definition.word_size // 8
-        self.regs = [0] * len(self.isa_definition.registers['general_purpose'])
+        self.regs = [np.int16(0)] * len(self.isa_definition.registers['general_purpose'])
         self.reg_names = [reg.alias[0] for reg in self.isa_definition.registers['general_purpose']]
         # get index of sp
         self.sp_index = self.reg_names.index('sp') if 'sp' in self.reg_names else -1
@@ -96,40 +96,6 @@ class Simulator:
         except FileNotFoundError:
             print(f"Error: File '{filename}' not found", file=sys.stderr)
             return False
-        
-
-    
-    def read_memory_byte(self, addr: int) -> int:
-        if 0 <= addr < len(self.memory):
-            return self.memory[addr]
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
-            return 0
-    
-    def write_memory_byte(self, addr: int, value: int):
-        if 0 <= addr < len(self.memory):
-            self.memory[addr] = value & 0xFF
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
-    
-    def read_memory_word(self, addr: int) -> int: # TO BE VISITED
-        if 0 <= addr < len(self.memory) - self.pc_step:
-            if self.isa_definition.endianness == 'little':
-                return struct.unpack('<H', self.memory[addr:addr + self.pc_step])[0] 
-            else:                
-                return struct.unpack('>H', self.memory[addr:addr + self.pc_step])[0] 
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
-            return 0
-        
-    def write_memory_word(self, addr: int, value: int): # TO BE VISITED
-        if 0 <= addr < len(self.memory) - 1:
-            if self.isa_definition.endianness == 'little':
-                self.memory[addr:addr + self.pc_step] = struct.pack('<H', value & 0xFFFF)
-            else:
-                self.memory[addr:addr + self.pc_step] = struct.pack('>H', value & 0xFFFF)
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
     
     def extract_parameters(self, syntax: str) -> List[str]:
         """ Extracts parameter names from assembly string"""
@@ -163,11 +129,12 @@ class Simulator:
                 idx = reg_aliases.index(operand)
                 result = result.replace(operand, f"regs[{idx}]")
             else:
-                # print(f"Warning: Operand '{operand}' not found in register names or aliases.", file=sys.stderr)
                 continue
             
         result = result.replace("memory", "self.memory")
         result = result.replace("PC", "self.pc")
+        result = result.replace("sign_extend", "np.int16")
+        result = result.replace("unsigned", "np.uint16")
         return result        
     
     
@@ -262,7 +229,7 @@ class Simulator:
                 code = self.generic_to_register_name(code, generic_parameters, actual_parameters)
                 executable_string = self.register_name_to_index(code, actual_parameters)
                 print(f"Executing: {executable_string}")
-                exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'unsigned': unsigned, 'sign_extend': sign_extend, 'read_memory_word': self.read_memory_word, 'write_memory_word': self.write_memory_word})
+                exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'np': np})
                 return True
         return True
         
