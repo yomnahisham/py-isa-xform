@@ -45,6 +45,14 @@ class Disassembler:
         self.instruction_size_bytes = isa_definition.instruction_size // 8
         self.max_consecutive_nops = max_consecutive_nops
         
+        # Calculate address space mask from ISA definition
+        address_space = getattr(isa_definition, 'address_space', {})
+        if isinstance(address_space, dict) and 'size' in address_space:
+            address_space_size = address_space['size']
+        else:
+            address_space_size = 16  # Default to 16-bit address space
+        self.address_mask = (1 << address_space_size) - 1
+        
         # Build lookup tables for fast disassembly
         self._build_lookup_tables()
         
@@ -865,9 +873,27 @@ class Disassembler:
     def _format_operands(self, instruction: Instruction, field_values: Dict[str, int], address: int) -> List[str]:
         """Format operands based on instruction syntax order and field values, supporting offset(base) style."""
         operands = []
+        
+        # Get operand formatting config from ISA
+        op_config = getattr(self.isa_definition, 'operand_formatting', {})
+        immediate_prefix = op_config.get('immediate_prefix', '#')
+        hex_prefix = op_config.get('hex_prefix', '0x')
+        binary_prefix = op_config.get('binary_prefix', '0b')
+        register_prefix = op_config.get('register_prefix', 'x')
+        address_format = op_config.get('address_format', '0x{addr:X}')
+        immediate_format = op_config.get('immediate_format', '{value}')
+        register_format = op_config.get('register_format', 'x{reg}')
+        separators = op_config.get('separators', {})
+        operand_sep = separators.get('operand', ', ')
+        address_open = separators.get('address', '(')
+        address_close = separators.get('address_close', ')')
+        
+        # Fallback to assembly_syntax for backward compatibility
         assembly_syntax = getattr(self.isa_definition, 'assembly_syntax', None)
-        register_prefix = getattr(assembly_syntax, 'register_prefix', '') if assembly_syntax else ''
-        immediate_prefix = getattr(assembly_syntax, 'immediate_prefix', '') if assembly_syntax else ''
+        if not immediate_prefix and assembly_syntax:
+            immediate_prefix = getattr(assembly_syntax, 'immediate_prefix', '#')
+        if not register_prefix and assembly_syntax:
+            register_prefix = getattr(assembly_syntax, 'register_prefix', 'x')
 
         # Get operand names from syntax string (e.g., 'LI rd, imm')
         syntax_operands = []
@@ -886,9 +912,10 @@ class Disassembler:
             full_imm = self._reconstruct_immediate_from_implementation(instruction, field_values, address)
             # For PC-relative jumps/branches, calculate the actual target address
             if instruction.mnemonic.upper() in ['JMP', 'J', 'JAL', 'CALL', 'BEQ', 'BNE', 'BZ', 'BNZ', 'BLT', 'BGE', 'BLTU', 'BGEU']:
-                # ZX16 jumps are PC-relative: target = address + 2 + offset
-                # (PC is at current instruction, +2 for next instruction)
-                target_addr = (field_values.get('address', address) + 2 + full_imm) if 'address' in field_values else (address + 2 + full_imm)
+                # Use ISA-driven PC behavior for jump target calculation
+                pc_config = getattr(self.isa_definition, 'pc_behavior', {})
+                pc_offset = pc_config.get('offset_for_jumps', 0)
+                target_addr = (field_values.get('address', address) + pc_offset + full_imm) & self.address_mask if 'address' in field_values else (address + pc_offset + full_imm) & self.address_mask
                 for syntax_op in syntax_operands:
                     if syntax_op in ('imm', 'immediate', 'offset'):
                         resolved = self._resolve_address_to_label(target_addr)
@@ -939,13 +966,13 @@ class Disassembler:
                 if field_name_imm in field_values and field_name_reg in field_values:
                     imm_val = field_values[field_name_imm]
                     reg_val = field_values[field_name_reg]
-                    # Format immediate
+                    # Format offset for memory operands (no immediate prefix)
                     if imm_val > 255 or imm_val < -255:
-                        imm_str = f"{immediate_prefix}0x{imm_val:X}"
+                        imm_str = f"{hex_prefix}{imm_val:X}"
                     else:
-                        imm_str = f"{immediate_prefix}{imm_val}"
+                        imm_str = f"{imm_val}"
                     reg_str = self._format_register(reg_val, register_prefix)
-                    operands.append(f"{imm_str}({reg_str})")
+                    operands.append(f"{imm_str}{address_open}{reg_str}{address_close}")
                 else:
                     # Fallback: just output what we can
                     if field_name_imm in field_values:
@@ -980,15 +1007,18 @@ class Disassembler:
                 operands.append(self._format_register(value, register_prefix))
             elif field_name in ('immediate', 'imm', 'offset', 'key', 'svc'):
                 # Check if this is a branch/jump target address
-                if (instruction.mnemonic.upper() in ['JMP', 'CALL', 'BEQ', 'BNE', 'JZ', 'JNZ', 'JAL', 'J'] and 
-                    field_name in ['immediate', 'imm', 'offset']):
-                    # Try to resolve as label
-                    resolved = self._resolve_address_to_label(value)
+                if (self._is_control_flow_instruction(instruction.mnemonic) and 
+                    field_name in ('immediate', 'imm', 'offset')):
+                    # Calculate actual target address using ISA-driven PC behavior
+                    pc_config = getattr(self.isa_definition, 'pc_behavior', {})
+                    pc_offset = pc_config.get('offset_for_jumps', 0)
+                    target_addr = (address + pc_offset + value) & self.address_mask
+                    resolved = self._resolve_address_to_label(target_addr)
                     operands.append(resolved)
                 else:
-                    # Regular immediate formatting
+                    # Regular immediate formatting using ISA configuration
                     if value > 255 or value < -255:
-                        operands.append(f"{immediate_prefix}0x{value:X}")
+                        operands.append(f"{immediate_prefix}{hex_prefix}{value:X}")
                     else:
                         operands.append(f"{immediate_prefix}{value}")
             elif field_name == 'address':
@@ -1003,26 +1033,58 @@ class Disassembler:
     
     def _format_register(self, reg_num: int, register_prefix: str) -> str:
         """Format register name using ISA's register configuration"""
+        # Get register formatting config from ISA
+        reg_config = getattr(self.isa_definition, 'register_formatting', {})
+        prefix = reg_config.get('prefix', 'x')
+        suffix = reg_config.get('suffix', '')
+        case = reg_config.get('case', 'lower')
+        alternatives = reg_config.get('alternatives', {})
+        
         # Look up register name in ISA definition
         for category, registers in self.isa_definition.registers.items():
             if reg_num < len(registers):
                 reg = registers[reg_num]
-                # Use the register name from ISA definition with proper prefix
-                return f"{register_prefix}{reg.name}"
+                reg_name = reg.name
+                
+                # Apply case transformation
+                if case == 'upper':
+                    reg_name = reg_name.upper()
+                elif case == 'lower':
+                    reg_name = reg_name.lower()
+                
+                # Check for alternative names
+                if reg_name in alternatives:
+                    alt_names = alternatives[reg_name]
+                    if alt_names:
+                        reg_name = alt_names[0]  # Use first alternative
+                
+                # The register name from ISA already includes the prefix, so don't add it again
+                # Just apply suffix if needed
+                return f"{reg_name}{suffix}"
         
         # Fallback to generic name with prefix
-        return f"{register_prefix}R{reg_num}"
+        return f"{prefix}R{reg_num}{suffix}"
     
     def _get_register_name(self, reg_num: int) -> str:
-        """Get register name from register number"""
+        """Get register name from register number using ISA configuration"""
+        # Get register formatting config from ISA
+        reg_config = getattr(self.isa_definition, 'register_formatting', {})
+        alternatives = reg_config.get('alternatives', {})
+        
         # Look up register name in ISA definition
         for category, registers in self.isa_definition.registers.items():
             if reg_num < len(registers):
                 reg = registers[reg_num]
-                # Use alias if available, otherwise use full name
-                if reg.alias:
-                    return reg.alias[0]
-                return reg.name
+                reg_name = reg.name
+                
+                # Check for alternative names
+                if reg_name in alternatives:
+                    alt_names = alternatives[reg_name]
+                    if alt_names:
+                        reg_name = alt_names[0]  # Use first alternative
+                
+                # The register name from ISA already includes the prefix
+                return reg_name
         
         # Fallback to generic name
         return f"R{reg_num}"
@@ -1387,24 +1449,31 @@ class Disassembler:
             field_values = self._extract_field_values(instr)
             if instr.instruction and hasattr(instr.instruction, 'implementation'):
                 offset = self._reconstruct_immediate_from_implementation(instr.instruction, field_values, instr.address)
-                implementation = getattr(instr.instruction, 'implementation', '')
-                semantics = getattr(instr.instruction, 'semantics', '')
-                impl_no_space = implementation.replace(' ', '').lower()
-                sem_no_space = semantics.replace(' ', '').lower()
-                # Robust ISA-driven check for PC-relative offset
-                if ('context.pc=(context.pc+offset)' in impl_no_space or
-                    'pc=pc+offset' in impl_no_space or
-                    'pc=pc+offset' in sem_no_space):
-                    target_address = (instr.address + offset) & 0xFFFF
-                    print(f"[DEBUG] ISA-driven: PC = PC + offset, target_address=0x{target_address:X}")
-                elif 'pc=pc+2+offset' in impl_no_space or 'pc=pc+2+offset' in sem_no_space:
-                    target_address = (instr.address + 2 + offset) & 0xFFFF
-                    print(f"[DEBUG] ISA-driven: PC = PC + 2 + offset, target_address=0x{target_address:X}")
-                else:
-                    pc_config = getattr(self.isa_definition, 'pc_behavior', {})
+                
+                # Use ISA-driven jump target calculation
+                pc_config = getattr(self.isa_definition, 'pc_behavior', {})
+                disassembly_config = pc_config.get('disassembly', {})
+                jump_calc = disassembly_config.get('jump_target_calculation', 'pc_plus_offset')
+                pc_value = disassembly_config.get('pc_value_for_jumps', 'instruction_address_plus_pc_offset')
+                
+                # Calculate PC value based on ISA configuration
+                if pc_value == 'instruction_address_plus_pc_offset':
                     pc_offset = pc_config.get('offset_for_jumps', 0)
-                    target_address = (instr.address + pc_offset + offset) & 0xFFFF
-                    print(f"[DEBUG] ISA-driven: fallback, pc_offset={pc_offset}, target_address=0x{target_address:X}")
+                    pc_at_jump = instr.address + pc_offset
+                elif pc_value == 'instruction_address_plus_2':
+                    pc_at_jump = instr.address + 2
+                else:
+                    pc_at_jump = instr.address
+                
+                # Calculate target based on ISA configuration
+                if jump_calc == 'pc_plus_offset':
+                    target_address = (pc_at_jump + offset) & self.address_mask
+                elif jump_calc == 'instruction_address_plus_offset':
+                    target_address = (instr.address + offset) & self.address_mask
+                else:
+                    target_address = (pc_at_jump + offset) & self.address_mask
+                
+                print(f"[DEBUG] ISA-driven: pc_value={pc_value}, jump_calc={jump_calc}, pc_at_jump=0x{pc_at_jump:X}, target_address=0x{target_address:X}")
             else:
                 # Fallback: try to extract from operands
                 target_address = 0
@@ -1449,92 +1518,59 @@ class Disassembler:
                 return []
 
     def _is_control_flow_instruction(self, mnemonic: str) -> bool:
-        """Check if instruction is control flow based on ISA metadata"""
-        categories = getattr(self.isa_definition, 'instruction_categories', {})
-        control_flow = categories.get('control_flow', {})
-        
-        for category, instructions in control_flow.items():
-            if mnemonic.upper() in [i.upper() for i in instructions]:
-                return True
-        return False
+        """Check if instruction is a control flow instruction (jump/branch)"""
+        control_flow_instructions = getattr(self.isa_definition, 'control_flow_instructions', None)
+        if control_flow_instructions is not None:
+            return mnemonic.upper() in [cf.upper() for cf in control_flow_instructions]
+        # Fallback to common control flow instruction patterns
+        common_control_flow = [
+            'J', 'JAL', 'JALR', 'JMP', 'CALL', 'RET', 'IRET',
+            'BEQ', 'BNE', 'BLT', 'BGE', 'BLTU', 'BGEU',
+            'BZ', 'BNZ', 'BGT', 'BLE', 'BGTU', 'BLEU'
+        ]
+        return mnemonic.upper() in common_control_flow
 
     def _is_jump_instruction(self, mnemonic: str) -> bool:
-        """Check if instruction is a jump based on ISA metadata"""
-        categories = getattr(self.isa_definition, 'instruction_categories', {})
-        control_flow = categories.get('control_flow', {})
-        return mnemonic.upper() in [i.upper() for i in control_flow.get('jumps', [])]
+        """Check if instruction is a jump instruction"""
+        jump_instructions = getattr(self.isa_definition, 'jump_instructions', None)
+        if jump_instructions is not None:
+            return mnemonic.upper() in [j.upper() for j in jump_instructions]
+        # Fallback to common jump instruction patterns
+        common_jumps = ['J', 'JAL', 'JALR', 'JMP', 'CALL']
+        return mnemonic.upper() in common_jumps
 
     def _reconstruct_immediate_from_implementation(self, instruction: Instruction, field_values: Dict[str, int], address: int) -> int:
         """Reconstruct the full immediate value from instruction implementation"""
-        # Parse the implementation to understand how to combine immediate fields
-        implementation = getattr(instruction, 'implementation', '')
-        
-        # Create a local namespace with the field values
-        local_vars = field_values.copy()
-        
-        print(f"[DEBUG] Reconstructing immediate for {instruction.mnemonic}")
-        print(f"[DEBUG] Field values: {field_values}")
-        print(f"[DEBUG] Implementation: {implementation}")
-        
-        try:
-            # Extract immediate combination logic from implementation
-            # Look for patterns like: offset = (imm1 << 3) | imm2
-            lines = implementation.split('\n')
-            for line in lines:
-                line = line.strip()
-                if '=' in line and ('<<' in line or '|' in line or '&' in line):
-                    # This line likely combines immediate fields
-                    print(f"[DEBUG] Executing line: {line}")
-                    # Execute it in our local namespace
-                    exec(line, {}, local_vars)
-                    print(f"[DEBUG] Local vars after execution: {local_vars}")
-            
-            # Look for the final immediate value
-            # Common variable names: offset, imm, immediate, result
-            for var_name in ['offset', 'imm', 'immediate', 'result']:
-                if var_name in local_vars:
-                    result = local_vars[var_name]
-                    print(f"[DEBUG] Found result in {var_name}: {result}")
-                    return result
-            
-            print(f"[DEBUG] No result found in local_vars: {local_vars}")
-            
-            # If no specific variable found, try to reconstruct from field names
-            # This is a fallback for when the implementation doesn't clearly define the output
-            immediate_fields = [f for f in getattr(instruction, 'encoding', {}).get('fields', []) 
-                              if f.get('type') == 'immediate' and f.get('name') != 'opcode']
-            
-            if len(immediate_fields) == 2:
-                # Common pattern: combine two immediate fields
-                field_names = [f['name'] for f in immediate_fields]
-                if 'imm' in field_names and 'imm2' in field_names:
-                    imm_val = field_values.get('imm', 0)
-                    imm2_val = field_values.get('imm2', 0)
-                    # Default pattern: (imm << 3) | imm2
-                    return (imm_val << 3) | imm2_val
-                elif 'imm1' in field_names and 'imm2' in field_names:
-                    imm1_val = field_values.get('imm1', 0)
-                    imm2_val = field_values.get('imm2', 0)
-                    # Default pattern: (imm1 << 3) | imm2
-                    return (imm1_val << 3) | imm2_val
-            
-            # If all else fails, return the first immediate field value
-            for field_name, value in field_values.items():
-                if field_name in ['imm', 'immediate', 'offset']:
-                    return value
-            
-            return 0
-            
-        except Exception:
-            # If execution fails, fall back to simple concatenation
-            immediate_fields = [f for f in getattr(instruction, 'encoding', {}).get('fields', []) 
-                              if f.get('type') == 'immediate' and f.get('name') != 'opcode']
-            
-            if len(immediate_fields) == 2:
-                field_names = [f['name'] for f in immediate_fields]
-                if 'imm' in field_names and 'imm2' in field_names:
-                    imm_val = field_values.get('imm', 0)
-                    imm2_val = field_values.get('imm2', 0)
-                    return (imm_val << 3) | imm2_val
-            
-            return field_values.get('imm', 0) 
+        # If multi-field immediate, reconstruct using ISA-driven logic
+        encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
+        immediate_fields = [f for f in encoding_fields if f.get('type') == 'immediate' and f.get('name') != 'opcode']
+        if len(immediate_fields) > 1:
+            # 1. Compute total width and sign bit
+            field_specs = []
+            for f in immediate_fields:
+                bits = f.get("bits", "")
+                if ":" in bits:
+                    high, low = [int(x) for x in bits.split(":")]
+                else:
+                    high = low = int(bits)
+                width = high - low + 1
+                field_specs.append((f["name"], low, width))
+            # Sort by low bit (LSB first)
+            field_specs.sort(key=lambda x: x[1])
+            total_width = sum(w for _, _, w in field_specs)
+            sign_bit = 1 << (total_width - 1)
+            mask = (1 << total_width) - 1
+            # 2. Combine fields into a single value
+            combined = 0
+            for name, low, width in field_specs:
+                val = field_values.get(name, 0) & ((1 << width) - 1)
+                combined |= val << (low - field_specs[0][1])
+            # 3. Sign-extend if needed
+            if combined & sign_bit:
+                combined = combined - (1 << total_width)
+            return combined
+        # If single-field immediate, return the value directly
+        elif len(immediate_fields) == 1:
+            return field_values.get(immediate_fields[0]['name'], 0)
+        # If no immediate fields, return 0
+        return 0 

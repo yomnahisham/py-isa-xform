@@ -62,6 +62,7 @@ class InstructionNode(ASTNode):
     line: int = 0
     column: int = 0
     file: Optional[str] = None
+    address: Optional[int] = None  # Address assigned during assembly passes
 
 
 @dataclass
@@ -110,6 +111,11 @@ class Parser:
         if isa_definition:
             self._setup_syntax_from_isa()
             self.operand_parser = OperandParser(isa_definition)
+            # DEBUG: Print all register names and aliases
+            print("[DEBUG] ISA register names and aliases:")
+            for category, reg_list in isa_definition.registers.items():
+                for reg in reg_list:
+                    print(f"  name={reg.name}, aliases={reg.alias}")
         else:
             self.operand_parser = None
     
@@ -215,47 +221,24 @@ class Parser:
         return self._parse_instruction_part(line, line_num, file)
     
     def _parse_instruction_part(self, line: str, line_num: int, file: Optional[str]) -> Optional[InstructionNode]:
-        """Parse instruction part of a line (ISA-driven operand types, with operand count check)"""
-        parts = line.split(None, 1)  # Split on whitespace, max 1 split
-        if len(parts) < 1:
+        """Parse instruction part of a line"""
+        parts = line.split()
+        if not parts:
             return None
         
         mnemonic = parts[0]
         operands = []
-        expected_types = []
-        expected_count = None
-        # Modular: get expected operand types and count from ISA definition
-        if self.isa_definition and hasattr(self.isa_definition, 'instructions'):
-            instr = None
-            for i in self.isa_definition.instructions:
-                if hasattr(i, 'mnemonic') and i.mnemonic.upper() == mnemonic.upper():
-                    instr = i
-                    break
-            if instr and hasattr(instr, 'syntax'):
-                syntax_parts = instr.syntax.split()
-                if len(syntax_parts) > 1:
-                    operand_str = ' '.join(syntax_parts[1:])
-                    expected_types = [s.strip() for s in operand_str.split(',')]
-                    expected_count = len(expected_types)
-                else:
-                    expected_count = 0
         
+        # Parse operands
         if len(parts) > 1:
-            operand_str = parts[1]
+            operand_str = ' '.join(parts[1:])
             operand_parts = [part.strip() for part in operand_str.split(',')]
-            # Modular: check operand count
-            if expected_count is not None and len(operand_parts) != expected_count:
-                raise ValueError(f"[ISA ERROR] Instruction '{mnemonic}' expects {expected_count} operands as per ISA definition, but got {len(operand_parts)} at line {line_num} in {file or '<input>'}.")
-            for idx, operand_part in enumerate(operand_parts):
+            
+            for operand_part in operand_parts:
                 if operand_part:
-                    expected_type = expected_types[idx] if idx < len(expected_types) and expected_types[idx] is not None else ""
-                    operand = self._parse_operand_modular_typed(operand_part, line_num, file, expected_type)
+                    operand = self._parse_operand(operand_part, line_num, file)
                     if operand:
                         operands.append(operand)
-        else:
-            # Modular: check for zero-operand instructions
-            if expected_count is not None and expected_count != 0:
-                raise ValueError(f"[ISA ERROR] Instruction '{mnemonic}' expects {expected_count} operands as per ISA definition, but got 0 at line {line_num} in {file or '<input>'}.")
         
         return InstructionNode(mnemonic, operands, line_num, 1, file)
 
@@ -323,11 +306,13 @@ class Parser:
             return self._parse_operand(operand_str, line_num, file)
     
     def _parse_operand(self, operand_str: str, line_num: int, file: Optional[str]) -> Optional[OperandNode]:
-        """Parse a single operand"""
         operand_str = operand_str.strip()
-        
         if not operand_str:
             return None
+        
+        # Get register formatting config from ISA
+        reg_config = getattr(self.isa_definition, 'register_formatting', {})
+        prefix = reg_config.get('prefix', 'x')
         
         # Handle offset($reg) or offset(Rreg)
         if '(' in operand_str and operand_str.endswith(')'):
@@ -340,8 +325,8 @@ class Parser:
             else:
                 offset_node = OperandNode(offset, "label", line_num, 1, file)
             # Parse register
-            if reg.startswith('$'):
-                reg = reg[1:]
+            if reg.startswith(prefix):
+                reg = reg[len(prefix):]
             reg_node = OperandNode(reg, "register", line_num, 1, file)
             # Return as a memory operand node
             return OperandNode((offset_node, reg_node), "mem", line_num, 1, file)
@@ -351,13 +336,14 @@ class Parser:
             value = operand_str[1:]  # Remove #
             return OperandNode(value, "immediate", line_num, 1, file)
         
-        # Register (starts with $ or is a register name)
-        if operand_str.startswith('$'):
-            value = operand_str[1:]  # Remove $
-            return OperandNode(value, "register", line_num, 1, file)
-        
-        # Check if it's a register name (if we have ISA definition)
-        if self.isa_definition and self._is_register(operand_str):
+        # Register (starts with prefix or is a register name)
+        if operand_str.startswith(prefix):
+            reg_name = operand_str[len(prefix):]
+            if self._is_register(operand_str):
+                return OperandNode(operand_str, "register", line_num, 1, file)
+            if self._is_register(reg_name):
+                return OperandNode(reg_name, "register", line_num, 1, file)
+        if self._is_register(operand_str):
             return OperandNode(operand_str, "register", line_num, 1, file)
         
         # Check if it's a number
@@ -368,19 +354,24 @@ class Parser:
         return OperandNode(operand_str, "label", line_num, 1, file)
     
     def _is_register(self, name: str) -> bool:
-        """Check if name is a register"""
+        """Check if name is a register using JSON configuration (do not strip prefix for ZX16-style names)"""
         if not self.isa_definition or not hasattr(self.isa_definition, 'registers'):
             return False
-        
+        reg_config = getattr(self.isa_definition, 'register_formatting', {})
+        alternatives = reg_config.get('alternatives', {})
+        orig_name = name
+        # Do NOT strip prefix; match as-is
         for reg_list in self.isa_definition.registers.values():
             for reg in reg_list:
-                # Check main name
-                if hasattr(reg, 'name') and reg.name.upper() == name.upper():
+                if hasattr(reg, 'name') and reg.name == name:
                     return True
-                # Check aliases
                 if hasattr(reg, 'alias') and reg.alias:
                     for alias in reg.alias:
-                        if alias.upper() == name.upper():
+                        if alias == name:
+                            return True
+                if hasattr(reg, 'name') and reg.name in alternatives:
+                    for alt_name in alternatives[reg.name]:
+                        if alt_name == name:
                             return True
         return False
     

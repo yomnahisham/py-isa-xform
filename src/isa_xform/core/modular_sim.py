@@ -63,15 +63,15 @@ class Simulator:
                     code_size = data[16:20]
                     code_size = int.from_bytes(code_size, byteorder='little')
                     self.memory[code_start:code_start + code_size] = data[entry_point:entry_point + code_size]
-                    print(self.memory[self.pc:self.pc + code_size])
+                    #print(self.memory[self.pc:self.pc + code_size])
                     entry_point += code_size
                     data_start = data[20:24]
                     data_start = int.from_bytes(data_start, byteorder='little')
                     data_size = data[24:28]
                     data_size = int.from_bytes(data_size, byteorder='little')
-                    print(f"Data Start: {data_start} Data Size: {data_size}")
+                    #print(f"Data Start: {data_start} Data Size: {data_size}")
                     self.memory[data_start:data_start + data_size] = data[entry_point:entry_point + data_size]
-                    print(self.memory[data_start:data_start + data_size])
+                    #print(self.memory[data_start:data_start + data_size])
                     #self.memory[:len(data)] = data
             else:
                 with open(filename, 'rb') as f:
@@ -154,12 +154,15 @@ class Simulator:
         result = syntax
         reg_objs = self.isa_definition.registers['general_purpose']
         reg_names = [reg.name if hasattr(reg, 'name') else str(reg) for reg in reg_objs]
+        reg_aliases = [reg.alias[0] if hasattr(reg, 'alias') and reg.alias else str(reg) for reg in reg_objs]
         for operand in operands:
             if operand in reg_names:
                 idx = reg_names.index(operand)
                 result = result.replace(operand, f"regs[{idx}]")
+            elif operand in reg_aliases:
+                idx = reg_aliases.index(operand)
+                result = result.replace(operand, f"regs[{idx}]")
             else:
-                
                 # print(f"Warning: Operand '{operand}' not found in register names or aliases.", file=sys.stderr)
                 continue
             
