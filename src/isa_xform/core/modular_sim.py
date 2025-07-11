@@ -2,7 +2,6 @@ import sys
 import struct
 import re
 import numpy as np
-from pynput.keyboard import Key, Listener
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
@@ -43,55 +42,6 @@ class Simulator:
         self.key_state = {}
         self.running = True
         self.PCrange = isa_definition.address_space.memory_layout["code_section"]["end"]
-
-
-    def check_key_press(self, target_key: str) -> bool:
-        """Checks if a specific key is pressed"""
-        key_pressed = False
-        def on_press(key):
-            nonlocal key_pressed
-            try:
-                # For alphanumeric keys
-                if key.char == target_key:
-                    print(f"You pressed '{target_key}'!")
-                    key_pressed = True
-                    return False  # Stop the listener
-            except AttributeError:
-                # For special keys
-                if key == getattr(Key, target_key, None):
-                    print(f"You pressed {target_key}!")
-                    key_pressed = True
-                    return False
-        
-        listener = Listener(on_press=on_press)
-        listener.start()
-        listener.join(0.01)  # Wait for a short time to allow the listener to process events
-        if listener.is_alive():
-            listener.stop()
-        
-        self.key = 1 if key_pressed else 0
-        return key_pressed
-        
-
-    def listen_for_key(self, target_key):
-        def on_press(key):
-            try:
-                # For alphanumeric keys
-                if key.char == target_key:
-                    print(f"You pressed '{target_key}'!")
-                    self.key = 1
-                    return False  # Stop the listener
-            except AttributeError:
-                # For special keys
-                if key == target_key:
-                    print(f"You pressed {target_key}!")
-                    self.key = 1
-                    return False
-                self.key = 0
-
-        with Listener(on_press=on_press) as listener:
-            listener.join()
-
 
     def load_memory_from_file(self, filename: str) -> bool:
         """Loads machine code from a file into memory"""
