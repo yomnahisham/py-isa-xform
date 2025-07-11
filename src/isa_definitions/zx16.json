@@ -359,7 +359,7 @@
         "format": "I-type",
         "description": "Add immediate",
         "syntax": "ADDI rd, imm",
-        "semantics": "rd = rd + sign_extend(imm)",
+        "semantics": "rd = rd + sign_extend(imm & 0x7F)",
         "implementation": "# Add immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val + imm_val) \nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -731,7 +731,7 @@
         "format": "L-type",
         "description": "Load byte unsigned",
         "syntax": "LBU rd, offset(rs2)",
-        "semantics": "rd = unsigned(memory[rs2 + sign_extend(offset)][7:0])",
+        "semantics": "rd = unsigned(memory[rs2 + sign_extend(offset)])",
         "implementation": "# Load byte unsigned implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) \n# Load byte and zero extend\nif addr < len(memory):\n    result = memory[addr] & 0xFF\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -782,7 +782,7 @@
         "format": "U-type",
         "description": "Load upper immediate",
         "syntax": "LUI rd, imm",
-        "semantics": "rd = (imm << 7)",
+        "semantics": "rd = ((imm & 0xFFFF) << 7)",
         "implementation": "# Load upper immediate implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits\nresult = (imm << 7) \nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -799,7 +799,7 @@
         "format": "U-type",
         "description": "Add upper immediate to PC",
         "syntax": "AUIPC rd, imm",
-        "semantics": "rd = PC + (imm << 7)",
+        "semantics": "rd = PC + ((imm & 0xFFFF) << 7)",
         "implementation": "# Add upper immediate to PC implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits and add to PC\nresult = (context.pc + (imm << 7)) \nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
