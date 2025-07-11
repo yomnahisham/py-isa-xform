@@ -20,7 +20,105 @@
     },
     "pc_behavior": {
       "points_to": "next_instruction",
-      "offset_for_jumps": 2
+      "offset_for_jumps": 0,
+      "jump_offset_calculation": "target_minus_pc",
+      "disassembly": {
+        "jump_target_calculation": "pc_plus_offset",
+        "pc_value_for_jumps": "instruction_address_plus_pc_offset"
+      }
+    },
+    "instruction_architecture": {
+      "instruction_size": 16,
+      "instruction_size_bytes": 2,
+      "variable_length": false,
+      "alignment": 2,
+      "max_instruction_length": 16,
+      "address_bits": 16,
+      "address_mask": "0xFFFF"
+    },
+    "register_formatting": {
+      "prefix": "x",
+      "suffix": "",
+      "case": "lower",
+      "zero_register": "x0",
+      "alternatives": {
+        "x0": ["t0", "zero"],
+        "x1": ["ra", "return"],
+        "x2": ["sp", "stack"],
+        "x3": ["s0", "saved"]
+      }
+    },
+    "operand_formatting": {
+      "immediate_prefix": "",
+      "hex_prefix": "0x",
+      "binary_prefix": "0b",
+      "register_prefix": "x",
+      "address_format": "0x{addr:X}",
+      "immediate_format": "{value}",
+      "register_format": "x{reg}",
+      "separators": {
+        "operand": ", ",
+        "address": "(",
+        "address_close": ")"
+      }
+    },
+    "instruction_categories": {
+      "control_flow": {
+        "jumps": ["J", "JAL", "JALR", "JR"],
+        "branches": ["BEQ", "BNE", "BLT", "BGE", "BZ", "BNZ"],
+        "calls": ["CALL", "ECALL"],
+        "returns": ["RET", "JR"]
+      },
+      "data_movement": ["LOAD", "STORE", "MOVE", "LI", "LUI", "AUIPC"],
+      "arithmetic": ["ADD", "SUB", "SLT", "SLTU", "INC", "DEC"],
+      "logical": ["AND", "OR", "XOR", "NOT", "NEG", "SLL", "SRL", "SRA"],
+      "stack": ["PUSH", "POP"]
+    },
+    "pseudo_instruction_fallbacks": {
+      "hide_operands_by_default": false,
+      "default_behavior": "show_operands",
+      "fallback_rules": {
+        "CLR": "hide_operands",
+        "RET": "hide_operands",
+        "NOP": "hide_operands",
+        "INC": "hide_operands",
+        "DEC": "hide_operands",
+        "NOT": "hide_operands",
+        "NEG": "hide_operands"
+      }
+    },
+    "data_detection": {
+      "string_encodings": ["ascii", "utf8"],
+      "ascii_threshold": 0.8,
+      "min_string_length": 3,
+      "max_string_length": 100,
+      "detect_zeros": true,
+      "detect_patterns": ["repeating", "incrementing", "decrementing"]
+    },
+    "symbol_resolution": {
+      "case_sensitive": false,
+      "scope_rules": {
+        "local": ".",
+        "global": "",
+        "external": "_"
+      },
+      "naming_conventions": {
+        "functions": "func_{name}",
+        "variables": "var_{name}",
+        "constants": "CONST_{name}"
+      },
+      "precedence": ["local", "global", "external"]
+    },
+    "error_messages": {
+      "unknown_instruction": "Unknown instruction '{instruction}' at line {line}",
+      "invalid_operand": "Invalid operand '{operand}' for instruction '{instruction}'",
+      "undefined_symbol": "Undefined symbol '{symbol}' referenced at line {line}",
+      "invalid_address": "Invalid address {address} for {context}",
+      "format": {
+        "locale": "en_US",
+        "date_format": "YYYY-MM-DD",
+        "time_format": "HH:MM:SS"
+      }
     },
     "registers": {
       "general_purpose": [
@@ -651,7 +749,7 @@
         "description": "Jump",
         "syntax": "J offset",
         "semantics": "PC = PC + offset",
-        "implementation": "# Jump implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFE00\ncontext.pc = (context.pc + offset) & 0xFFFF",
+        "implementation": "# Jump implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset to 16-bit (bit 8 is sign bit)\nif offset & 0x100:\n    offset = offset | 0xFF00  # Sign extend upper 8 bits (bits 15:8)\ncontext.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "link", "bits": "15:15", "value": "0"},
@@ -668,7 +766,7 @@
         "description": "Jump and link",
         "syntax": "JAL rd, offset",
         "semantics": "rd = PC + 2; PC = PC + offset",
-        "implementation": "# Jump and link implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFE00\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Jump\ncontext.pc = (context.pc + offset) & 0xFFFF",
+        "implementation": "# Jump and link implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFF00\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Jump\ncontext.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
             {"name": "link", "bits": "15:15", "value": "1"},
@@ -1117,35 +1215,6 @@
         ]
       }
     },
-    "instruction_categories": {
-      "control_flow": {
-        "jumps": ["J", "JAL", "JMP", "JR"],
-        "branches": ["BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ"],
-        "calls": ["CALL", "JAL"],
-        "returns": ["RET", "JR"]
-      },
-      "arithmetic": {
-        "add": ["ADD", "ADDI", "AUIPC"],
-        "subtract": ["SUB"],
-        "multiply": ["MUL"],
-        "divide": ["DIV", "DIVU"],
-        "remainder": ["REM", "REMU"]
-      },
-      "logical": {
-        "and": ["AND", "ANDI"],
-        "or": ["OR", "ORI"],
-        "xor": ["XOR", "XORI"],
-        "shift": ["SLL", "SLLI", "SRL", "SRLI", "SRA", "SRAI"]
-      },
-      "memory": {
-        "load": ["LW", "LB", "LBU", "LH", "LHU"],
-        "store": ["SW", "SB", "SH"]
-      },
-      "system": {
-        "ecall": ["ECALL"],
-        "ebreak": ["EBREAK"]
-      }
-    },
     "constants": {
       "RESET_VECTOR": 0,
       "INT_VECTORS": 0,
@@ -1239,5 +1308,7 @@
         },
         "return": "None"
       }
-    }
+    },
+    "control_flow_instructions": ["J", "JAL", "JALR", "JR", "BEQ", "BNE", "BLT", "BGE", "BZ", "BNZ", "CALL", "ECALL", "RET"],
+    "jump_instructions": ["J", "JAL", "JALR", "JR", "CALL", "RET"]
   } 

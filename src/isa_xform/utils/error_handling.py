@@ -198,4 +198,39 @@ class ErrorReporter:
         if warning_count > 0:
             parts.append(f"{warning_count} warning{'s' if warning_count != 1 else ''}")
         
-        return ", ".join(parts) 
+        return f"{', '.join(parts)} found"
+
+
+def format_error_message(isa_definition, error_type: str, **kwargs) -> str:
+    """Format error message using ISA JSON configuration"""
+    error_config = getattr(isa_definition, 'error_messages', {})
+    
+    # Get the error message template
+    if error_type == 'unknown_instruction':
+        template = error_config.get('unknown_instruction', "Unknown instruction '{instruction}' at line {line}")
+    elif error_type == 'invalid_operand':
+        template = error_config.get('invalid_operand', "Invalid operand '{operand}' for instruction '{instruction}'")
+    elif error_type == 'undefined_symbol':
+        template = error_config.get('undefined_symbol', "Undefined symbol '{symbol}' referenced at line {line}")
+    elif error_type == 'invalid_address':
+        template = error_config.get('invalid_address', "Invalid address {address} for {context}")
+    else:
+        # Fallback to simple format
+        template = "{message}"
+    
+    # Format the message with provided arguments
+    try:
+        return template.format(**kwargs)
+    except KeyError:
+        # If formatting fails, return a simple message
+        return kwargs.get('message', f"Error: {error_type}")
+
+
+def get_error_format_config(isa_definition) -> Dict[str, Any]:
+    """Get error message formatting configuration from ISA"""
+    error_config = getattr(isa_definition, 'error_messages', {})
+    return error_config.get('format', {
+        'locale': 'en_US',
+        'date_format': 'YYYY-MM-DD',
+        'time_format': 'HH:MM:SS'
+    }) 

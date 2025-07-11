@@ -1,0 +1,149 @@
+# Expected Output for QuantumCore Demo
+
+## Assembly Source (quantum_core_test.s)
+```
+# QuantumCore ISA Test Program
+# Tests arithmetic, control flow, memory operations, and quantum features
+
+.org 0x1000
+
+# Data section
+.data:
+    .word 0x12345678, 0xABCDEF01, 0xDEADBEEF
+    .ascii "Hello, Quantum World!"
+
+.text:
+main:
+    # Initialize registers
+    LI r10, #42          # Load immediate
+    LI r11, #10          # Load immediate
+    LI r12, #0x1000      # Load address for data access
+    
+    # Test arithmetic operations
+    ADD r13, r10, r11    # r13 = 42 + 10 = 52
+    SUB r14, r10, r11    # r14 = 42 - 10 = 32
+    
+    # Test memory operations
+    LW r15, 0(r12)       # Load first word from data section
+    SW r13, 16(r12)      # Store result to memory
+    
+    # Test control flow
+    BEQ r10, r11, equal_branch  # Should not branch (42 != 10)
+    LI r9, #100          # This should execute
+    
+not_equal:
+    BEQ r10, r10, equal_branch  # Should branch (42 == 42)
+    LI r8, #200          # This should NOT execute
+    
+equal_branch:
+    LI r7, #300          # This should execute
+    
+    # Test quantum features
+    QUBIT r5, #0         # Initialize qubit in |0> state
+    QUBIT r6, #1         # Initialize qubit in |1> state
+    
+    # Test function call
+    CALL quantum_function
+    
+    # Test jump
+    JMP final_test
+    
+quantum_function:
+    # Function body
+    ADD r4, r5, r6       # Add qubit IDs
+    RET                  # Return from function
+    
+final_test:
+    # Final test - system call
+    LI r10, #0           # Exit code 0
+    ECALL                # System call to exit
+```
+
+## Expected Disassembly Output (quantum_core_test_dis.s)
+```
+; Disassembly of QuantumCore v2.0
+; Word size: 32 bits
+; Endianness: little
+
+    1000: ADDI r10, zero, #0
+    1004: ADDI r11, zero, #0
+    1008: ADDI r12, zero, #0
+    100C: NOP ; pseudo: NOP
+    1010: SUB r14, r10, r11
+    1014: LW r15, 0(r12)
+    1018: SW r13
+    101C: BEQ r10, r11, 0x102C
+    1020: ADDI r9, zero, #0
+    1024: BEQ r10, r10, 0x102C
+    1028: ADDI r8, zero, #0
+L_102C:
+    102C: ADDI r7, zero, #0
+    1030: QUBIT r5, 0
+    1034: QUBIT r6, 0
+    1038: CALL 0x1040 ; pseudo: CALL
+    103C: JMP 0x1048 ; pseudo: JMP
+    1040: NOP ; pseudo: NOP
+    1044: RET ; pseudo: RET
+    1048: ADDI r10, zero, #0
+    104C: ECALL
+
+; Data sections:
+    ; Data section at 0x8000
+    8000: .ascii "xV4"
+    8003: .word 0xCDEF0112
+    8007: .word 0xADBEEFAB
+    800B: .word 0x6C6548DE
+    800F: .word 0x202C6F6C
+    8013: .word 0x6E617551
+    8017: .word 0x206D7574
+    801B: .word 0x6C726F57
+    801F: .byte 0x64
+    8020: .byte 0x21
+```
+
+## Key Differences Between Source and Disassembly
+
+### 1. Pseudo-Instruction Handling
+- **Source**: Uses `LI`, `CALL`, `RET`, `JMP`
+- **Disassembly**: Shows expanded forms or pseudo labels
+
+### 2. Immediate Values
+- **Source**: Shows actual values (42, 10, etc.)
+- **Disassembly**: May show encoded/expanded forms
+
+### 3. Labels vs Addresses
+- **Source**: Uses symbolic labels
+- **Disassembly**: Shows resolved addresses
+
+### 4. Data Section
+- **Source**: Structured data declarations
+- **Disassembly**: Raw bytes with inferred types
+
+## File Sizes
+- `quantum_core_test.s`: ~2KB (assembly source)
+- `quantum_core_test.bin`: ~603 bytes (binary)
+- `quantum_core_test_dis.s`: ~1KB (disassembly)
+
+## Assembly Statistics
+- **Instructions**: 20 total
+- **Data sections**: 1
+- **Labels**: 4 (main, not_equal, equal_branch, quantum_function, final_test)
+- **Pseudo-instructions**: 5 (LI, CALL, RET, JMP, NOP)
+- **Quantum instructions**: 2 (QUBIT)
+
+## Expected Behavior
+1. Register initialization with immediate values
+2. Arithmetic operations (ADD, SUB)
+3. Memory operations (LW, SW)
+4. Conditional branching (BEQ)
+5. Quantum bit initialization (QUBIT)
+6. Function calls and returns
+7. System call exit
+
+This demonstrates the toolkit's ability to handle:
+- Custom ISA definitions
+- Complex instruction formats
+- Pseudo-instruction expansion
+- Address resolution
+- Data section handling
+- Quantum computing concepts 
