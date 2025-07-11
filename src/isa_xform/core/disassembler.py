@@ -746,12 +746,12 @@ class Disassembler:
                 bit_width = high - low + 1
                 value = extract_bits(instr_word, high, low)
                 
-                print(f"[DEBUG] Field {field.get('name', '')}: bits={bits}, high={high}, low={low}, width={bit_width}, raw_value={value}")
+                #print(f"[DEBUG] Field {field.get('name', '')}: bits={bits}, high={high}, low={low}, width={bit_width}, raw_value={value}")
                 
                 # Handle signed immediates
                 if field.get("signed", False) and (value & (1 << (bit_width - 1))):
                     value = sign_extend(value, bit_width)
-                    print(f"[DEBUG] Sign-extended value: {value}")
+                    #print(f"[DEBUG] Sign-extended value: {value}")
                 
                 field_name = field.get("name", "")
                 field_values[field_name] = value

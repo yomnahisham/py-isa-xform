@@ -15,16 +15,16 @@ from ..utils.bit_utils import (
     create_mask, bytes_to_int, int_to_bytes
 )
 
-def sign_extend(value: int, bits: int) -> int:
-    """Sign extend a value from specified number of bits to 16 bits"""
-    if value & (1 << (bits - 1)):
-        mask = (1 << bits) - 1
-        return value | (~mask)
-    return value & ((1 << bits) - 1)
+# def sign_extend(value: int, bits: int) -> int:
+#     """Sign extend a value from specified number of bits to 16 bits"""
+#     if value & (1 << (bits - 1)):
+#         mask = (1 << bits) - 1
+#         return value | (~mask)
+#     return value & ((1 << bits) - 1)
 
-def unsigned(value: int) -> int:
-    unsigned = np.uint16(value)
-    return unsigned
+# def unsigned(value: int) -> int:
+#     unsigned = np.uint16(value)
+#     return unsigned
 class Simulator:
     def __init__(self, isa_definition: ISADefinition, symbol_table: Optional[SymbolTable] = None, disassembler: Optional[Disassembler] = None):
         self.isa_definition = isa_definition
@@ -35,7 +35,7 @@ class Simulator:
         self.data_start = isa_definition.address_space.default_data_start
         self.stack_start = isa_definition.address_space.default_stack_start
         self.pc_step = self.isa_definition.word_size // 8
-        self.regs = [0] * len(self.isa_definition.registers['general_purpose'])
+        self.regs = [np.int16(0)] * len(self.isa_definition.registers['general_purpose'])
         self.reg_names = [reg.alias[0] for reg in self.isa_definition.registers['general_purpose']]
         # get index of sp
         self.sp_index = self.reg_names.index('sp') if 'sp' in self.reg_names else -1
@@ -68,26 +68,6 @@ class Simulator:
         
         self.key = 1 if key_pressed else 0
         return key_pressed
-        
-
-    def listen_for_key(self, target_key):
-        def on_press(key):
-            try:
-                # For alphanumeric keys
-                if key.char == target_key:
-                    print(f"You pressed '{target_key}'!")
-                    self.key = 1
-                    return False  # Stop the listener
-            except AttributeError:
-                # For special keys
-                if key == target_key:
-                    print(f"You pressed {target_key}!")
-                    self.key = 1
-                    return False
-                self.key = 0
-
-        with Listener(on_press=on_press) as listener:
-            listener.join()
 
 
     def load_memory_from_file(self, filename: str) -> bool:
@@ -143,40 +123,6 @@ class Simulator:
         except FileNotFoundError:
             print(f"Error: File '{filename}' not found", file=sys.stderr)
             return False
-        
-
-    
-    def read_memory_byte(self, addr: int) -> int:
-        if 0 <= addr < len(self.memory):
-            return self.memory[addr]
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
-            return 0
-    
-    def write_memory_byte(self, addr: int, value: int):
-        if 0 <= addr < len(self.memory):
-            self.memory[addr] = value & 0xFF
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
-    
-    def read_memory_word(self, addr: int) -> int: # TO BE VISITED
-        if 0 <= addr < len(self.memory) - self.pc_step:
-            if self.isa_definition.endianness == 'little':
-                return struct.unpack('<H', self.memory[addr:addr + self.pc_step])[0] 
-            else:                
-                return struct.unpack('>H', self.memory[addr:addr + self.pc_step])[0] 
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
-            return 0
-        
-    def write_memory_word(self, addr: int, value: int): # TO BE VISITED
-        if 0 <= addr < len(self.memory) - 1:
-            if self.isa_definition.endianness == 'little':
-                self.memory[addr:addr + self.pc_step] = struct.pack('<H', value & 0xFFFF)
-            else:
-                self.memory[addr:addr + self.pc_step] = struct.pack('>H', value & 0xFFFF)
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
     
     def extract_parameters(self, syntax: str) -> List[str]:
         """ Extracts parameter names from assembly string"""
@@ -210,20 +156,13 @@ class Simulator:
                 idx = reg_aliases.index(operand)
                 result = result.replace(operand, f"regs[{idx}]")
             else:
-                # print(f"Warning: Operand '{operand}' not found in register names or aliases.", file=sys.stderr)
                 continue
             
         result = result.replace("memory", "self.memory")
         result = result.replace("PC", "self.pc")
+        result = result.replace("sign_extend", "np.int16")
+        result = result.replace("unsigned", "np.uint16")
         return result        
-    
-    
-    def get_key(self, target_key: str) -> int:
-        event = keyboard.read_event()
-        if event.event_type == keyboard.KEY_DOWN:
-            if event.name == target_key:
-                return 1
-        return 0
     
     def map_disassembly_result_to_pc(self, disassembly_result: DisassemblyResult) -> Dict[int, DisassembledInstruction]:
         """Maps disassembled instructions to their program counter (PC) addresses"""
@@ -315,7 +254,7 @@ class Simulator:
                 code = self.generic_to_register_name(code, generic_parameters, actual_parameters)
                 executable_string = self.register_name_to_index(code, actual_parameters)
                 print(f"Executing: {executable_string}")
-                exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'unsigned': unsigned, 'sign_extend': sign_extend, 'read_memory_word': self.read_memory_word, 'write_memory_word': self.write_memory_word})
+                exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'np': np})
                 return True
         return True
         
@@ -325,16 +264,11 @@ class Simulator:
         disassembly_result = self.disassembler.disassemble(self.memory, self.pc)
         instuctions_map = self.map_disassembly_result_to_pc(disassembly_result)
         loop = "start"
-        # print(f"Code Start: {self.pc}")
-        # print(f"Data Start: {self.data_start} ")
-        #print(f"Memory: {self.memory} ")
 
-        #while self.pc < len(self.memory) and (loop != 'q' or (not step)):
-        while self.pc < len(self.memory): 
+        while self.pc < len(self.memory) and (loop != 'q' or (not step)):
             current_instruction = instuctions_map[self.pc] if self.pc in instuctions_map else None
             if current_instruction is None:
                 print(f"Skipping instruction at PC: {self.pc} (NoneType)")
-                return False
                 continue
 
             print(f"PC: {self.pc:04X} - {current_instruction.mnemonic} {', '.join(current_instruction.operands)}")
@@ -347,9 +281,8 @@ class Simulator:
                 else:
                     if step:
                         values = [reg for reg in self.regs]
-                        print(self.regs)
-                        #print(f"Registers: {', '.join(f'{name}: {value}' for name, value in zip(self.reg_names, values))}")
-                        #loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
+                        print(' '.join(f"{name}: {value}" for name, value in zip(self.reg_names, values)))
+                        loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
                     else:
                         if self.pc >= len(disassembly_result.instructions):
                             print("Reached end of disassembled instructions")
