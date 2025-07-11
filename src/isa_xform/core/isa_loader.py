@@ -79,6 +79,7 @@ class PseudoInstruction:
     syntax: str
     expansion: str
     validation_rules: Dict[str, Any] = field(default_factory=dict)
+    disassembly: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -160,6 +161,15 @@ class ISADefinition:
     addressing_modes: List[AddressingMode] = field(default_factory=list)
     assembly_syntax: AssemblySyntax = field(default_factory=AssemblySyntax)
     address_space: AddressSpace = field(default_factory=AddressSpace)
+    pc_behavior: Dict[str, Any] = field(default_factory=dict)
+    instruction_architecture: Dict[str, Any] = field(default_factory=dict)
+    register_formatting: Dict[str, Any] = field(default_factory=dict)
+    operand_formatting: Dict[str, Any] = field(default_factory=dict)
+    instruction_categories: Dict[str, Any] = field(default_factory=dict)
+    pseudo_instruction_fallbacks: Dict[str, Any] = field(default_factory=dict)
+    data_detection: Dict[str, Any] = field(default_factory=dict)
+    symbol_resolution: Dict[str, Any] = field(default_factory=dict)
+    error_messages: Dict[str, Any] = field(default_factory=dict)
     constants: Dict[str, Constant] = field(default_factory=dict)
     ecall_services: Dict[str, ECallService] = field(default_factory=dict)
     validation_rules: Dict[str, Any] = field(default_factory=dict)
@@ -281,7 +291,8 @@ class ISALoader:
                 mnemonic=pseudo_data["mnemonic"],
                 description=pseudo_data["description"],
                 syntax=pseudo_data["syntax"],
-                expansion=pseudo_data["expansion"]
+                expansion=pseudo_data["expansion"],
+                disassembly=pseudo_data.get("disassembly", {})
             )
             pseudo_instructions.append(pseudo_instruction)
 
@@ -344,6 +355,19 @@ class ISALoader:
             alignment_requirements=address_space_data.get("alignment_requirements", {})
         )
         
+        # Parse PC behavior configuration
+        pc_behavior = data.get("pc_behavior", {})
+        
+        # Parse new modularity fields
+        instruction_architecture = data.get("instruction_architecture", {})
+        register_formatting = data.get("register_formatting", {})
+        operand_formatting = data.get("operand_formatting", {})
+        instruction_categories = data.get("instruction_categories", {})
+        pseudo_instruction_fallbacks = data.get("pseudo_instruction_fallbacks", {})
+        data_detection = data.get("data_detection", {})
+        symbol_resolution = data.get("symbol_resolution", {})
+        error_messages = data.get("error_messages", {})
+        
         # Parse constants
         constants = {}
         for const_name, const_value in data.get("constants", {}).items():
@@ -389,6 +413,15 @@ class ISALoader:
             addressing_modes=addressing_modes,
             assembly_syntax=assembly_syntax,
             address_space=address_space,
+            pc_behavior=pc_behavior,
+            instruction_architecture=instruction_architecture,
+            register_formatting=register_formatting,
+            operand_formatting=operand_formatting,
+            instruction_categories=instruction_categories,
+            pseudo_instruction_fallbacks=pseudo_instruction_fallbacks,
+            data_detection=data_detection,
+            symbol_resolution=symbol_resolution,
+            error_messages=error_messages,
             constants=constants,
             ecall_services=ecall_services,
             validation_rules={}

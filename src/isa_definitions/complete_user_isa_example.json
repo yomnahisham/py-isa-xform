@@ -138,6 +138,8 @@
       }
     }
   ],
+  "control_flow_instructions": ["J", "JAL", "JALR", "JR", "BEQ", "BNE", "BLT", "BGE", "BZ", "BNZ", "CALL", "ECALL", "RET"],
+  "jump_instructions": ["J", "JAL", "JALR", "JR", "CALL", "RET"],
   "directives": [
     {
       "name": ".user_data",

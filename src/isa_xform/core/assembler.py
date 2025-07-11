@@ -137,6 +137,8 @@ class Assembler:
                 self._handle_label_definition(node)
                 print(f"[DEBUG] After LabelNode {getattr(node, 'name', '')}: address = {self.context.current_address}")
             elif isinstance(node, InstructionNode):
+                # Record the address for this instruction node
+                node.address = self.context.current_address
                 self._advance_address_for_instruction(node)
                 print(f"[DEBUG] After InstructionNode {getattr(node, 'mnemonic', '')}: address = {self.context.current_address}")
             elif isinstance(node, DirectiveNode):
@@ -196,9 +198,11 @@ class Assembler:
                             code_bytes.extend(handler(node) or b"")
                             logical_code_address = self.context.current_address
             elif isinstance(node, InstructionNode):
-                # Use logical code address for instruction encoding
-                self.context.current_address = logical_code_address
-                code = self._assemble_instruction(node)
+                # Use the address recorded in the first pass for this instruction
+                instruction_address = getattr(node, 'address', logical_code_address)
+                self.context.current_address = instruction_address
+                print(f"[DEBUG] Second pass: logical_code_address={logical_code_address}, current_address={self.context.current_address}, instruction_address={instruction_address}")
+                code = self._assemble_instruction(node, instruction_address)
                 code_bytes.extend(code)
                 logical_code_address = self.context.current_address
         
@@ -265,7 +269,7 @@ class Assembler:
             for n in expanded_nodes:
                 self._advance_address_for_instruction(n)
     
-    def _assemble_instruction(self, node: InstructionNode) -> bytearray:
+    def _assemble_instruction(self, node: InstructionNode, instruction_address: Optional[int] = None) -> bytearray:
         """Assemble a single instruction, expanding pseudo-instructions if needed"""
         instruction = self._find_instruction(node.mnemonic)
         if not instruction:
@@ -274,10 +278,11 @@ class Assembler:
             expanded_nodes = self._expand_pseudo_instruction(node, self.context.current_address)
             code = bytearray()
             for n in expanded_nodes:
-                code.extend(self._assemble_instruction(n))
+                code.extend(self._assemble_instruction(n, instruction_address))
             return code
-        # --- FIX: Capture the address of this instruction before encoding ---
-        instruction_address = int(self.context.current_address)
+        # Use passed instruction address or capture from context
+        if instruction_address is None:
+            instruction_address = int(self.context.current_address)
         # Encode the instruction based on its format
         encoded = self._encode_instruction(instruction, node.operands, instruction_address)
         
@@ -396,10 +401,10 @@ class Assembler:
                         mapping[field_name] = operand_node
                         break
         
-        # --- PATCH: For multi-field immediates (like LUI), map the same immediate operand to all immediate fields ---
-        # If there is exactly one immediate operand and multiple immediate fields, map to all
+        # --- PATCH: For multi-field immediates (like LUI, J, JAL), map the same operand to all immediate fields ---
+        # If there is exactly one immediate/label operand and multiple immediate fields, map to all
         immediate_fields = [f for f in fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
-        immediate_operands = [op for op in operands if getattr(op, 'type', None) == 'immediate']
+        immediate_operands = [op for op in operands if getattr(op, 'type', None) in ['immediate', 'label']]
         if len(immediate_operands) == 1 and len(immediate_fields) > 1:
             for field in immediate_fields:
                 mapping[field["name"]] = immediate_operands[0]
@@ -416,24 +421,62 @@ class Assembler:
         elif field_type == "immediate":
             # Check if this is actually a label (for branch/jump instructions)
             if operand.type == "label":
-                # Modular offset calculation: get offset_base from field or encoding
-                offset_base = None
-                if field and "offset_base" in field:
-                    offset_base = field["offset_base"]
-                elif instruction and hasattr(instruction, "encoding") and isinstance(instruction.encoding, dict):
-                    offset_base = instruction.encoding.get("offset_base", "current")
-                else:
-                    offset_base = "current"
+                # Resolve label to address
                 target_address = self._resolve_address_operand(operand)
-                if offset_base == "current":
+                
+                # Use ISA-driven PC behavior for jump offset calculation
+                pc_config = getattr(self.isa_definition, 'pc_behavior', {})
+                pc_offset = pc_config.get('offset_for_jumps', 0)
+                jump_calc = pc_config.get('jump_offset_calculation', 'target_minus_pc')
+                
+                if jump_calc == 'target_minus_pc':
+                    # Calculate offset as target - (instruction_address + pc_offset)
+                    offset = target_address - (instruction_address + pc_offset)
+                elif jump_calc == 'target_minus_current':
+                    # Calculate offset as target - instruction_address
                     offset = target_address - instruction_address
-                elif offset_base == "next":
-                    offset = target_address - (instruction_address + self.instruction_size_bytes)
-                elif isinstance(offset_base, int):
-                    offset = target_address - (instruction_address + offset_base)
                 else:
-                    # fallback to current
+                    # Fallback to target - current
                     offset = target_address - instruction_address
+                
+                print(f"[DEBUG] Jump offset calculation: target={target_address}, instruction_addr={instruction_address}, pc_offset={pc_offset}, jump_calc={jump_calc}, offset={offset}")
+                
+                # Handle multi-field immediates for label operands
+                if field and "bits" in field and instruction and hasattr(instruction, "encoding"):
+                    encoding_fields = instruction.encoding.get("fields", [])
+                    immediate_fields = [f for f in encoding_fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
+                    if len(immediate_fields) > 1:
+                        print(f"[DEBUG] Multi-field immediate detected for {instruction.mnemonic}, field={field_name}, offset={offset}")
+                        # --- ISA-driven multi-field immediate encoding ---
+                        # 1. Compute total width and sign bit
+                        field_specs = []
+                        for f in immediate_fields:
+                            bits = f.get("bits", "")
+                            if ":" in bits:
+                                high, low = [int(x) for x in bits.split(":")]
+                            else:
+                                high = low = int(bits)
+                            width = high - low + 1
+                            field_specs.append((f["name"], low, width))
+                        # Sort by low bit (LSB first)
+                        field_specs.sort(key=lambda x: x[1])
+                        total_width = sum(w for _, _, w in field_specs)
+                        sign_bit = 1 << (total_width - 1)
+                        mask = (1 << total_width) - 1
+                        # 2. Encode offset as signed value of correct width
+                        if offset < 0:
+                            signed_offset = (offset + (1 << total_width)) & mask
+                        else:
+                            signed_offset = offset & mask
+                        # 3. Extract bits for each field
+                        for name, low, width in field_specs:
+                            field_val = (signed_offset >> (low - field_specs[0][1])) & ((1 << width) - 1)
+                            if field_name == name:
+                                print(f"[DEBUG] ISA-driven multi-field: field={name}, offset={offset}, signed_offset={signed_offset}, result={field_val}")
+                                return field_val
+                        # fallback (should not reach)
+                        return 0
+                
                 return offset
             else:
                 # Treat as literal immediate value
@@ -443,16 +486,28 @@ class Assembler:
             if field and "bits" in field and instruction and hasattr(instruction, "encoding"):
                 encoding_fields = instruction.encoding.get("fields", [])
                 immediate_fields = [f for f in encoding_fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
+                print(f"[DEBUG] Checking multi-field for {instruction.mnemonic}, field={field_name}, value={value}")
+                print(f"[DEBUG] All fields: {[f['name'] for f in encoding_fields]}")
+                print(f"[DEBUG] Immediate fields: {[f['name'] for f in immediate_fields]}")
                 if len(immediate_fields) > 1:
-                    # For U-type instructions like AUIPC and LUI, the immediate is split into two fields
-                    # The implementation shows: imm = (imm1 << 3) | imm2
-                    # So we need to reverse this: imm1 = imm >> 3, imm2 = imm & 0x7
-                    if field_name == "imm":
-                        # Upper field: extract bits [8:3] of the immediate
-                        return (value >> 3) & 0x3F  # 6 bits
-                    elif field_name == "imm2":
-                        # Lower field: extract bits [2:0] of the immediate
-                        return value & 0x7  # 3 bits
+                    print(f"[DEBUG] Multi-field immediate detected for {instruction.mnemonic}, field={field_name}, value={value}")
+                    print(f"[DEBUG] Immediate fields: {[f['name'] for f in immediate_fields]}")
+                    # For instructions with split immediates (like J, JAL, LUI, AUIPC)
+                    # We need to extract the correct bits based on the field's actual bit position
+                    if field_name in ["imm", "imm2"]:
+                        # Get the bit range for this specific field
+                        field_bits = field.get("bits", "")
+                        if ":" in field_bits:
+                            high, low = [int(x) for x in field_bits.split(":")]
+                            width = high - low + 1
+                            # For other instructions, extract the bits from the user's immediate value
+                            extracted_value = (value >> low) & ((1 << width) - 1)
+                            return extracted_value
+                        else:
+                            high = low = int(field_bits)
+                            width = 1
+                            extracted_value = (value >> low) & 1
+                            return extracted_value
                     else:
                         # For other field names, use the original logic
                         # Sort fields by order in encoding
@@ -497,29 +552,61 @@ class Assembler:
             return self._resolve_immediate_operand(operand)
     
     def _resolve_register_operand(self, operand: OperandNode) -> int:
-        """Resolve register operand to register number (modular, supports register objects and names)"""
+        """Resolve register operand to register number using ISA JSON configuration"""
         reg_val = operand.value
-        syntax = self.isa_definition.assembly_syntax
+        
+        # Get register formatting config from ISA
+        reg_config = getattr(self.isa_definition, 'register_formatting', {})
+        prefix = reg_config.get('prefix', 'x')
+        alternatives = reg_config.get('alternatives', {})
+        
         # If it's a register object (from OperandParser), match by object
         if hasattr(reg_val, 'name') and hasattr(reg_val, 'alias'):
             for category, registers in self.isa_definition.registers.items():
                 for i, register in enumerate(registers):
                     if register is reg_val:
                         return i
+        
         # Otherwise, treat as string (name or alias)
         reg_name = reg_val
-        if isinstance(reg_name, str) and reg_name.startswith(syntax.register_prefix):
-            reg_name = reg_name[len(syntax.register_prefix):]
+        
         for category, registers in self.isa_definition.registers.items():
             for i, register in enumerate(registers):
-                reg_cmp = register.name if syntax.case_sensitive else register.name.upper()
-                operand_cmp = reg_name if syntax.case_sensitive else reg_name.upper()
-                if reg_cmp == operand_cmp:
+                # Check main register name (with and without prefix)
+                if register.name == reg_name:
                     return i
+                
+                # Check without prefix if the register name has a prefix
+                if reg_name.startswith(prefix) and register.name == reg_name[len(prefix):]:
+                    return i
+                
+                # Check with prefix if the register name doesn't have a prefix
+                if not reg_name.startswith(prefix) and register.name == prefix + reg_name:
+                    return i
+                
+                # Check aliases
                 for alias in register.alias:
-                    alias_cmp = alias if syntax.case_sensitive else alias.upper()
-                    if alias_cmp == operand_cmp:
+                    if alias == reg_name:
                         return i
+                    # Check alias without prefix if it has a prefix
+                    if reg_name.startswith(prefix) and alias == reg_name[len(prefix):]:
+                        return i
+                    # Check alias with prefix if it doesn't have a prefix
+                    if not reg_name.startswith(prefix) and alias == prefix + reg_name:
+                        return i
+                
+                # Check alternative names from JSON config
+                if register.name in alternatives:
+                    for alt_name in alternatives[register.name]:
+                        if alt_name == reg_name:
+                            return i
+                        # Check alternative without prefix if it has a prefix
+                        if reg_name.startswith(prefix) and alt_name == reg_name[len(prefix):]:
+                            return i
+                        # Check alternative with prefix if it doesn't have a prefix
+                        if not reg_name.startswith(prefix) and alt_name == prefix + reg_name:
+                            return i
+        
         raise AssemblerError(f"Unknown register: {operand.value}")
     
     def _resolve_immediate_operand(self, operand: OperandNode) -> int:
@@ -536,11 +623,18 @@ class Assembler:
         if hasattr(value_str, 'name') and hasattr(value_str, 'alias'):
             raise AssemblerError(f"Register operand passed where immediate expected: {value_str.name}")
         
-        syntax = self.isa_definition.assembly_syntax
+        # Get operand formatting config from ISA
+        op_config = getattr(self.isa_definition, 'operand_formatting', {})
+        immediate_prefix = op_config.get('immediate_prefix', '#')
+        
+        # Fallback to assembly_syntax for backward compatibility
+        if not immediate_prefix:
+            syntax = self.isa_definition.assembly_syntax
+            immediate_prefix = getattr(syntax, 'immediate_prefix', '#')
         
         # Remove immediate prefix if present
-        if isinstance(value_str, str) and value_str.startswith(syntax.immediate_prefix):
-            value_str = value_str[len(syntax.immediate_prefix):]
+        if isinstance(value_str, str) and value_str.startswith(immediate_prefix):
+            value_str = value_str[len(immediate_prefix):]
         
         # Support label bitfield extraction
         if isinstance(value_str, str):
@@ -581,14 +675,25 @@ class Assembler:
             return self._resolve_immediate_operand(operand)
     
     def _parse_number(self, value_str: str) -> int:
-        """Parse number string to integer"""
-        syntax = self.isa_definition.assembly_syntax
+        """Parse number string to integer using ISA JSON configuration"""
+        # Get operand formatting config from ISA
+        op_config = getattr(self.isa_definition, 'operand_formatting', {})
+        hex_prefix = op_config.get('hex_prefix', '0x')
+        binary_prefix = op_config.get('binary_prefix', '0b')
+        
+        # Fallback to assembly_syntax for backward compatibility
+        if not hex_prefix or not binary_prefix:
+            syntax = self.isa_definition.assembly_syntax
+            if not hex_prefix:
+                hex_prefix = getattr(syntax, 'hex_prefix', '0x')
+            if not binary_prefix:
+                binary_prefix = getattr(syntax, 'binary_prefix', '0b')
         
         try:
-            # Handle different number formats based on ISA syntax
-            if value_str.startswith(syntax.hex_prefix):
+            # Handle different number formats based on ISA configuration
+            if value_str.startswith(hex_prefix):
                 return int(value_str, 16)
-            elif value_str.startswith(syntax.binary_prefix):
+            elif value_str.startswith(binary_prefix):
                 return int(value_str, 2)
             else:
                 return int(value_str, 10)
@@ -924,13 +1029,10 @@ class Assembler:
         # Replace all bitfield patterns in the expansion string
         def bitfield_replacer(match):
             operand_name, high_str, low_str = match.group(1), match.group(2), match.group(3)
-            print(f"[DEBUG] Bitfield extraction: operand_name={operand_name}, high={high_str}, low={low_str}")
             key = f"${operand_name}" if f"${operand_name}" in operand_map else operand_name
             if key not in operand_map:
-                print(f"[DEBUG] Bitfield: key {key} not found in operand_map")
                 return match.group(0)  # leave as is if not found
             v = operand_map[key]
-            print(f"[DEBUG] Bitfield: value={v}")
             try:
                 high = int(high_str)
                 low = int(low_str)
@@ -952,8 +1054,6 @@ class Assembler:
                 if self.context.pass_number == 2 and self.symbol_table.get_symbol(v) is not None:
                     is_label = True
                 
-                print(f"[DEBUG] Bitfield: is_label={is_label}, pass_number={self.context.pass_number}")
-                
                 if is_label:
                     try:
                         if self.context.pass_number == 2:
@@ -962,33 +1062,24 @@ class Assembler:
                             # Modular fix: for LA, use (label_address - current_PC) for bitfield extraction
                             if node.mnemonic.upper() == "LA":
                                 offset = value - la_instruction_address
-                                print(f"[DEBUG] LA bitfield: label={v}, label_addr={value}, la_addr={la_instruction_address}, offset={offset}")
-                                print(f"[DEBUG] LA bitfield: high={high}, low={low}, width={width}, mask={mask}")
                                 bitfield_value = (offset >> low) & mask
-                                print(f"[DEBUG] LA bitfield: result={bitfield_value}")
                                 return str(bitfield_value)
                             else:
                                 bitfield_value = (value >> low) & mask
-                                print(f"[DEBUG] Label bitfield: value={value}, result={bitfield_value}")
                                 return str(bitfield_value)
                         else:
                             # First pass: use 0 as placeholder
-                            print(f"[DEBUG] First pass label bitfield: returning 0")
                             return "0"
                     except Exception as e:
-                        print(f"[DEBUG] Label bitfield error: {e}")
                         return "0"
                 else:
                     try:
                         value = self._parse_number(v)
                         bitfield_value = (value >> low) & mask
-                        print(f"[DEBUG] Immediate bitfield: value={value}, result={bitfield_value}")
                         return str(bitfield_value)
                     except Exception as e:
-                        print(f"[DEBUG] Immediate bitfield error: {e}")
                         return match.group(0)
             except Exception as e:
-                print(f"[DEBUG] Bitfield general error: {e}")
                 return match.group(0)
 
         # Replace all bitfield patterns first

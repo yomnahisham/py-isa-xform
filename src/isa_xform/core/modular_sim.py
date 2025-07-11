@@ -110,15 +110,15 @@ class Simulator:
                     code_size = data[16:20]
                     code_size = int.from_bytes(code_size, byteorder='little')
                     self.memory[code_start:code_start + code_size] = data[entry_point:entry_point + code_size]
-                    print(self.memory[self.pc:self.pc + code_size])
+                    #print(self.memory[self.pc:self.pc + code_size])
                     entry_point += code_size
                     data_start = data[20:24]
                     data_start = int.from_bytes(data_start, byteorder='little')
                     data_size = data[24:28]
                     data_size = int.from_bytes(data_size, byteorder='little')
-                    print(f"Data Start: {data_start} Data Size: {data_size}")
+                    #print(f"Data Start: {data_start} Data Size: {data_size}")
                     self.memory[data_start:data_start + data_size] = data[entry_point:entry_point + data_size]
-                    print(self.memory[data_start:data_start + data_size])
+                    #print(self.memory[data_start:data_start + data_size])
                     #self.memory[:len(data)] = data
             else:
                 with open(filename, 'rb') as f:
@@ -201,12 +201,15 @@ class Simulator:
         result = syntax
         reg_objs = self.isa_definition.registers['general_purpose']
         reg_names = [reg.name if hasattr(reg, 'name') else str(reg) for reg in reg_objs]
+        reg_aliases = [reg.alias[0] if hasattr(reg, 'alias') and reg.alias else str(reg) for reg in reg_objs]
         for operand in operands:
             if operand in reg_names:
                 idx = reg_names.index(operand)
                 result = result.replace(operand, f"regs[{idx}]")
+            elif operand in reg_aliases:
+                idx = reg_aliases.index(operand)
+                result = result.replace(operand, f"regs[{idx}]")
             else:
-                
                 # print(f"Warning: Operand '{operand}' not found in register names or aliases.", file=sys.stderr)
                 continue
             
@@ -322,8 +325,8 @@ class Simulator:
         disassembly_result = self.disassembler.disassemble(self.memory, self.pc)
         instuctions_map = self.map_disassembly_result_to_pc(disassembly_result)
         loop = "start"
-        print(f"Code Start: {self.pc}")
-        print(f"Data Start: {self.data_start} ")
+        # print(f"Code Start: {self.pc}")
+        # print(f"Data Start: {self.data_start} ")
         #print(f"Memory: {self.memory} ")
 
         #while self.pc < len(self.memory) and (loop != 'q' or (not step)):
@@ -331,6 +334,7 @@ class Simulator:
             current_instruction = instuctions_map[self.pc] if self.pc in instuctions_map else None
             if current_instruction is None:
                 print(f"Skipping instruction at PC: {self.pc} (NoneType)")
+                return False
                 continue
 
             print(f"PC: {self.pc:04X} - {current_instruction.mnemonic} {', '.join(current_instruction.operands)}")

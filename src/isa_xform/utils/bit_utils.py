@@ -292,7 +292,7 @@ def bytes_to_int(bytes_data: bytes, endianness: Literal["little", "big"] = "litt
     Convert bytes to integer with specified endianness
     
     Args:
-        bytes_data: Bytes to converT
+        bytes_data: Bytes to convert
         endianness: Endianness ("little" or "big")
     
     Returns:

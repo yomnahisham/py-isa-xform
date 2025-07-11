@@ -32,6 +32,16 @@ class OperandParser:
         self.syntax = isa_definition.assembly_syntax
         self.registers = isa_definition.registers
         
+        # Get JSON configuration for formatting
+        self.reg_config = getattr(isa_definition, 'register_formatting', {})
+        self.op_config = getattr(isa_definition, 'operand_formatting', {})
+        
+        # Get prefixes from JSON config with fallback to assembly_syntax
+        self.register_prefix = self.reg_config.get('prefix', getattr(self.syntax, 'register_prefix', 'x'))
+        self.immediate_prefix = self.op_config.get('immediate_prefix', getattr(self.syntax, 'immediate_prefix', '#'))
+        self.hex_prefix = self.op_config.get('hex_prefix', getattr(self.syntax, 'hex_prefix', '0x'))
+        self.binary_prefix = self.op_config.get('binary_prefix', getattr(self.syntax, 'binary_prefix', '0b'))
+        
         # Build register lookup tables
         self._build_register_lookup()
         
@@ -74,7 +84,7 @@ class OperandParser:
         """Build default operand patterns if not defined in ISA"""
         if not self.pattern_matchers:
             # Default register pattern
-            register_pattern = r'^' + re.escape(self.syntax.register_prefix) + r'([a-zA-Z0-9_]+)$'
+            register_pattern = r'^' + re.escape(self.register_prefix) + r'([a-zA-Z0-9_]+)$'
             self.pattern_matchers['register'] = (re.compile(register_pattern), OperandPattern(
                 name='register',
                 type='register',
@@ -83,7 +93,7 @@ class OperandParser:
             ))
             
             # Default immediate pattern
-            immediate_pattern = r'^' + re.escape(self.syntax.immediate_prefix) + r'([+-]?(?:0x[0-9a-fA-F]+|0b[01]+|\d+))$'
+            immediate_pattern = r'^' + re.escape(self.immediate_prefix) + r'([+-]?(?:0x[0-9a-fA-F]+|0b[01]+|\d+))$'
             self.pattern_matchers['immediate'] = (re.compile(immediate_pattern), OperandPattern(
                 name='immediate',
                 type='immediate',
@@ -169,8 +179,8 @@ class OperandParser:
     def _parse_register(self, operand_text: str, line: int, column: int) -> ParsedOperand:
         """Parse register operand"""
         # Remove prefix if present
-        if operand_text.startswith(self.syntax.register_prefix):
-            operand_text = operand_text[len(self.syntax.register_prefix):]
+        if operand_text.startswith(self.register_prefix):
+            operand_text = operand_text[len(self.register_prefix):]
         
         # Look up register
         register = self._find_register(operand_text)
@@ -195,8 +205,8 @@ class OperandParser:
     def _parse_immediate(self, operand_text: str, line: int, column: int) -> ParsedOperand:
         """Parse immediate value operand"""
         # Remove prefix if present
-        if operand_text.startswith(self.syntax.immediate_prefix):
-            operand_text = operand_text[len(self.syntax.immediate_prefix):]
+        if operand_text.startswith(self.immediate_prefix):
+            operand_text = operand_text[len(self.immediate_prefix):]
         
         try:
             value = self._parse_number(operand_text)
@@ -249,32 +259,42 @@ class OperandParser:
         )
     
     def _find_register(self, name: str) -> Optional[Register]:
-        """Find register by name or alias"""
-        key = name.upper() if not self.syntax.case_sensitive else name
+        """Find register by name or alias using JSON configuration"""
+        # Get alternatives from JSON config
+        alternatives = self.reg_config.get('alternatives', {})
         
-        # Try direct name match
-        if key in self.register_by_name:
-            return self.register_by_name[key]
-        
-        # Try alias match
-        if key in self.register_by_alias:
-            return self.register_by_alias[key]
+        # Check direct name match
+        for category, reg_list in self.registers.items():
+            for register in reg_list:
+                if register.name == name:
+                    return register
+                
+                # Check aliases
+                for alias in register.alias:
+                    if alias == name:
+                        return register
+                
+                # Check alternatives from JSON config
+                if register.name in alternatives:
+                    for alt_name in alternatives[register.name]:
+                        if alt_name == name:
+                            return register
         
         return None
     
     def _is_register_name(self, text: str) -> bool:
         """Check if text looks like a register name"""
         # Remove prefix if present
-        if text.startswith(self.syntax.register_prefix):
-            text = text[len(self.syntax.register_prefix):]
+        if text.startswith(self.register_prefix):
+            text = text[len(self.register_prefix):]
         
         return self._find_register(text) is not None
     
     def _is_immediate_value(self, text: str) -> bool:
         """Check if text looks like an immediate value"""
         # Remove prefix if present
-        if text.startswith(self.syntax.immediate_prefix):
-            text = text[len(self.syntax.immediate_prefix):]
+        if text.startswith(self.immediate_prefix):
+            text = text[len(self.immediate_prefix):]
         
         try:
             self._parse_number(text)
@@ -291,10 +311,10 @@ class OperandParser:
         """Parse number in various formats"""
         text = text.strip()
         
-        if text.startswith(self.syntax.hex_prefix):
-            return int(text[len(self.syntax.hex_prefix):], 16)
-        elif text.startswith(self.syntax.binary_prefix):
-            return int(text[len(self.syntax.binary_prefix):], 2)
+        if text.startswith(self.hex_prefix):
+            return int(text[len(self.hex_prefix):], 16)
+        elif text.startswith(self.binary_prefix):
+            return int(text[len(self.binary_prefix):], 2)
         else:
             return int(text, 10)
     
