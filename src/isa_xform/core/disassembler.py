@@ -738,9 +738,12 @@ class Disassembler:
                 bit_width = high - low + 1
                 value = extract_bits(instr_word, high, low)
                 
+                print(f"[DEBUG] Field {field.get('name', '')}: bits={bits}, high={high}, low={low}, width={bit_width}, raw_value={value}")
+                
                 # Handle signed immediates
                 if field.get("signed", False) and (value & (1 << (bit_width - 1))):
                     value = sign_extend(value, bit_width)
+                    print(f"[DEBUG] Sign-extended value: {value}")
                 
                 field_name = field.get("name", "")
                 field_values[field_name] = value
@@ -749,7 +752,7 @@ class Disassembler:
                 continue
         
         # Format operands based on instruction syntax
-        operands = self._format_operands(instruction, field_values)
+        operands = self._format_operands(instruction, field_values, address)
         
         return DisassembledInstruction(
             address=address,
@@ -778,7 +781,7 @@ class Disassembler:
                 continue
         
         # Format operands
-        operands = self._format_operands(instruction, field_values)
+        operands = self._format_operands(instruction, field_values, address)
         
         return DisassembledInstruction(
             address=address,
@@ -790,6 +793,10 @@ class Disassembler:
     
     def _create_fields_from_format(self, instruction: Instruction) -> List[Dict[str, Any]]:
         """Create field definitions from instruction format for decoding"""
+        # If the instruction has a specific encoding defined, use that instead of generic format
+        if hasattr(instruction, 'encoding') and isinstance(instruction.encoding, dict) and 'fields' in instruction.encoding:
+            return instruction.encoding['fields']
+        
         fields = []
         instruction_size = self.isa_definition.instruction_size
         
@@ -855,7 +862,7 @@ class Disassembler:
         
         return fields
     
-    def _format_operands(self, instruction: Instruction, field_values: Dict[str, int]) -> List[str]:
+    def _format_operands(self, instruction: Instruction, field_values: Dict[str, int], address: int) -> List[str]:
         """Format operands based on instruction syntax order and field values, supporting offset(base) style."""
         operands = []
         assembly_syntax = getattr(self.isa_definition, 'assembly_syntax', None)
@@ -876,24 +883,31 @@ class Disassembler:
         if len(immediate_fields) > 1:
             # Use the instruction's implementation to reconstruct the full immediate
             # This is fully modular - the ISA definition tells us how to combine fields
-            full_imm = self._reconstruct_immediate_from_implementation(instruction, field_values)
-            
-            # Now format operands using the reconstructed immediate
+            full_imm = self._reconstruct_immediate_from_implementation(instruction, field_values, address)
+            # For PC-relative jumps/branches, calculate the actual target address
+            if instruction.mnemonic.upper() in ['JMP', 'J', 'JAL', 'CALL', 'BEQ', 'BNE', 'BZ', 'BNZ', 'BLT', 'BGE', 'BLTU', 'BGEU']:
+                # ZX16 jumps are PC-relative: target = address + 2 + offset
+                # (PC is at current instruction, +2 for next instruction)
+                target_addr = (field_values.get('address', address) + 2 + full_imm) if 'address' in field_values else (address + 2 + full_imm)
+                for syntax_op in syntax_operands:
+                    if syntax_op in ('imm', 'immediate', 'offset'):
+                        resolved = self._resolve_address_to_label(target_addr)
+                        operands.append(resolved)
+                    elif syntax_op in ('rd', 'rs1', 'rs2'):
+                        reg_val = field_values.get(syntax_op, 0)
+                        operands.append(self._format_register(reg_val, register_prefix))
+                    else:
+                        if syntax_op in field_values:
+                            operands.append(str(field_values[syntax_op]))
+                return operands
+            # Now format operands using the reconstructed immediate (default)
             for syntax_op in syntax_operands:
                 if syntax_op in ('imm', 'immediate', 'offset'):
-                    # Check if this is a branch/jump target address
-                    if (instruction.mnemonic.upper() in ['JMP', 'CALL', 'BEQ', 'BNE', 'JZ', 'JNZ', 'JAL', 'J'] and 
-                        syntax_op in ['immediate', 'imm', 'offset']):
-                        # Try to resolve as label
-                        resolved = self._resolve_address_to_label(full_imm)
-                        operands.append(resolved)
-                    else:
-                        operands.append(f"{immediate_prefix}{full_imm}")
+                    operands.append(f"{immediate_prefix}{full_imm}")
                 elif syntax_op in ('rd', 'rs1', 'rs2'):
                     reg_val = field_values.get(syntax_op, 0)
                     operands.append(self._format_register(reg_val, register_prefix))
                 else:
-                    # fallback
                     if syntax_op in field_values:
                         operands.append(str(field_values[syntax_op]))
             return operands
@@ -1180,7 +1194,7 @@ class Disassembler:
                 else:
                     # For other pseudo-instructions, use the instruction's implementation
                     if first.instruction and hasattr(first.instruction, 'implementation'):
-                        full_imm = self._reconstruct_immediate_from_implementation(first.instruction, field_values)
+                        full_imm = self._reconstruct_immediate_from_implementation(first.instruction, field_values, first.address)
                     else:
                         full_imm = 0
                     full_address = full_imm
@@ -1212,11 +1226,20 @@ class Disassembler:
                 i += 2  # Skip the next instruction
                 continue
             elif pseudo_mnemonic:
+                # For pseudo-instructions, determine if we should show operands
+                # Some pseudo-instructions like CLR, RET, NOP should not show raw operands
+                should_show_operands = pseudo_mnemonic not in ['CLR', 'RET', 'NOP', 'INC', 'DEC', 'NOT', 'NEG']
+                
+                if should_show_operands:
+                    operands = instr.operands
+                else:
+                    operands = []
+                
                 reconstructed.append(DisassembledInstruction(
                     address=instr.address,
                     machine_code=instr.machine_code,
                     mnemonic=pseudo_mnemonic,
-                    operands=instr.operands,
+                    operands=operands,
                     instruction=instr.instruction,
                     comment=f"pseudo: {pseudo_mnemonic}"
                 ))
@@ -1298,13 +1321,17 @@ class Disassembler:
                 return False
         return True
     
-    def _reconstruct_immediate_from_implementation(self, instruction: Instruction, field_values: Dict[str, int]) -> int:
+    def _reconstruct_immediate_from_implementation(self, instruction: Instruction, field_values: Dict[str, int], address: int) -> int:
         """Reconstruct the full immediate value from instruction implementation"""
         # Parse the implementation to understand how to combine immediate fields
         implementation = getattr(instruction, 'implementation', '')
         
         # Create a local namespace with the field values
         local_vars = field_values.copy()
+        
+        print(f"[DEBUG] Reconstructing immediate for {instruction.mnemonic}")
+        print(f"[DEBUG] Field values: {field_values}")
+        print(f"[DEBUG] Implementation: {implementation}")
         
         try:
             # Extract immediate combination logic from implementation
@@ -1314,14 +1341,20 @@ class Disassembler:
                 line = line.strip()
                 if '=' in line and ('<<' in line or '|' in line or '&' in line):
                     # This line likely combines immediate fields
+                    print(f"[DEBUG] Executing line: {line}")
                     # Execute it in our local namespace
                     exec(line, {}, local_vars)
+                    print(f"[DEBUG] Local vars after execution: {local_vars}")
             
             # Look for the final immediate value
             # Common variable names: offset, imm, immediate, result
             for var_name in ['offset', 'imm', 'immediate', 'result']:
                 if var_name in local_vars:
-                    return local_vars[var_name]
+                    result = local_vars[var_name]
+                    print(f"[DEBUG] Found result in {var_name}: {result}")
+                    return result
+            
+            print(f"[DEBUG] No result found in local_vars: {local_vars}")
             
             # If no specific variable found, try to reconstruct from field names
             # This is a fallback for when the implementation doesn't clearly define the output

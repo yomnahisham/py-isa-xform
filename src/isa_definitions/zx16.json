@@ -651,9 +651,9 @@
         "encoding": {
           "fields": [
             {"name": "link", "bits": "15:15", "value": "0"},
-            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": true},
+            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": false},
             {"name": "rd", "bits": "8:6", "value": "000"},
-            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": true},
+            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": false},
             {"name": "opcode", "bits": "2:0", "value": "101"}
           ]
         }
@@ -668,9 +668,9 @@
         "encoding": {
           "fields": [
             {"name": "link", "bits": "15:15", "value": "1"},
-            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": true},
+            {"name": "imm", "bits": "14:9", "type": "immediate", "signed": false},
             {"name": "rd", "bits": "8:6", "type": "register"},
-            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": true},
+            {"name": "imm2", "bits": "5:3", "type": "immediate", "signed": false},
             {"name": "opcode", "bits": "2:0", "value": "101"}
           ]
         }
