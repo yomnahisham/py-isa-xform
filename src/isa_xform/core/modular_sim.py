@@ -151,10 +151,12 @@ class Simulator:
         for operand in operands:
             if operand in reg_names:
                 idx = reg_names.index(operand)
-                result = result.replace(operand, f"regs[{idx}]")
+                pattern = r'\b' + re.escape(operand) + r'\b'  # Match whole word
+                result = result.replace(pattern, f"regs[{idx}]")
             elif operand in reg_aliases:
                 idx = reg_aliases.index(operand)
-                result = result.replace(operand, f"regs[{idx}]")
+                pattern = r'\b' + re.escape(operand) + r'\b'  # Match whole word
+                result = result.replace(pattern, f"regs[{idx}]")
             else:
                 continue
             
