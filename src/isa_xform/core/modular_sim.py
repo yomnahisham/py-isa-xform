@@ -356,7 +356,7 @@ def run_simulator_with_graphics(simulator, step=False):
         clock.tick(30)
 
     print("Simulation completed")
-    simulator.dump_memory(0x0000, 0x0003)
+    simulator.dump_memory(0xF12C, 0xF12F)
 
 
 
