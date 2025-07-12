@@ -3,79 +3,78 @@
 ; Endianness: little
 
 reset:
-    0020: LUI x0, 0xF1
-    0022: SLLI x0, 17
-    0024: ADDI x0, 44
-    0026: LB x3, 0(x0)
-    0028: LI x5, 10
-    002A: ADDI x0, 1
-    002C: LB x3, 0(x0)
-    002E: LI x6, 1
-    0030: JAL x1, 0x40
-    0032: LI x6, 2
-    0034: JAL x1, 0x5C
-    0036: LI x6, 63
-    0038: ADDI x6, 56
+    0020: AUIPC x0, 482
+    0022: ADDI x0, 12
+    0024: LB x3, 0(x0)
+    0026: LI x5, 10
+    0028: ADDI x0, 1
+    002A: LB x3, 0(x0)
+    002C: LI x6, 1
+    002E: JAL x1, 0x3E
+    0030: LI x6, 2
+    0032: JAL x1, 0x5A
+    0034: LI x6, 63
+    0036: ADDI x6, 56
 start:
-    003A: ECALL 7
-    003C: BZ x7, 0x3A
+    0038: ECALL 7
+    003A: BZ x7, 0x38
 endgame:
-    003E: ECALL 10
+    003C: ECALL 10
 updateBallTile:
-    0040: LUI x0, 0xF1
-    0042: SLLI x0, 17
-    0044: ADDI x0, 49
-    0046: LB x4, 0(x0)
-    0048: ADDI x0, -1
-    004A: LB x3, 0(x0)
-    004C: LUI x0, 0xF0
-    004E: SLLI x0, 17
-    0050: SLLI x3, 18
-    0052: ADD x0, x3
-    0054: SLLI x3, 18
-    0056: ADD x0, x3
-    0058: ADD x0, x4
-    005A: SB x6, 0(x0)
+    003E: LUI x0, 0xF1
+    0040: SLLI x0, 1
+    0042: ORI x0, 49
+    0044: LB x4, 0(x0)
+    0046: ADDI x0, -1
+    0048: LB x3, 0(x0)
+    004A: LUI x0, 0xF0
+    004C: SLLI x0, 1
+    004E: SLLI x3, 2
+    0050: ADD x0, x3
+    0052: SLLI x3, 2
+    0054: ADD x0, x3
+    0056: ADD x0, x4
+    0058: SB x6, 0(x0)
 update_pileTile:
-    005C: LI x4, 0
-    005E: LUI x5, 0xF1
-    0060: SLLI x5, 17
-    0062: ADDI x5, 46
-    0064: LB x3, 0(x5)
-    0066: LI x0, 2
-    0068: BNE x6, x0, 0x70
-    006A: LI x3, 8
-    006C: SB x3, 0(x5)
-    006E: J 0x72
+    005A: LI x4, 0
+    005C: LUI x5, 0xF1
+    005E: SLLI x5, 1
+    0060: ORI x5, 46
+    0062: LB x3, 0(x5)
+    0064: LI x0, 2
+    0066: BNE x6, x0, 0x6E
+    0068: LI x3, 8
+    006A: SB x3, 0(x5)
+    006C: J 0x70
 link:
-    0070: J 0x7C
+    006E: J 0x7A
 rest:
-    0072: ADDI x5, 1
-    0074: LB x4, 0(x5)
-    0076: LI x4, 8
-    0078: SB x4, 0(x5)
-    007A: ADDI x5, -1
+    0070: ADDI x5, 1
+    0072: LB x4, 0(x5)
+    0074: LI x4, 8
+    0076: SB x4, 0(x5)
+    0078: ADDI x5, -1
 continue:
-    007C: LUI x0, 0xF0
-    007E: SLLI x0, 17
-    0080: SLLI x3, 18
-    0082: ADD x0, x3
-    0084: SLLI x3, 18
-    0086: ADD x0, x3
-    0088: ADD x0, x4
-    008A: SB x6, 0(x0)
-    008C: LI x4, 19
-    008E: ADDI x5, 1
-    0090: LB x3, 0(x5)
-    0092: LUI x0, 0xF0
-    0094: SLLI x0, 17
-    0096: SLLI x3, 18
-    0098: ADD x0, x3
-    009A: SLLI x3, 18
-    009C: ADD x0, x3
-    009E: ADD x0, x4
-    00A0: SB x6, 0(x0)
-    00A2: JR x1
+    007A: LUI x0, 0xF0
+    007C: SLLI x0, 1
+    007E: SLLI x3, 2
+    0080: ADD x0, x3
+    0082: SLLI x3, 2
+    0084: ADD x0, x3
+    0086: ADD x0, x4
+    0088: SB x6, 0(x0)
+    008A: LI x4, 19
+    008C: ADDI x5, 1
+    008E: LB x3, 0(x5)
+    0090: LUI x0, 0xF0
+    0092: SLLI x0, 1
+    0094: SLLI x3, 2
+    0096: ADD x0, x3
+    0098: SLLI x3, 2
+    009A: ADD x0, x3
+    009C: ADD x0, x4
+    009E: SB x6, 0(x0)
+    00A0: JR x1
 
 ; Data sections:
     ; Data section at 0xF000

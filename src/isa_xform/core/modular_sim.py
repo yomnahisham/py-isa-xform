@@ -206,9 +206,30 @@ class Simulator:
                 
                 return True
         
-            
+            elif disassembled_instruction.instruction.mnemonic == "LA":
+                # Get operands: e.g., ['t0', 'label']
+                dest_reg_name = disassembled_instruction.operands[0]
+                label_name = disassembled_instruction.operands[1]
 
-                
+                # Find register index
+                try:
+                    reg_objs = self.isa_definition.registers['general_purpose']
+                    reg_aliases = [reg.alias[0] if reg.alias else "" for reg in reg_objs]
+                    reg_index = reg_aliases.index(dest_reg_name)
+                except ValueError:
+                    print(f"Invalid register alias: {dest_reg_name}")
+                    return False
+
+                # Look up label address
+                if label_name in self.symbol_table.symbols:
+                    address = self.symbol_table.symbols[label_name].address
+                else:
+                    print(f"Label '{label_name}' not found in symbol table")
+                    return False
+
+                self.regs[reg_index] = address
+                return True
+
             else:
                 generic_assembly = disassembled_instruction.instruction.syntax
                 instruction = disassembled_instruction.instruction
