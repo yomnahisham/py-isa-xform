@@ -144,6 +144,7 @@ class Simulator:
                 result = result.replace(pattern, f" regs[{idx}]")
                 result = result.replace(f"{operand} ", f"regs[{idx}] ")
             else:
+                result = result.replace(operand, f"np.int16({operand})")
                 continue
             
         result = result.replace("memory", "self.memory")
