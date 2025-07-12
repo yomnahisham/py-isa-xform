@@ -1804,6 +1804,10 @@ class Disassembler:
                 r'result\s*=\s*\((\w+)\s*<<\s*(\d+)\)\s*\|\s*(\w+)',
                 # Pattern: result = imm1 << N | imm2
                 r'result\s*=\s*(\w+)\s*<<\s*(\d+)\s*\|\s*(\w+)',
+                # Pattern: offset = (imm1 << N) | imm2 (for ZX16 J instruction)
+                r'offset\s*=\s*\((\w+)\s*<<\s*(\d+)\)\s*\|\s*(\w+)',
+                # Pattern: offset = imm1 << N | imm2 (for ZX16 J instruction)
+                r'offset\s*=\s*(\w+)\s*<<\s*(\d+)\s*\|\s*(\w+)',
             ]
             
             for pattern in patterns:
@@ -1823,6 +1827,14 @@ class Disassembler:
                     
                     # Reconstruct using the ISA's logic: (field1 << shift) | field2
                     combined = (field1_val << shift_amount) | field2_val
+                    
+                    # Handle sign extension for jump instructions
+                    if instruction.mnemonic.upper() in ['J', 'JAL']:
+                        # For ZX16, the offset is 9 bits with bit 8 as sign bit
+                        if combined & 0x100:  # Bit 8 is set (negative)
+                            # Sign extend to 16 bits
+                            combined = combined | 0xFF00
+                    
                     return combined
             
             # If no pattern matches, fall back to generic field reconstruction
