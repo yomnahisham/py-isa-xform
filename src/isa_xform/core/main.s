@@ -22,12 +22,11 @@ scoreA: .byte 0     #0xF12C
 scoreB: .byte 0
 
 #X/Y coordinates for players A/B and the p - pong ball
-A: .word 0x0008         #0xF12E -> x,y (0, 8)
-B: .word 0x1308         #0xF130 -> x,y (19,8)
-p: .word 0x0108         #0xF132 -> x,y (19,8)
+padels: .word 0x0808         #0xF12E -> Ay,By (8, 8)
+ball: .word 0x0108         #0xF130 -> x,y (19,8)
 
 #current ball Path
-path: .word 0           #0xF134
+path: .word 0           #0xF132
 
 #Extracts
 extra0: .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
@@ -63,19 +62,52 @@ Tile15: .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 c0: .word 0x00FF
 
 .text
-main:
+reset:
+    #check conditions of game -> score
+    lui t0, 0xF1
+    slli t0, 1
+    addi t0, 0x2C
+    lb s0, 0(t0)    #s0 = scoreA
 
+    li t1, 10
+    beq s0, t1, endgame
 
-    li a0, 1        #put ball tile
-    #call updateBallTile 
+    addi t0, 1
+    lb s0, 0(t0)    #s0 = scoreB
+    beq s0, t1, endgame
 
-    #load y and x into s0, s1
-        lui t0, 0xF1        #y -> 0xF133
+    #put ball tile
+    li a0, 1        
+    call updateBallTile 
+
+    #put padels
+    li a0, 2        
+    call update_pileTile
+
+    #check for w press
+    li a0, 63
+    addi a0, 56
+start:
+    ecall 7
+    bz a1, start
+
+match_loop:
+    call movepadel
+    call moveball 
+    bz a0, match_loop  
+    j reset          #reset ball and padels and start new match 
+
+endgame:
+    ecall 10
+
+updateBallTile:
+    #load y and x into s0, s1   
+        lui t0, 0xF1        #y -> 0xF131
         slli t0, 1
-        addi t0, 0x33
+        addi t0, 0x31
         lb s1, 0(t0)
 
-        addi t0, -1         #x -> 0xF132
+        addi t0, -1         #x -> 0xF130
         lb s0, 0(t0)
 
         lui t0, 0xF0
@@ -88,89 +120,53 @@ main:
         add t0, s1    # t0 += x
         sb a0, 0(t0)
 
-    #check for w press
-    li a0, 63
-    addi a0, 56
-
-loop:
-    ecall 7
-    bz a1, loop
-start:
-    #call moveball
-        li a0, 0        #remove ball tile
-        #call updateBallTile
-            #load y and x into s0, s1
-            lui t0, 0xF1        #y -> 0xF133
-            slli t0, 1
-            addi t0, 0x33
-            lb s1, 0(t0)
-
-            addi t0, -1         #x -> 0xF132
-            lb s0, 0(t0)
-
-            lui t0, 0xF0
-            slli t0, 1    #t0 = 0xF000
-        
-            slli s0, 2    # y*4
-            add t0, s0    # t0 += y*4
-            slli s0, 2    # y*16
-            add t0, s0    # t0 += y*16
-            add t0, s1    # t0 += x
-            sb a0, 0(t0)
-
+moveball:
+        #remove ball tile
+        li a0, 0        
+        call updateBallTile
+    
         lui t0, 0xF1
         slli t0, 1
-        #finish address
-        lb s0, 0(t0)
+        addi t0, 0x32
+        lb s0, 0(t0)      #ball path
 
     #path 0 -> right
         bnz s0, path1
-
         li t0, 1
         li t1, 0
-
-        bnz t0, jumpl
+        j update_coo
 
     #path 1 -> left
     path1:
         li t0, 1
         bne s0, t0, path2
-
         li t0, -1
         li t1, 0
-
-        bnz t0, jumpl
+        j update_coo
 
     #path 2 -> right down
     path2:
         li t0, 2
         bne s0, t0, path3
-
         li t0, 1
         li t1, -1
-    jumpl:
-        bnz t0, jumpl2
+        j update_coo
 
     #path 3 -> left down
     path3:
         li t0, 3
         bne s0, t0, path4
-
         li t0, -1
         li t1, -1
-        
-jumpl2:
-        bnz t0, update_coo
+        j update_coo
 
     #path 4 -> right up
     path4:
         li t0, 4
         bne s0, t0, path5
-
         li t0, 1
         li t1, 1
-
-        bnz t0, update_coo
+        j update_coo
 
     #path 5 -> left up
     path5:
@@ -180,11 +176,10 @@ jumpl2:
     update_coo:
 
     ecall 10
-
-
         lui s0, 0xF1        #y -> 0xF133
         slli s0, 1
         addi s0, 0x33
+        
         lb s1, 0(s0)
         add s1, t1
         sb s1, 0(s0)
@@ -196,27 +191,180 @@ jumpl2:
         add s1, t0
         sb s1, 0(t1)    #save new x coordinates in s1
 
-        li a0, 1        #put ball tile
-        #call updateBallTile
-            #load y and x into s0, s1
-            lui t0, 0xF1        #y -> 0xF133
+    #check for collisions
+        ceiling:
+            bz s0, found_collision  #shouldn't print on 0 row
+
+        floor:
+            li t0, 16
+            beq t0, s0, found_collision     #out of range
+
+        j place_ball
+
+        #padelA 
+		    bnz s1, padelB	
+            lui t0, 0xF1
             slli t0, 1
-            addi t0, 0x33
-            lb s1, 0(t0)
+            addi t0, 0x2E       #get padelA y coordinate
+            lb t1, 0(t0)
+            beq t1, s0, found_collision
+            li a0, 1            #give point to B
+            call update_score
+		    li a0, 1
+            ret
 
-            addi t0, -1         #x -> 0xF132
-            lb s0, 0(t0)
+		padelB:    
+		    li a0, 19
+		    bne a0, s1, ceiling
+            addi t0, 1       #get padelB y coordinate
+            lb t1, 0(t0)
+            beq t1, s0, found_collision
+            li a0, 0            #give point to A
+            call update_score
+            li a0, 1
+            ret
 
-            lui t0, 0xF0
-            slli t0, 1    #t0 = 0xF000
+    found_collision:
+            lui t0, 0xF1
+            slli t0, 1
+            addi t0, 0x32
+            lb s0, 0(t0)      #itterate ball path
+            bnz s0, itterate
+            li s0, 6          #reset
+        itterate:
+		    addi s0, -1
+		    sb s0, 0(t0)
+		    j moveBall        #redo moveball
+
+    place_ball:
+        li a0, 1        #put ball tile
+        call updateBallTile
+
+        li a0, 0    #no point made
+        ret
+
+
+movepadel:
+    #REMOVE OLD PADEL
+    li a0, 0
+    call update_pileTile
+
+    lui t0, 0xF1
+    slli t0, 1
+    addi t0, 0x2E
+
+    #check for player A
+
+    #w
+    li a0, 63
+    addi a0, 56
+    ecall 7
+    bnz a1, Aup
+
+    #s
+    li a0, 63
+    addi a0, 20
+    ecall 7
+    bnz a1, Adown
+
+    #up
+    li a0, 38
+    ecall 7
+    bnz a1, Bup
+
+    #down
+    li a0, 40
+    ecall 7
+    bnz a1, Bdown
+
+    Aup:
+        lb s0, 0(t0)      
+        li t1, 1
+        beq t1, s0, done
+		addi s0, -1
+		sb s0, 0(t0)
+    j padel_tile
+
+    Bup:
+        addi t0, 1
+        lb s0, 0(t0)      
+        li t1, 1
+        beq t1, s0, done
+		addi s0, -1
+		sb s0, 0(t0)
+    j padel_tile
+
+    Adown:
+        lb s0, 0(t0)      
+        li t1, 15
+        beq t1, s0, done
+		addi s0, 1
+		sb s0, 0(t0)
+    j padel_tile
+
+    Bdown:
+        addi t0, 1
+        lb s0, 0(t0)      
+        li t1, 15
+        beq t1, s0, done
+		addi s0, 1
+		sb s0, 0(t0)
+
+    padel_tile:
+        li a0, 2
+        call update_pileTile
+
+    done:
+        ret
+
+update_pileTile:
         
-            slli s0, 2    # y*4
-            add t0, s0    # t0 += y*4
-            slli s0, 2    # y*16
-            add t0, s0    # t0 += y*16
-            add t0, s1    # t0 += x
-            sb a0, 0(t0)
+        #padel A
+        li s1, 0    #s0 = x = 0
 
-    ecall 10
+        #load y into s0  
+        lui t1, 0xF1        
+        slli t1, 1
+        addi t1, 0x2E
+        lb s0, 0(t1)
 
+        li t0, 2
+        bne a0, t0, continue
+        li s0, 8                #set padel A to 8
+        sb s0, 0 (t1)
 
+        addi t1, 1
+        lb s1, 0(t1)
+        li s1, 8                #set padel B to 8
+        sb s1, 0 (t1)
+        addi t1, -1             #undo changes to t1
+        
+continue:
+        lui t0, 0xF0
+        slli t0, 1    #t0 = 0xF000
+    
+        slli s0, 2    # y*4
+        add t0, s0    # t0 += y*4
+        slli s0, 2    # y*16
+        add t0, s0    # t0 += y*16
+        add t0, s1    # t0 += x
+        sb a0, 0(t0)
+
+        #padel B
+        li s1, 19    #s0 = x = 19
+
+        #load y into s0  
+        addi t1, 1
+        lb s0, 0(t1)
+
+        lui t0, 0xF0
+        slli t0, 1    #t0 = 0xF000
+    
+        slli s0, 2    # y*4
+        add t0, s0    # t0 += y*4
+        slli s0, 2    # y*16
+        add t0, s0    # t0 += y*16
+        add t0, s1    # t0 += x
+        sb a0, 0(t0)
+
+    ret
