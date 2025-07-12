@@ -16,6 +16,12 @@ from ..utils.bit_utils import (
     extract_bits, set_bits, sign_extend, parse_bit_range, 
     create_mask, bytes_to_int, int_to_bytes
 )
+from ..utils.isa_utils import (
+    get_word_mask, get_sign_bit_mask, get_immediate_sign_bit, 
+    get_immediate_sign_extend, get_shift_type_width, get_shift_amount_width,
+    get_immediate_width, validate_immediate_range, sign_extend_immediate,
+    mask_to_word_size, is_negative, is_zero, get_register_count
+)
 
 
 @dataclass
@@ -548,10 +554,9 @@ class Assembler:
             shift_type_val = int(shift_type_str, 2)
             # The operand value is the shift amount (lower bits)
             shift_amount = self._resolve_immediate_operand(operand)
-            # For ZX16, shift_type is in upper bits of immediate, shift_amount in lower bits
-            # e.g., for 7-bit imm: [shift_type(3 bits)][shift_amount(4 bits)]
-            shift_type_width = len(shift_type_str)
-            shift_amount_width = bit_width - shift_type_width
+            # Use ISA-derived shift configuration
+            shift_type_width = get_shift_type_width(self.isa_definition)
+            shift_amount_width = get_shift_amount_width(self.isa_definition)
             value = (shift_type_val << shift_amount_width) | (shift_amount & ((1 << shift_amount_width) - 1))
             print(f"[DEBUG] Encoding shift_type: shift_type={shift_type_val}, shift_amount={shift_amount}, value={value}")
             return value & ((1 << bit_width) - 1)
@@ -813,8 +818,9 @@ class Assembler:
             # Try to parse as integer
             reg_num = int(reg_name)
             
-            # Validate register number range
-            max_regs = 8  # Default for ZX16
+            # Validate register number range using ISA-derived register count
+            max_regs = get_register_count(self.isa_definition)
+            # Fallback to general_purpose register count if available
             if hasattr(self.isa_definition, 'registers') and 'general_purpose' in self.isa_definition.registers:
                 max_regs = len(self.isa_definition.registers['general_purpose'])
             

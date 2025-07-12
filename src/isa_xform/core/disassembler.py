@@ -12,6 +12,11 @@ from ..utils.bit_utils import (
     extract_bits, set_bits, sign_extend, parse_bit_range, 
     create_mask, bytes_to_int, int_to_bytes
 )
+from ..utils.isa_utils import (
+    get_word_mask, get_sign_bit_mask, get_immediate_sign_bit, 
+    get_immediate_sign_extend, get_shift_type_width, get_shift_amount_width,
+    get_immediate_width, get_address_mask, get_register_count, format_signed_immediate
+)
 
 
 @dataclass
@@ -45,18 +50,8 @@ class Disassembler:
         self.instruction_size_bytes = isa_definition.instruction_size // 8
         self.max_consecutive_nops = max_consecutive_nops
         
-        # Calculate address space mask from ISA definition
-        address_space = getattr(isa_definition, 'address_space', {})
-        if isinstance(address_space, dict) and 'size' in address_space:
-            address_space_size = address_space['size']
-        else:
-            # Try to get from instruction_architecture
-            instr_arch = getattr(isa_definition, 'instruction_architecture', {})
-            if isinstance(instr_arch, dict) and 'address_bits' in instr_arch:
-                address_space_size = instr_arch['address_bits']
-            else:
-                address_space_size = 16  # Default to 16-bit address space
-        self.address_mask = (1 << address_space_size) - 1
+        # Calculate address space mask from ISA definition using ISA-aware utilities
+        self.address_mask = get_address_mask(isa_definition)
         
         # Build lookup tables for fast disassembly
         self._build_lookup_tables()
@@ -473,8 +468,8 @@ class Disassembler:
                 # For compact binaries, we need to detect if this is a full address space binary
                 # or a compact binary. If the binary size is much smaller than the address space,
                 # assume it's a compact binary and don't use absolute ISA addresses
-                # ZX16 has a 65536-byte address space
-                address_space_size = 65536  # Fixed for ZX16
+                # Use ISA-derived address space size
+                address_space_size = 1 << self.isa_definition.instruction_architecture.get('address_bits', 16)
                 is_compact_binary = len(machine_code) < address_space_size // 10  # Heuristic: if binary is < 10% of address space
                 
                 if is_compact_binary:
@@ -737,12 +732,12 @@ class Disassembler:
                         high, low = parse_bit_range(bits)
                         imm_value = extract_bits(instr_word, high, low)
                         # The shift_type is embedded in the immediate field
-                        # For ZX16: shift_type is in bits [6:4] of the immediate field
-                        # Extract shift_type from the lower bits of the immediate
-                        shift_type_width = len(shift_type_str)
+                        # Use ISA-derived shift configuration
+                        shift_type_width = get_shift_type_width(self.isa_definition)
+                        shift_amount_width = get_shift_amount_width(self.isa_definition)
                         shift_type_mask = (1 << shift_type_width) - 1
-                        # Extract from bits [6:4] for 3-bit shift_type
-                        shift_type = (imm_value >> 4) & shift_type_mask
+                        # Extract shift_type from the upper bits of the immediate
+                        shift_type = (imm_value >> shift_amount_width) & shift_type_mask
                         print(f"[DEBUG] Modular shift_type extraction: instr_word=0x{instr_word:04X}, field={field.get('name')}, imm_value={imm_value}, shift_type_width={shift_type_width}, shift_type={shift_type}")
                         return shift_type
                     except ValueError:
@@ -785,41 +780,19 @@ class Disassembler:
             return extract_bits(instr_word, instruction_size - 1, instruction_size - opcode_bits)
     
     def _decode_instruction_with_pattern(self, instr_word: int, instr_bytes: bytes, address: int, pattern: Dict[str, Any]) -> DisassembledInstruction:
-        """Decode instruction using field pattern matching"""
+        """Decode instruction using pattern-based approach"""
         instruction = pattern['instruction']
-        fields = pattern['fields']
-        operands = []
+        # Create a temporary DisassembledInstruction to use _extract_field_values
+        temp_instr = DisassembledInstruction(
+            address=address,
+            machine_code=instr_bytes,
+            mnemonic=instruction.mnemonic,
+            operands=[],
+            instruction=instruction
+        )
         
-        # Extract each field from the instruction
-        field_values = {}
-        for field in fields:
-            if field.get("name") == "opcode":
-                continue  # Skip opcode field
-            
-            # Skip fields that have a fixed value (like unused bits)
-            if "value" in field and "type" not in field:
-                continue
-            
-            bits = field.get("bits", "")
-            field_type = field.get("type", "")
-            
-            try:
-                high, low = parse_bit_range(bits)
-                bit_width = high - low + 1
-                value = extract_bits(instr_word, high, low)
-                
-                print(f"[DEBUG] Field {field.get('name', '')}: bits={bits}, high={high}, low={low}, width={bit_width}, raw_value={value}")
-                
-                # Handle signed immediates - don't sign-extend here, do it in immediate reconstruction
-                if field.get("signed", False) and (value & (1 << (bit_width - 1))):
-                    print(f"[DEBUG] Field {field.get('name', '')} has sign bit set, raw_value={value}")
-                    # Don't sign-extend here - let immediate reconstruction handle it
-                
-                field_name = field.get("name", "")
-                field_values[field_name] = value
-            except ValueError:
-                # Skip invalid bit ranges
-                continue
+        # Use modular field extraction to get all field values including _raw
+        field_values = self._extract_field_values(temp_instr)
         
         # Format operands based on instruction syntax
         operands = self._format_operands(instruction, field_values, address, instr_word)
@@ -834,21 +807,17 @@ class Disassembler:
     
     def _decode_simple_instruction(self, instr_word: int, instr_bytes: bytes, address: int, instruction: Instruction) -> DisassembledInstruction:
         """Decode instruction using simple field-based approach"""
-        # Create fields from instruction format
-        fields = self._create_fields_from_format(instruction)
+        # Create a temporary DisassembledInstruction to use _extract_field_values
+        temp_instr = DisassembledInstruction(
+            address=address,
+            machine_code=instr_bytes,
+            mnemonic=instruction.mnemonic,
+            operands=[],
+            instruction=instruction
+        )
         
-        # Extract field values
-        field_values = {}
-        for field in fields:
-            field_name = field["name"]
-            bits = field["bits"]
-            
-            try:
-                high, low = parse_bit_range(bits)
-                field_value = extract_bits(instr_word, high, low)
-                field_values[field_name] = field_value
-            except ValueError:
-                continue
+        # Use modular field extraction to get all field values including _raw
+        field_values = self._extract_field_values(temp_instr)
         
         # Format operands
         operands = self._format_operands(instruction, field_values, address, instr_word)
@@ -1036,50 +1005,74 @@ class Disassembler:
             return operands
 
         for syntax_op in syntax_operands:
+            print(f"[DEBUG] Processing syntax_op: {syntax_op}")
             # Special handling for offset(base) or imm(base) patterns
             if '(' in syntax_op and syntax_op.endswith(')'):
-                # Example: offset(rs1) or imm(rs2)
                 before_paren = syntax_op[:syntax_op.index('(')].strip()
                 inside_paren = syntax_op[syntax_op.index('(')+1:-1].strip()
+                print(f"[DEBUG] offset(base) pattern: before_paren={before_paren}, inside_paren={inside_paren}")
                 # Map aliases as in the original code
                 field_name_imm = before_paren
                 field_name_reg = inside_paren
                 # Alias resolution for immediate/offset
                 if field_name_imm == 'offset' and 'imm' in field_values:
+                    print(f"[DEBUG] Aliasing 'offset' to 'imm'")
                     field_name_imm = 'imm'
                 if field_name_imm not in field_values:
                     if field_name_imm == 'imm' and 'immediate' in field_values:
+                        print(f"[DEBUG] Aliasing 'imm' to 'immediate'")
                         field_name_imm = 'immediate'
                     elif field_name_imm == 'immediate' and 'imm' in field_values:
+                        print(f"[DEBUG] Aliasing 'immediate' to 'imm'")
                         field_name_imm = 'imm'
-                # Alias resolution for register - handle both rs1 and rs2 correctly
                 if field_name_reg not in field_values:
-                    # For load instructions: offset(rs2) -> rs2 is base register
-                    # For store instructions: offset(rs1) -> rs1 is base register
                     if field_name_reg == 'rs1' and 'rs1' not in field_values:
-                        # Try to find the base register in the encoding
                         if 'rs2' in field_values:
-                            field_name_reg = 'rs2'  # For load instructions
+                            print(f"[DEBUG] Aliasing 'rs1' to 'rs2'")
+                            field_name_reg = 'rs2'
                         elif 'rd' in field_values:
-                            field_name_reg = 'rd'   # Fallback
+                            print(f"[DEBUG] Aliasing 'rs1' to 'rd'")
+                            field_name_reg = 'rd'
                     elif field_name_reg == 'rs2' and 'rs2' not in field_values:
-                        # Try to find the base register in the encoding
                         if 'rs1' in field_values:
-                            field_name_reg = 'rs1'  # For store instructions
+                            print(f"[DEBUG] Aliasing 'rs2' to 'rs1'")
+                            field_name_reg = 'rs1'
                         elif 'rd' in field_values:
-                            field_name_reg = 'rd'   # Fallback
-                # Format
+                            print(f"[DEBUG] Aliasing 'rs2' to 'rd'")
+                            field_name_reg = 'rd'
+                print(f"[DEBUG] Final field_name_imm={field_name_imm}, field_name_reg={field_name_reg}")
                 if field_name_imm in field_values and field_name_reg in field_values:
                     imm_val = field_values[field_name_imm]
                     reg_val = field_values[field_name_reg]
+                    print(f"[DEBUG] offset(base) values: imm_val={imm_val}, reg_val={reg_val}")
                     # Format offset for memory operands (no immediate prefix)
-                    if imm_val > 255 or imm_val < -255:
-                        imm_str = f"{hex_prefix}{imm_val:X}"
+                    if field_name_imm + '_raw' in field_values:
+                        raw_imm_val = field_values[field_name_imm + '_raw']
+                        # Find bit width for this field
+                        bit_width = 0
+                        encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
+                        for f in encoding_fields:
+                            if f.get('name') == field_name_imm and 'bits' in f:
+                                bits = f['bits']
+                                if isinstance(bits, str) and ',' in bits:
+                                    from isa_xform.utils.bit_utils import parse_multi_field_bits
+                                    ranges = parse_multi_field_bits(bits)
+                                    bit_width = sum(high - low + 1 for high, low in ranges)
+                                elif isinstance(bits, str) and ':' in bits:
+                                    high, low = [int(x) for x in bits.split(':')]
+                                    bit_width = high - low + 1
+                                elif isinstance(bits, str):
+                                    bit_width = 1
+                        from ..utils.isa_utils import format_signed_immediate
+                        imm_str = format_signed_immediate(raw_imm_val, bit_width)
+                        print(f"[DEBUG] Called format_signed_immediate({raw_imm_val}, {bit_width}) -> {imm_str}")
                     else:
                         imm_str = f"{imm_val}"
+                        print(f"[DEBUG] No raw value, using imm_val={imm_val}")
                     reg_str = self._format_register(reg_val, register_prefix)
                     operands.append(f"{imm_str}{address_open}{reg_str}{address_close}")
                 else:
+                    print(f"[DEBUG] Could not find both field_name_imm and field_name_reg in field_values")
                     # Fallback: just output what we can
                     if field_name_imm in field_values:
                         operands.append(str(field_values[field_name_imm]))
@@ -1112,9 +1105,11 @@ class Disassembler:
             if field_name.startswith('r') or field_name in ('rd', 'rs1', 'rs2'):
                 operands.append(self._format_register(value, register_prefix))
             elif field_name in ('immediate', 'imm', 'offset', 'key', 'svc'):
+                print(f"[DEBUG] Processing field {field_name} with value {value}")
                 # Check if this is a branch/jump target address
                 if (self._is_control_flow_instruction(instruction.mnemonic) and 
                     field_name in ('immediate', 'imm', 'offset')):
+                    print(f"[DEBUG] Control flow instruction, handling as target address")
                     # Calculate actual target address using ISA-driven PC behavior - FIXED to match assembler
                     pc_config = getattr(self.isa_definition, 'pc_behavior', {})
                     pc_offset = pc_config.get('offset_for_jumps', 0)
@@ -1125,6 +1120,7 @@ class Disassembler:
                     resolved = self._resolve_address_to_label(target_addr)
                     operands.append(resolved)
                 else:
+                    print(f"[DEBUG] Non-control flow instruction, handling as immediate")
                     # ISA-driven immediate formatting
                     disassembly_config = op_config.get('disassembly', {})
                     immediate_format = disassembly_config.get('immediate_format', 'decimal')
@@ -1139,15 +1135,16 @@ class Disassembler:
                         if f.get('name') == field_name and f.get('signed', False):
                             field_signed = True
                             break
-                    # If signed and value represents a negative number, show as negative
+                    print(f"[DEBUG] Field {field_name} signed: {field_signed}")
+                    # If signed, the value has already been sign-extended in _extract_field_values
+                    # Just format it appropriately
                     if field_signed:
-                        print(f"[DEBUG] Field is signed, value={value}")
+                        print(f"[DEBUG] Field is signed, value={value} (already sign-extended)")
                         bit_width = 0
                         for f in encoding_fields:
                             if f.get('name') == field_name and 'bits' in f:
                                 bits = f['bits']
                                 if isinstance(bits, str) and ',' in bits:
-                                    # Multi-field specification like "15:12,0"
                                     from isa_xform.utils.bit_utils import parse_multi_field_bits
                                     ranges = parse_multi_field_bits(bits)
                                     bit_width = sum(high - low + 1 for high, low in ranges)
@@ -1156,22 +1153,8 @@ class Disassembler:
                                     bit_width = high - low + 1
                                 elif isinstance(bits, str):
                                     bit_width = 1
-                        print(f"[DEBUG] Bit width for field {field_name}: {bit_width}")
-                        if bit_width > 0:
-                            sign_bit = 1 << (bit_width - 1)
-                            mask = (1 << bit_width) - 1
-                            value_masked = value & mask
-                            print(f"[DEBUG] sign_bit=0x{sign_bit:X}, mask=0x{mask:X}, value_masked=0x{value_masked:X}")
-                            if value_masked & sign_bit:
-                                signed_value = value_masked - (1 << bit_width)
-                                print(f"[DEBUG] Value has sign bit, signed_value={signed_value}")
-                                formatted_value = f"{immediate_prefix}{signed_value}"
-                            else:
-                                print(f"[DEBUG] Value has no sign bit, using value_masked={value_masked}")
-                                formatted_value = f"{immediate_prefix}{value_masked}"
-                        else:
-                            print(f"[DEBUG] No bit width found, using original value={value}")
-                            formatted_value = f"{immediate_prefix}{value}"
+                        raw_value = field_values.get(field_name + '_raw', value)
+                        formatted_value = format_signed_immediate(raw_value, bit_width)
                     elif instruction.mnemonic.upper() in always_decimal_for:
                         formatted_value = f"{immediate_prefix}{value}"
                     elif instruction.mnemonic.upper() in always_hex_for:
@@ -1622,29 +1605,21 @@ class Disassembler:
             field_name = field.get('name', '')
             if field_name == 'opcode':
                 continue  # Skip opcode field
-            
             # Skip fields that have a fixed value
             if 'value' in field and 'type' not in field:
                 continue
-            
             bits = field.get('bits', '')
             if not bits:
                 continue
-            
             try:
                 high, low = parse_bit_range(bits)
                 bit_width = high - low + 1
                 value = extract_bits(instr_word, high, low)
-                
+                field_values[field_name + '_raw'] = value  # Store raw value for display
                 # Handle signed immediates
                 if field.get("signed", False) and (value & (1 << (bit_width - 1))):
-                    # Sign extend to ISA word size, not 32 bits
-                    isa_word_size = self.isa_definition.word_size
-                    value = sign_extend(value, bit_width)
-                    # Mask to ISA word size to avoid 32-bit overflow
-                    value = value & ((1 << isa_word_size) - 1)
-                
-                field_name = field.get("name", "")
+                    from ..utils.isa_utils import sign_extend_immediate
+                    value = sign_extend_immediate(self.isa_definition, value, bit_width)
                 field_values[field_name] = value
             except ValueError:
                 continue
@@ -1886,19 +1861,20 @@ class Disassembler:
             
             # For branch instructions, we need to handle the immediate correctly
             if is_branch:
-                # For ZX16 branch instructions, the immediate is 5 bits (15:12,0)
+                # Use ISA-derived branch immediate width
+                bit_width = get_immediate_width(self.isa_definition, 'branch')
                 # Extract the raw value from the instruction word using multi-field specification
                 from isa_xform.utils.bit_utils import extract_multi_field_bits
                 encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
                 imm_field = next((f for f in encoding_fields if f.get('name') == 'imm'), None)
                 if imm_field and 'bits' in imm_field:
                     raw_value = extract_multi_field_bits(instr_word, imm_field['bits'])
-                    bit_width = 5  # Branch immediates are 5 bits in ZX16
                     
-                    # Sign extend the 5-bit value to 16 bits
+                    # Sign extend the value to ISA word size
                     if raw_value & (1 << (bit_width - 1)):  # Negative value
-                        # Sign extend to 16 bits
-                        value = raw_value | 0xFFE0
+                        # Sign extend to ISA word size
+                        sign_extend_mask = get_immediate_sign_extend(self.isa_definition, bit_width)
+                        value = raw_value | sign_extend_mask
                     else:
                         value = raw_value
                 else:
