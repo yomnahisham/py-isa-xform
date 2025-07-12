@@ -1620,7 +1620,18 @@ class Disassembler:
                 if field.get("signed", False) and (value & (1 << (bit_width - 1))):
                     from ..utils.isa_utils import sign_extend_immediate
                     value = sign_extend_immediate(self.isa_definition, value, bit_width)
-                field_values[field_name] = value
+                
+                # Handle shift instructions - extract only the shift amount (lower bits)
+                if field.get("shift_type") is not None:
+                    # For shift instructions, the immediate field contains shift_type + shift_amount
+                    # We want to display only the shift_amount (lower bits)
+                    shift_type_width = get_shift_type_width(self.isa_definition)
+                    shift_amount_width = get_shift_amount_width(self.isa_definition)
+                    # Extract only the shift amount (lower bits)
+                    shift_amount = value & ((1 << shift_amount_width) - 1)
+                    field_values[field_name] = shift_amount
+                else:
+                    field_values[field_name] = value
             except ValueError:
                 continue
         
