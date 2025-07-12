@@ -780,7 +780,7 @@
         "format": "J-type",
         "description": "Jump",
         "syntax": "J offset",
-        "semantics": "PC = PC + offset",
+        "semantics": "PC = offset",
         "implementation": "# Jump implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset to 16-bit (bit 8 is sign bit)\nif offset & 0x100:\n    offset = offset | 0xFF00  # Sign extend upper 8 bits (bits 15:8)\ncontext.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
@@ -797,7 +797,7 @@
         "format": "J-type",
         "description": "Jump and link",
         "syntax": "JAL rd, offset",
-        "semantics": "rd = PC + 2; PC = PC + offset",
+        "semantics": "rd = PC + 2; PC = offset",
         "implementation": "# Jump and link implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\noffset = (imm1 << 3) | imm2\n# Sign extend 9-bit offset\nif offset & 0x100:\n    offset = offset | 0xFF00\n# Save return address\nreturn_addr = context.pc + 2\nwrite_register(operands['rd'], return_addr)\n# Jump\ncontext.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
