@@ -13,6 +13,11 @@ from ..utils.bit_utils import (
     create_mask, bytes_to_int, int_to_bytes
 )
 
+def safe_int16(val):
+    """Wraps to signed 16-bit using NumPy for safe overflow-tolerant math"""
+    return np.array(val, dtype=np.uint16).view(np.int16)
+
+
 class Simulator:
     def __init__(self, isa_definition: ISADefinition, symbol_table: Optional[SymbolTable] = None, disassembler: Optional[Disassembler] = None):
         self.isa_definition = isa_definition
@@ -23,217 +28,179 @@ class Simulator:
         self.data_start = isa_definition.address_space.default_data_start
         self.stack_start = isa_definition.address_space.default_stack_start
         self.pc_step = self.isa_definition.word_size // 8
-        self.regs = [np.int16(0)] * len(self.isa_definition.registers['general_purpose'])
         self.reg_names = [reg.alias[0] for reg in self.isa_definition.registers['general_purpose']]
-        # get index of sp
         self.sp_index = self.reg_names.index('sp') if 'sp' in self.reg_names else -1
-        self.regs[self.sp_index] = self.stack_start  # Initialize stack pointer to stack start address
+        self.regs = [safe_int16(0) for _ in range(len(self.isa_definition.registers['general_purpose']))]
+        if self.sp_index != -1:
+            self.regs[self.sp_index] = safe_int16(self.stack_start)
         self.key = "start"
         self.key_state = {}
         self.running = True
         self.PCrange = isa_definition.address_space.memory_layout["code_section"]["end"]
 
     def load_memory_from_file(self, filename: str) -> bool:
-        """Loads machine code from a file into memory"""
         if not Path(filename).exists():
             print(f"Error: File '{filename}' not found", file=sys.stderr)
             return False
         try:
-            # check for endiannness
-            if self.isa_definition.endianness == 'little':
-                with open(filename, 'rb') as f:
-                    data = f.read()
-                    if len(data) > len(self.memory):
-                        print(f"Error: File '{filename}' exceeds memory size", file=sys.stderr)
-                        return False
-                    entry_point = data[8:12]
-                    entry_point = int.from_bytes(entry_point, byteorder='little')
-                    code_start = data[12:16]
-                    code_start = int.from_bytes(code_start, byteorder='little')
-                    code_size = data[16:20]
-                    code_size = int.from_bytes(code_size, byteorder='little')
+            with open(filename, 'rb') as f:
+                data = f.read()
+                if len(data) > len(self.memory):
+                    print(f"Error: File '{filename}' exceeds memory size", file=sys.stderr)
+                    return False
+                if self.isa_definition.endianness == 'little':
+                    entry_point = int.from_bytes(data[8:12], byteorder='little')
+                    code_start = int.from_bytes(data[12:16], byteorder='little')
+                    code_size = int.from_bytes(data[16:20], byteorder='little')
                     self.memory[code_start:code_start + code_size] = data[entry_point:entry_point + code_size]
                     entry_point += code_size
-                    data_start = data[20:24]
-                    data_start = int.from_bytes(data_start, byteorder='little')
-                    data_size = data[24:28]
-                    data_size = int.from_bytes(data_size, byteorder='little')
+                    data_start = int.from_bytes(data[20:24], byteorder='little')
+                    data_size = int.from_bytes(data[24:28], byteorder='little')
                     self.memory[data_start:data_start + data_size] = data[entry_point:entry_point + data_size]
-            else:
-                with open(filename, 'rb') as f:
-                    data = f.read()
-                    if len(data) > len(self.memory):
-                        print(f"Error: File '{filename}' exceeds memory size", file=sys.stderr)
-                        return False
-                    code_start = data[12:16]
-                    code_start = int.from_bytes(code_start, byteorder='big')
-                    code_size = data[16:20]
-                    code_size = int.from_bytes(code_size, byteorder='big')
+                else:
+                    code_start = int.from_bytes(data[12:16], byteorder='big')
+                    code_size = int.from_bytes(data[16:20], byteorder='big')
                     self.memory[self.pc:self.pc + code_size] = data[code_start:code_start + code_size]
-                    data_start = data[20:24]
-                    data_start = int.from_bytes(data_start, byteorder='big')
-                    data_size = data[24:28]
-                    data_size = int.from_bytes(data_size, byteorder='big')
+                    data_start = int.from_bytes(data[20:24], byteorder='big')
+                    data_size = int.from_bytes(data[24:28], byteorder='big')
                     self.memory[self.data_start:self.data_start + data_size] = data[data_start:data_start + data_size]
             print(f"Loaded {len(data)} bytes from '{filename}' into memory")
             return True
         except FileNotFoundError:
             print(f"Error: File '{filename}' not found", file=sys.stderr)
             return False
-    
+
     def extract_parameters(self, syntax: str) -> List[str]:
-        """ Extracts parameter names from assembly string"""
         parts = syntax.split()
         if len(parts) < 2:
             print(f"Error: Invalid syntax '{syntax}'", file=sys.stderr)
             return []
-        
-        operand_string = ' '.join(parts[1:])  # Join everything after the mnemonic
+        operand_string = ' '.join(parts[1:])
         operands = re.findall(r'(?:0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|-?\d+|[a-zA-Z_]\w*)', operand_string)
         return operands
-    
+
     def generic_to_register_name(self, syntax: str, generic: List[str], operands: List[str]) -> str:
-        """Converts generic operand names to actual register names in the syntax"""
-        replacement_dict = dict(zip(generic, operands))
-        for old_name, new_name in replacement_dict.items():
-            syntax = syntax.replace(old_name, new_name)
+        for g, o in zip(generic, operands):
+            syntax = syntax.replace(g, o)
         return syntax
-    
+
     def register_name_to_index(self, syntax: str, operands: List[str]) -> str:
-        """Converts register name to index based on ISA definition"""
         result = syntax
         reg_objs = self.isa_definition.registers['general_purpose']
         reg_names = [reg.name if hasattr(reg, 'name') else str(reg) for reg in reg_objs]
         reg_aliases = [reg.alias[0] if hasattr(reg, 'alias') and reg.alias else str(reg) for reg in reg_objs]
+
         for operand in operands:
             if operand in reg_names:
                 idx = reg_names.index(operand)
-                pattern = f" {re.escape(operand)}"
-                result = result.replace(pattern, f" regs[{idx}]")
-                result = result.replace(f"{operand} ", f"regs[{idx}] ")
+                result = result.replace(operand, f"regs[{idx}]")
             elif operand in reg_aliases:
                 idx = reg_aliases.index(operand)
-                pattern = f" {re.escape(operand)}"
-                result = result.replace(pattern, f" regs[{idx}]")
-                result = result.replace(f"{operand} ", f"regs[{idx}] ")
-            elif operand.endswith(' '):
-                print(operand)
-                result = result.replace(f"{operand} ", f"np.int16({operand})")
-            else:
-                continue
-            
+                result = result.replace(operand, f"regs[{idx}]")
+
         result = result.replace("memory", "self.memory")
         result = result.replace("PC", "self.pc")
-        result = result.replace("sign_extend", "np.int16")
+        result = result.replace("sign_extend", "safe_int16")
         result = result.replace("unsigned", "np.uint16")
-        return result        
-    
-    
-    
-    def map_disassembly_result_to_pc(self, disassembly_result: DisassemblyResult) -> Dict[int, DisassembledInstruction]:
-        """Maps disassembled instructions to their program counter (PC) addresses"""
-        pc_map = {}
-        for instruction in disassembly_result.instructions:
-            if instruction is not None:
-                pc_map[instruction.address] = instruction
-        return pc_map
 
-    
+        if '=' in result:
+            lhs, rhs = result.split('=', 1)
+            result = f"{lhs.strip()} = safe_int16({rhs.strip()})"
+
+        return result
+
+    def map_disassembly_result_to_pc(self, disassembly_result: DisassemblyResult) -> Dict[int, DisassembledInstruction]:
+        return {i.address: i for i in disassembly_result.instructions if i is not None}
+
     def execute_instruction(self, disassembled_instruction: DisassembledInstruction) -> bool:
-        """Executes a disassembled instruction"""
         if disassembled_instruction.instruction:
             if disassembled_instruction.instruction.mnemonic == "ECALL":
-                code = disassembled_instruction.operands[0]
-                code = f"0x{int(code):03X}"
+                code = f"0x{int(disassembled_instruction.operands[0]):03X}"
                 name = self.isa_definition.ecall_services[code].name
                 if name == "exit":
                     print("Exiting simulation")
                     return False
                 elif name == "read_string":
-                    addr = self.regs[6]  # a0 register
-                    max_length = self.regs[7]  # a1 register
+                    addr = self.regs[6]
+                    max_length = self.regs[7]
                     string = input()
                     if len(string) > max_length:
-                        print(f"Input exceeds maximum length of {max_length} characters")
+                        print(f"Input exceeds max length {max_length}")
                         return True
-                    for i, char in enumerate(string):
+                    for i, c in enumerate(string):
                         if addr + i < len(self.memory):
-                            self.write_memory_byte(addr + i, ord(char))
-                    self.write_memory_byte(addr + len(string), 0)  # Null-terminate the string
-                    self.regs[6] = len(string)  # Store length in a0 register
+                            self.write_memory_byte(addr + i, ord(c))
+                    self.write_memory_byte(addr + len(string), 0)
+                    self.regs[6] = safe_int16(len(string))
                 elif name == "read_integer":
                     try:
-                        value = int(input("Enter an integer: "))
-                        self.regs[6] = int(value)  # Store in a0 register
+                        self.regs[6] = safe_int16(int(input("Enter an integer: ")))
                     except ValueError:
-                        print("Invalid input, expected an integer")
+                        print("Invalid input")
                 elif name == "print_string":
-                    print(self.memory[self.regs[6]])
-                    # addr = self.regs[6]  # a0 register
-                    # string = ""
-                    # while addr < len(self.memory) and self.memory[addr] != 0:
-                    #     string += chr(self.memory[addr])
-                    #     addr += 1
-                    #print(string)
+                    addr = self.regs[6]
+                    s = ""
+                    while addr < len(self.memory) and self.memory[addr] != 0:
+                        s += chr(self.memory[addr])
+                        addr += 1
+                    print(s)
                 elif name == "print_int":
-                    print(self.memory[self.regs[6]])
-                    return
+                    print(self.regs[6])
                 elif name == "play_tone":
-                    frequency = self.regs[6]  # a0 register
-                    duration_ms = self.regs[7]  # a1 register
-                    print(f"Playing tone at {frequency}Hz for {duration_ms}ms")
+                    print(f"Playing tone {self.regs[6]}Hz for {self.regs[7]}ms")
                 elif name == "set_audio_volume":
-                    volume = self.regs[6]  # a0 register
+                    volume = self.regs[6]
                     if 0 <= volume <= 255:
-                        print(f"Setting audio volume to {volume}")
+                        print(f"Setting volume to {volume}")
                     else:
-                        print("Volume must be between 0 and 255")
+                        print("Volume out of range")
                 elif name == "stop_audio_playback":
-                    print("Audio playback stopped")
+                    print("Audio stopped")
                 elif name == "read_keyboard":
-                    #self.regs[7] = self.get_key(chr(self.regs[6])) # a0 register is the key to read, a1 register will hold the result
-                    key_code = self.regs[6]  # Key code requested by user program
+                    key_code = self.regs[6]
                     self.regs[7] = self.key_state.get(key_code, 0)
                 elif name == "registers_dump":
                     for i, reg in enumerate(self.regs):
                         print(f"{self.reg_names[i]}: {reg}")
                 elif name == "memory_dump":
-                    start = self.regs[6]  # a0 register
-                    end = self.regs[7]  # a1 register
+                    start, end = self.regs[6], self.regs[7]
                     for addr in range(start, end + 1):
                         if addr < len(self.memory):
                             print(f"0x{addr:04X}: {self.read_memory_byte(addr)}")
-                
                 return True
-        
             else:
-                generic_assembly = disassembled_instruction.instruction.syntax
-                instruction = disassembled_instruction.instruction
-                actual_assembly = f"{instruction.mnemonic}  {', '.join(disassembled_instruction.operands)}"
-                code = instruction.semantics
-
-                generic_parameters = self.extract_parameters(generic_assembly)
-                actual_parameters = self.extract_parameters(actual_assembly)
-                code = self.generic_to_register_name(code, generic_parameters, actual_parameters)
-                executable_string = self.register_name_to_index(code, actual_parameters)
-                print(f"Executing: {executable_string}")
-                exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'np': np})
+                asm = disassembled_instruction.instruction
+                generic = self.extract_parameters(asm.syntax)
+                actual = self.extract_parameters(f"{asm.mnemonic}  {', '.join(disassembled_instruction.operands)}")
+                transformed = self.generic_to_register_name(asm.semantics, generic, actual)
+                executable = self.register_name_to_index(transformed, actual)
+                print(f"Executing: {executable}")
+                exec(executable, {
+                    'regs': self.regs,
+                    'memory': self.memory,
+                    'self': self,
+                    'np': np,
+                    'safe_int16': safe_int16
+                })
                 return True
         return True
-    
+
     def read_memory_byte(self, addr: int) -> int:
         if 0 <= addr < len(self.memory):
             return self.memory[addr]
-        else:
-            print(f"Warning: Attempted to read from invalid memory address 0x{addr:04X}")
-            return 0
+        print(f"Warning: Invalid memory address 0x{addr:04X}")
+        return 0
+
+    def write_memory_byte(self, addr: int, value: int):
+        if 0 <= addr < len(self.memory):
+            self.memory[addr] = value & 0xFF
 
     def dump_memory(self, start: int, end: int):
         for addr in range(start, end + 1):
             print(f"0x{addr:04X}: {self.read_memory_byte(addr):02X}")
-            
 
-    ###################### GRAPHICS ######################
+
+##### GRAPHICS ######################
 import pygame
 
 # ========== Constants ==========
