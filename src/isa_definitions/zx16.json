@@ -60,6 +60,13 @@
         "operand": ", ",
         "address": "(",
         "address_close": ")"
+      },
+      "disassembly": {
+        "immediate_format": "decimal",
+        "hex_threshold": 255,
+        "negative_hex_threshold": -255,
+        "always_decimal_for": ["ADDI", "SLTI", "SLTUI", "SLLI", "SRLI", "SRAI", "ORI", "ANDI", "XORI", "LI", "LI16"],
+        "always_hex_for": ["LUI", "AUIPC", "J", "JAL", "BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ"]
       }
     },
     "instruction_categories": {
@@ -360,7 +367,7 @@
         "description": "Add immediate",
         "syntax": "ADDI rd, imm",
         "semantics": "rd = rd + sign_extend(imm)",
-        "implementation": "# Add immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val + imm_val) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
+        "implementation": "# Add immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\nresult = (rd_val + (imm_val & 0xFFFF)) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
             {"name": "imm", "bits": "15:9", "type": "immediate", "signed": true},
@@ -411,7 +418,7 @@
         "implementation": "# Shift left logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val << shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false, "shift_type": "001"},
             {"name": "rd", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "011"},
             {"name": "opcode", "bits": "2:0", "value": "001"}
@@ -427,7 +434,7 @@
         "implementation": "# Shift right logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false, "shift_type": "010"},
             {"name": "rd", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "011"},
             {"name": "opcode", "bits": "2:0", "value": "001"}
@@ -443,7 +450,7 @@
         "implementation": "# Shift right arithmetic immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false},
+            {"name": "imm", "bits": "15:9", "type": "immediate", "signed": false, "shift_type": "100"},
             {"name": "rd", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "011"},
             {"name": "opcode", "bits": "2:0", "value": "001"}
@@ -1310,5 +1317,38 @@
       }
     },
     "control_flow_instructions": ["J", "JAL", "JALR", "JR", "BEQ", "BNE", "BLT", "BGE", "BZ", "BNZ", "CALL", "ECALL", "RET"],
-    "jump_instructions": ["J", "JAL", "JALR", "JR", "CALL", "RET"]
+    "jump_instructions": ["J", "JAL", "JALR", "JR", "CALL", "RET"],
+    "data_formatting": {
+      "force_word": true,
+      "ascii_detection": false
+    },
+    "label_generation": {
+      "auto_labels": true,
+      "reconstruct_labels": true,
+      "use_symbolic_names": true
+    },
+    "pseudo_instruction_reconstruction": {
+      "enabled": false,
+      "show_underlying_instructions": true
+    },
+    "register_formatting": {
+      "prefer_canonical": true,
+      "always_use_xn": true,
+      "aliases": false
+    },
+    "immediate_formatting": {
+      "always_show_signed": true,
+      "use_decimal_for_small": true,
+      "hex_threshold": 255
+    },
+    "data_formatting": {
+      "force_word": true,
+      "ascii_detection": false,
+      "always_use_word": true
+    },
+    "disassembly_preferences": {
+      "reconstruct_original": true,
+      "preserve_labels": true,
+      "use_original_syntax": true
+    }
   } 

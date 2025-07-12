@@ -221,25 +221,26 @@ class Parser:
         return self._parse_instruction_part(line, line_num, file)
     
     def _parse_instruction_part(self, line: str, line_num: int, file: Optional[str]) -> Optional[InstructionNode]:
-        """Parse instruction part of a line"""
+        """Parse instruction part of a line, stripping comments from operands."""
         parts = line.split()
         if not parts:
             return None
-        
         mnemonic = parts[0]
         operands = []
-        
         # Parse operands
         if len(parts) > 1:
             operand_str = ' '.join(parts[1:])
             operand_parts = [part.strip() for part in operand_str.split(',')]
-            
             for operand_part in operand_parts:
+                # Strip any comment from the operand
+                for comment_char in self.comment_chars:
+                    comment_pos = operand_part.find(comment_char)
+                    if comment_pos != -1:
+                        operand_part = operand_part[:comment_pos].strip()
                 if operand_part:
                     operand = self._parse_operand(operand_part, line_num, file)
                     if operand:
                         operands.append(operand)
-        
         return InstructionNode(mnemonic, operands, line_num, 1, file)
 
     def _parse_operand_modular_typed(self, operand_str: str, line_num: int, file: Optional[str], expected_type: str = "") -> Optional[OperandNode]:
@@ -324,9 +325,7 @@ class Parser:
                 offset_node = OperandNode(offset, "immediate", line_num, 1, file)
             else:
                 offset_node = OperandNode(offset, "label", line_num, 1, file)
-            # Parse register
-            if reg.startswith(prefix):
-                reg = reg[len(prefix):]
+            # Parse register - keep full name with prefix
             reg_node = OperandNode(reg, "register", line_num, 1, file)
             # Return as a memory operand node
             return OperandNode((offset_node, reg_node), "mem", line_num, 1, file)
@@ -342,7 +341,7 @@ class Parser:
             if self._is_register(operand_str):
                 return OperandNode(operand_str, "register", line_num, 1, file)
             if self._is_register(reg_name):
-                return OperandNode(reg_name, "register", line_num, 1, file)
+                return OperandNode(operand_str, "register", line_num, 1, file)  # Keep full name with prefix
         if self._is_register(operand_str):
             return OperandNode(operand_str, "register", line_num, 1, file)
         
