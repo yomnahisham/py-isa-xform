@@ -143,8 +143,10 @@ class Simulator:
                 pattern = f" {re.escape(operand)}"
                 result = result.replace(pattern, f" regs[{idx}]")
                 result = result.replace(f"{operand} ", f"regs[{idx}] ")
+            elif operand.endswith(' '):
+                print(operand)
+                result = result.replace(f"{operand} ", f"np.int16({operand})")
             else:
-                result = result.replace(operand, f"np.int16({operand})")
                 continue
             
         result = result.replace("memory", "self.memory")
