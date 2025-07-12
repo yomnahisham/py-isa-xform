@@ -354,7 +354,7 @@ def run_simulator_with_graphics(simulator, step=False):
                 simulator.pc += simulator.pc_step
 
             if "NOP" in current_instruction.mnemonic:
-                continue
+                break
 
             print(f"Registers: {simulator.regs}")
 
@@ -367,7 +367,7 @@ def run_simulator_with_graphics(simulator, step=False):
         clock.tick(30)
 
     print("Simulation completed")
-    simulator.dump_memory(0xF0A0, 0xF0AF)
+    simulator.dump_memory(0x0000, 0x0003)
 
 
 
