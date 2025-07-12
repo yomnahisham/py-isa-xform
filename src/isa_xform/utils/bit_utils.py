@@ -103,6 +103,107 @@ def parse_bit_range(bit_range: str) -> Tuple[int, int]:
         raise
 
 
+def parse_multi_field_bits(bit_spec: str) -> List[Tuple[int, int]]:
+    """
+    Parse a multi-field bit specification like "15:12,0" or "31:25,11:8"
+    
+    Args:
+        bit_spec: Bit specification string in format "high1:low1,high2:low2,..."
+    
+    Returns:
+        List of (high, low) bit position tuples
+    
+    Raises:
+        ValueError: If bit specification format is invalid
+    """
+    if not isinstance(bit_spec, str):
+        raise ValueError(f"Bit specification must be a string, got {type(bit_spec)}")
+    
+    try:
+        # Split by comma to get individual bit ranges
+        ranges = bit_spec.split(",")
+        result = []
+        
+        for range_str in ranges:
+            range_str = range_str.strip()
+            if ":" in range_str:
+                # Parse as "high:low" range
+                high, low = parse_bit_range(range_str)
+                result.append((high, low))
+            else:
+                # Parse as single bit
+                bit_pos = int(range_str)
+                if bit_pos < 0:
+                    raise ValueError(f"Bit position must be non-negative: {range_str}")
+                result.append((bit_pos, bit_pos))
+        
+        return result
+    except (ValueError, AttributeError) as e:
+        if "invalid literal" in str(e):
+            raise ValueError(f"Invalid bit specification format: {bit_spec}")
+        raise
+
+
+def extract_multi_field_bits(value: int, bit_spec: str) -> int:
+    """
+    Extract bits from a value according to a multi-field specification
+    
+    Args:
+        value: Source value to extract bits from
+        bit_spec: Bit specification string like "15:12,0"
+    
+    Returns:
+        Extracted value with bits concatenated according to specification
+    
+    Example:
+        extract_multi_field_bits(0x1234, "15:12,0") 
+        # Extracts bits 15:12 and bit 0, concatenates them
+    """
+    ranges = parse_multi_field_bits(bit_spec)
+    result = 0
+    bit_offset = 0
+    
+    # Process ranges in reverse order to maintain bit order
+    for high, low in reversed(ranges):
+        width = high - low + 1
+        extracted = extract_bits(value, high, low)
+        result |= (extracted << bit_offset)
+        bit_offset += width
+    
+    return result
+
+
+def set_multi_field_bits(value: int, bit_spec: str, new_value: int) -> int:
+    """
+    Set bits in a value according to a multi-field specification
+    
+    Args:
+        value: Target value to modify
+        bit_spec: Bit specification string like "15:12,0"
+        new_value: Value to insert into the specified bits
+    
+    Returns:
+        Modified value with new_value inserted into specified bits
+    
+    Example:
+        set_multi_field_bits(0x0000, "15:12,0", 0x1A)
+        # Sets bits 15:12 to 0x1 and bit 0 to 0x0
+    """
+    ranges = parse_multi_field_bits(bit_spec)
+    result = value
+    bit_offset = 0
+    
+    # Process ranges in reverse order to maintain bit order
+    for high, low in reversed(ranges):
+        width = high - low + 1
+        mask = (1 << width) - 1
+        field_value = (new_value >> bit_offset) & mask
+        result = set_bits(result, high, low, field_value)
+        bit_offset += width
+    
+    return result
+
+
 def create_mask(bit_width: int) -> int:
     """
     Create a mask with specified bit width

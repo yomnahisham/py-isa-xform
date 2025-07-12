@@ -99,8 +99,8 @@ Data Region Detection:
                                               formatter_class=argparse.RawDescriptionHelpFormatter,
                                               epilog="""
 Disassembly Modes:
-  Smart Mode (default): Reconstructs pseudo-instructions using patterns from the ISA definition.
-  Raw Mode (--raw): Shows only real hardware instructions as encoded in the binary.
+  Raw Mode (default): Shows only real hardware instructions as encoded in the binary.
+  Smart Mode (--smart): Reconstructs pseudo-instructions using patterns from the ISA definition.
 
 Data Region Detection:
   The disassembler automatically detects data regions based on your ISA's memory layout
@@ -113,11 +113,11 @@ Data Region Detection:
   Use --data-regions to override automatic detection with custom regions.
 
 Examples:
-  # Smart disassembly with pseudo-instruction reconstruction (default)
+  # Raw disassembly (hardware instructions only) (default)
   %(prog)s --isa zx16 --input program.bin --output program.s
 
-  # Raw disassembly (hardware instructions only)
-  %(prog)s --isa zx16 --input program.bin --output program.s --raw
+  # Smart disassembly with pseudo-instruction reconstruction
+  %(prog)s --isa zx16 --input program.bin --output program.s --smart
 
   # Manual override with custom data regions
   %(prog)s --isa zx16 --input program.bin --output program.s --data-regions 0x100-0x200
@@ -136,8 +136,8 @@ Examples:
     disassemble_parser.add_argument('--data-regions', nargs='+', 
                                    help='Data regions as start-end pairs (e.g., 0x0-0xA 0x100-0x200). '
                                         'If not specified, automatically detects data regions based on ISA memory layout.')
-    disassemble_parser.add_argument('--raw', action='store_true', 
-                                   help='Show only real hardware instructions (no pseudo-instruction reconstruction)')
+    disassemble_parser.add_argument('--smart', action='store_true', 
+                                   help='Reconstruct pseudo-instructions using patterns from the ISA definition')
     
     # Validate command
     validate_parser = subparsers.add_parser('validate', help='Validate ISA definition')
@@ -246,6 +246,28 @@ def assemble_command(args) -> int:
             print("Assembling...")
         
         assembled_result = assembler.assemble(all_nodes)
+        
+        # Check for assembly errors
+        if not assembled_result.success:
+            print("Assembly failed with errors:", file=sys.stderr)
+            for error in assembled_result.errors:
+                print(f"  Line {error.line_number}: {error.message}", file=sys.stderr)
+                if error.instruction:
+                    print(f"    Instruction: {error.instruction}", file=sys.stderr)
+                if error.operand:
+                    print(f"    Operand: {error.operand}", file=sys.stderr)
+                if error.expected and error.found:
+                    print(f"    Expected: {error.expected}, Found: {error.found}", file=sys.stderr)
+                if error.context:
+                    print(f"    Context: {error.context}", file=sys.stderr)
+            return 1
+        
+        # Display warnings if any
+        if assembled_result.warnings:
+            print("Assembly completed with warnings:", file=sys.stderr)
+            for warning in assembled_result.warnings:
+                print(f"  Line {warning.line_number}: {warning.message}", file=sys.stderr)
+        
         machine_code = assembled_result.machine_code
         
         # Check if the assembler already created an ISAX header
@@ -419,14 +441,14 @@ def disassemble_command(args) -> int:
                 disassemble_start = 0
             
             disassembler = Disassembler(isa_definition)
-            result = disassembler.disassemble(machine_code, disassemble_start, debug=args.debug, data_regions=data_regions, reconstruct_pseudo=not args.raw)
+            result = disassembler.disassemble(machine_code, disassemble_start, debug=args.debug, data_regions=data_regions, reconstruct_pseudo=args.smart)
             
             # Format output
             output_text = disassembler.format_disassembly(
                 result, 
                 include_addresses=args.show_addresses,
                 include_machine_code=args.show_machine_code,
-                reconstruct_pseudo=not args.raw
+                reconstruct_pseudo=args.smart
             )
             
             # Write output
