@@ -18,6 +18,7 @@ class Register:
     """Represents a register definition"""
     name: str
     size: int
+    number: int = 0
     alias: List[str] = field(default_factory=list)
     description: Optional[str] = None
 
@@ -259,6 +260,7 @@ class ISALoader:
                 register = Register(
                     name=reg_data["name"],
                     size=reg_data["size"],
+                    number=reg_data.get("number", 0),
                     alias=reg_data.get("alias", []),
                     description=reg_data.get("description")
                 )

@@ -19,6 +19,19 @@ from ..utils.bit_utils import (
 
 
 @dataclass
+class AssemblyError:
+    """Detailed assembly error with context"""
+    line_number: int
+    column: int
+    message: str
+    instruction: Optional[str] = None
+    operand: Optional[str] = None
+    expected: Optional[str] = None
+    found: Optional[str] = None
+    context: Optional[str] = None
+
+
+@dataclass
 class AssemblyContext:
     """Context information for assembly process"""
     current_address: int = 0
@@ -27,6 +40,10 @@ class AssemblyContext:
     origin_set: bool = False
     symbols_defined: Dict[str, int] = field(default_factory=dict)
     org_address: int = 0
+    errors: List[AssemblyError] = field(default_factory=list)
+    warnings: List[AssemblyError] = field(default_factory=list)
+    current_line: int = 0
+    current_file: str = ""
 
 
 @dataclass 
@@ -37,6 +54,9 @@ class AssembledCode:
     entry_point: Optional[int] = None
     sections: Optional[Dict[str, Tuple[int, int]]] = None  # section_name: (start_addr, size)
     data_section_size: int = 0  # Size of data section in bytes
+    errors: List[AssemblyError] = field(default_factory=list)
+    warnings: List[AssemblyError] = field(default_factory=list)
+    success: bool = True
 
 
 class Assembler:
@@ -87,6 +107,77 @@ class Assembler:
         from .directive_executor import compile_directive_implementations
         compile_directive_implementations(self.isa_definition)
     
+    def _report_error(self, line_number: int, column: int, message: str, instruction: Optional[str] = None, 
+                     operand: Optional[str] = None, expected: Optional[str] = None, found: Optional[str] = None, 
+                     context: Optional[str] = None):
+        """Report an assembly error with detailed context"""
+        error = AssemblyError(
+            line_number=line_number,
+            column=column,
+            message=message,
+            instruction=instruction,
+            operand=operand,
+            expected=expected,
+            found=found,
+            context=context
+        )
+        self.context.errors.append(error)
+        
+        # Format error message with ISA context
+        isa_name = self.isa_definition.name
+        error_msg = f"Error at line {line_number}: {message}"
+        if instruction:
+            error_msg += f"\n  Instruction: {instruction}"
+        if operand:
+            error_msg += f"\n  Operand: {operand}"
+        if expected and found:
+            error_msg += f"\n  Expected: {expected}, Found: {found}"
+        if context:
+            error_msg += f"\n  Context: {context}"
+        error_msg += f"\n  ISA: {isa_name}"
+        
+        print(f"[ERROR] {error_msg}")
+    
+    def _report_warning(self, line_number: int, column: int, message: str, instruction: Optional[str] = None, 
+                       operand: Optional[str] = None, expected: Optional[str] = None, found: Optional[str] = None, 
+                       context: Optional[str] = None):
+        """Report an assembly warning with detailed context"""
+        warning = AssemblyError(
+            line_number=line_number,
+            column=column,
+            message=message,
+            instruction=instruction,
+            operand=operand,
+            expected=expected,
+            found=found,
+            context=context
+        )
+        self.context.warnings.append(warning)
+        
+        # Format warning message
+        warning_msg = f"Warning at line {line_number}: {message}"
+        if instruction:
+            warning_msg += f"\n  Instruction: {instruction}"
+        if context:
+            warning_msg += f"\n  Context: {context}"
+        
+        print(f"[WARNING] {warning_msg}")
+    
+    def _get_isa_error_message(self, error_type: str, **kwargs) -> str:
+        """Get ISA-specific error message from ISA definition"""
+        error_messages = getattr(self.isa_definition, 'error_messages', {})
+        template = error_messages.get(error_type, f"{{error_type}} error")
+        
+        # Add ISA context
+        kwargs['isa_name'] = self.isa_definition.name
+        kwargs['word_size'] = self.isa_definition.word_size
+        kwargs['instruction_size'] = self.isa_definition.instruction_size
+        
+        try:
+            return template.format(**kwargs)
+        except KeyError:
+            return template
+    
     def assemble(self, nodes: List[ASTNode], two_pass: bool = True) -> AssembledCode:
         """
         Assemble AST nodes into machine code
@@ -99,6 +190,10 @@ class Assembler:
             AssembledCode containing machine code and symbol table
         """
         machine_code = bytearray()
+        
+        # Clear previous errors
+        self.context.errors.clear()
+        self.context.warnings.clear()
         
         if two_pass:
             # First pass: collect symbols and calculate addresses
@@ -114,11 +209,17 @@ class Assembler:
             self.context.pass_number = 1
             machine_code = self._single_pass(nodes)
         
+        # Check if we have errors
+        success = len(self.context.errors) == 0
+        
         return AssembledCode(
             machine_code=machine_code,
             symbol_table=self.symbol_table,
             entry_point=self._find_entry_point(),
-            data_section_size=0  # We'll calculate this properly later
+            data_section_size=0,  # We'll calculate this properly later
+            errors=self.context.errors.copy(),
+            warnings=self.context.warnings.copy(),
+            success=success
         )
     
     def _first_pass(self, nodes: List[ASTNode]):
@@ -276,25 +377,52 @@ class Assembler:
             # Try pseudo-instruction expansion
             # Pass the current instruction address to the expansion
             expanded_nodes = self._expand_pseudo_instruction(node, self.context.current_address)
+            if not expanded_nodes:
+                # No pseudo-instruction expansion found - this is an error
+                self._report_error(
+                    line_number=getattr(node, 'line', 0),
+                    column=getattr(node, 'column', 0),
+                    message=self._get_isa_error_message('unknown_instruction', instruction=node.mnemonic, line=getattr(node, 'line', 0)),
+                    instruction=node.mnemonic,
+                    context=f"ISA: {self.isa_definition.name}, Available instructions: {list(self.instruction_by_mnemonic.keys())}"
+                )
+                # Return empty code to continue assembly
+                return bytearray()
+            
             code = bytearray()
             for n in expanded_nodes:
                 code.extend(self._assemble_instruction(n, instruction_address))
             return code
+        
         # Use passed instruction address or capture from context
         if instruction_address is None:
             instruction_address = int(self.context.current_address)
-        # Encode the instruction based on its format
-        encoded = self._encode_instruction(instruction, node.operands, instruction_address)
         
-        # Convert to bytes using bit utilities
-        endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
-        instruction_bytes = int_to_bytes(encoded, self.instruction_size_bytes, endianness)
-        
-        # Update address
-        self.context.current_address += self.instruction_size_bytes
-        self.symbol_table.set_current_address(self.context.current_address)
-        
-        return bytearray(instruction_bytes)
+        try:
+            # Encode the instruction based on its format
+            encoded = self._encode_instruction(instruction, node.operands, instruction_address)
+            
+            # Convert to bytes using bit utilities
+            endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+            instruction_bytes = int_to_bytes(encoded, self.instruction_size_bytes, endianness)
+            
+            # Update address
+            self.context.current_address += self.instruction_size_bytes
+            self.symbol_table.set_current_address(self.context.current_address)
+            
+            return bytearray(instruction_bytes)
+            
+        except Exception as e:
+            # Report encoding error
+            self._report_error(
+                line_number=getattr(node, 'line', 0),
+                column=getattr(node, 'column', 0),
+                message=f"Failed to encode instruction '{node.mnemonic}': {str(e)}",
+                instruction=node.mnemonic,
+                context=f"ISA: {self.isa_definition.name}, Operands: {[op.value for op in node.operands]}"
+            )
+            # Return empty code to continue assembly
+            return bytearray()
     
     def _encode_instruction(self, instruction: Instruction, operands: List[OperandNode], instruction_address: int = 0) -> int:
         """Encode instruction with operands using only the ISA definition's encoding.fields"""
@@ -403,11 +531,31 @@ class Assembler:
         # Always compute bit width from field['bits'] if not provided
         if bit_width == 0 and field and 'bits' in field:
             bits = field['bits']
-            if isinstance(bits, str) and ':' in bits:
+            if isinstance(bits, str) and ',' in bits:
+                # Multi-field specification like "15:12,0"
+                from isa_xform.utils.bit_utils import parse_multi_field_bits
+                ranges = parse_multi_field_bits(bits)
+                bit_width = sum(high - low + 1 for high, low in ranges)
+            elif isinstance(bits, str) and ':' in bits:
                 high, low = [int(x) for x in bits.split(':')]
                 bit_width = high - low + 1
             elif isinstance(bits, str):
                 bit_width = 1  # Single bit
+        # --- MODULAR PATCH: Handle shift_type for shift instructions ---
+        if field_type == "immediate" and field and "shift_type" in field and instruction:
+            # For shift instructions, encode shift_type bits in the immediate field
+            shift_type_str = field["shift_type"]
+            shift_type_val = int(shift_type_str, 2)
+            # The operand value is the shift amount (lower bits)
+            shift_amount = self._resolve_immediate_operand(operand)
+            # For ZX16, shift_type is in upper bits of immediate, shift_amount in lower bits
+            # e.g., for 7-bit imm: [shift_type(3 bits)][shift_amount(4 bits)]
+            shift_type_width = len(shift_type_str)
+            shift_amount_width = bit_width - shift_type_width
+            value = (shift_type_val << shift_amount_width) | (shift_amount & ((1 << shift_amount_width) - 1))
+            print(f"[DEBUG] Encoding shift_type: shift_type={shift_type_val}, shift_amount={shift_amount}, value={value}")
+            return value & ((1 << bit_width) - 1)
+        # --- END PATCH ---
         if field_type in ("register", "vector_register"):
             return self._resolve_register_operand(operand, field_type=field_type)
         elif field_type == "immediate":
@@ -471,7 +619,31 @@ class Assembler:
                         # Fallback
                         return signed_offset & ((1 << bit_width) - 1)
                 # Single-field immediate for label
-                return offset & ((1 << bit_width) - 1)
+                # Check if offset fits within the valid range for signed immediates
+                max_positive = (1 << (bit_width - 1)) - 1  # e.g., 15 for 5-bit signed
+                min_negative = -(1 << (bit_width - 1))     # e.g., -16 for 5-bit signed
+                
+                if offset < min_negative or offset > max_positive:
+                    # Report error for out-of-range branch offset
+                    self._report_error(
+                        line_number=getattr(operand, 'line', 0),
+                        column=getattr(operand, 'column', 0),
+                        message=f"Branch offset {offset} is out of range for {bit_width}-bit signed immediate",
+                        operand=str(operand.value),
+                        expected=f"Offset in range {min_negative} to {max_positive}",
+                        found=str(offset),
+                        context=f"ISA: {self.isa_definition.name}, Instruction: {instruction.mnemonic if instruction else 'unknown'}"
+                    )
+                    # Return truncated value as fallback (same as before)
+                    return offset & ((1 << bit_width) - 1)
+                
+                # Offset is in range, encode as signed value
+                if offset < 0:
+                    # For negative values, use two's complement
+                    return (offset + (1 << bit_width)) & ((1 << bit_width) - 1)
+                else:
+                    # For positive values, use as-is
+                    return offset & ((1 << bit_width) - 1)
             else:
                 # Regular immediate (not a label)
                 value = self._resolve_immediate_operand(operand)
@@ -481,26 +653,41 @@ class Assembler:
                     encoding_fields = instruction.encoding.get("fields", [])
                     immediate_fields = [f for f in encoding_fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
                     if len(immediate_fields) > 1:
-                        # Modular multi-field immediate encoding for regular immediates
-                        field_specs = []
-                        for f in immediate_fields:
-                            bits = f.get("bits", "")
-                            if ":" in bits:
-                                high, low = [int(x) for x in bits.split(":")]
+                        # ISA-specific multi-field immediate encoding
+                        if instruction.mnemonic in ['LUI', 'AUIPC']:
+                            # For LUI/AUIPC: The immediate is encoded directly into 9 bits (imm + imm2)
+                            # The ISA implementation is: result = (imm << 7) & 0xFFFF
+                            # But during encoding, we just split the 9-bit value into imm (6 bits) and imm2 (3 bits)
+                            # No shifting needed during encoding - the shifting happens during execution
+                            if field_name == 'imm':  # imm1 (upper 6 bits)
+                                result = (value >> 3) & 0x3F  # 6 bits
+                                return result
+                            elif field_name == 'imm2':  # imm2 (lower 3 bits)
+                                result = value & 0x7  # 3 bits
+                                return result
                             else:
-                                high = low = int(bits)
-                            width = high - low + 1
-                            field_specs.append((f["name"], low, width))
-                        field_specs.sort(key=lambda x: x[1])
-                        total_width = sum(w for _, _, w in field_specs)
-                        mask = (1 << total_width) - 1
-                        value = value & mask
-                        for name, low, width in field_specs:
-                            field_mask = (1 << width) - 1
-                            field_value = (value >> low) & field_mask
-                            if name == field_name:
-                                return field_value
-                        return value & ((1 << bit_width) - 1)
+                                return value & ((1 << bit_width) - 1)
+                        else:
+                            # Generic multi-field immediate encoding for other instructions
+                            field_specs = []
+                            for f in immediate_fields:
+                                bits = f.get("bits", "")
+                                if ":" in bits:
+                                    high, low = [int(x) for x in bits.split(":")]
+                                else:
+                                    high = low = int(bits)
+                                width = high - low + 1
+                                field_specs.append((f["name"], low, width))
+                            field_specs.sort(key=lambda x: x[1])
+                            total_width = sum(w for _, _, w in field_specs)
+                            mask = (1 << total_width) - 1
+                            value = value & mask
+                            for name, low, width in field_specs:
+                                field_mask = (1 << width) - 1
+                                field_value = (value >> low) & field_mask
+                                if name == field_name:
+                                    return field_value
+                            return value & ((1 << bit_width) - 1)
                 return value & ((1 << bit_width) - 1)
         else:
             # Fallback for other field types
@@ -569,91 +756,144 @@ class Assembler:
             bank_name = 'general_purpose'
 
         banks_to_search = []
-        if bank_name in self.isa_definition.registers:
-            banks_to_search = [self.isa_definition.registers[bank_name]]
-        else:
-            # Fallback: search all banks
-            banks_to_search = self.isa_definition.registers.values()
-
-        for registers in banks_to_search:
-            for i, register in enumerate(registers):
-                if register.name == reg_name:
-                    return i
-                if prefix and reg_name == prefix + register.name:
-                    return i
-                if prefix and reg_name == prefix + str(i):
-                    if register.name == prefix + str(i):
-                        return i
-                if prefix and reg_name == register.name[len(prefix):]:
-                    return i
-                for alias in register.alias:
-                    if alias == reg_name:
-                        return i
-                    if prefix and reg_name == prefix + alias:
-                        return i
-                    if prefix and reg_name == alias[len(prefix):]:
-                        return i
-                if register.name in alternatives:
-                    for alt_name in alternatives[register.name]:
-                        if alt_name == reg_name:
-                            return i
-                        if prefix and reg_name == prefix + alt_name:
-                            return i
-                        if prefix and reg_name == alt_name[len(prefix):]:
-                            return i
-        raise AssemblerError(f"Unknown register: {operand.value} (type: {field_type})")
+        
+        # Get the register bank from ISA definition
+        if hasattr(self.isa_definition, 'registers'):
+            if bank_name in self.isa_definition.registers:
+                banks_to_search.append(self.isa_definition.registers[bank_name])
+            elif 'general_purpose' in self.isa_definition.registers:
+                banks_to_search.append(self.isa_definition.registers['general_purpose'])
+        
+        # Search for register in the specified bank
+        for bank in banks_to_search:
+            for reg in bank:
+                # Handle both Register objects and dictionaries
+                if hasattr(reg, 'name'):
+                    # Register object
+                    if reg.name == reg_name:
+                        reg_num = getattr(reg, 'number', 0)
+                        return reg_num
+                    # Check aliases
+                    aliases = getattr(reg, 'alias', [])
+                    if reg_name in aliases:
+                        reg_num = getattr(reg, 'number', 0)
+                        return reg_num
+                else:
+                    # Dictionary
+                    if reg.get('name') == reg_name:
+                        reg_num = int(reg.get('number', 0))
+                        return reg_num
+                    # Check aliases
+                    aliases = reg.get('alias', [])
+                    if reg_name in aliases:
+                        reg_num = int(reg.get('number', 0))
+                        return reg_num
+        
+        # Check alternatives (register aliases)
+        for alt_name, alt_list in alternatives.items():
+            if reg_name in alt_list:
+                # Find the register with this alternative name
+                for bank in banks_to_search:
+                    for reg in bank:
+                        if hasattr(reg, 'name'):
+                            # Register object
+                            if reg.name == alt_name:
+                                return getattr(reg, 'number', 0)
+                        else:
+                            # Dictionary
+                            if reg.get('name') == alt_name:
+                                return int(reg.get('number', 0))
+        
+        # If not found, try to parse as a number
+        try:
+            # Remove prefix if present
+            if reg_name.startswith(prefix):
+                reg_name = reg_name[len(prefix):]
+            
+            # Try to parse as integer
+            reg_num = int(reg_name)
+            
+            # Validate register number range
+            max_regs = 8  # Default for ZX16
+            if hasattr(self.isa_definition, 'registers') and 'general_purpose' in self.isa_definition.registers:
+                max_regs = len(self.isa_definition.registers['general_purpose'])
+            
+            if 0 <= reg_num < max_regs:
+                return reg_num
+            else:
+                # Report error for out-of-range register number
+                self._report_error(
+                    line_number=getattr(operand, 'line', 0),
+                    column=getattr(operand, 'column', 0),
+                    message=f"Register number {reg_num} is out of range (0-{max_regs-1})",
+                    operand=reg_name,
+                    expected=f"Register number 0-{max_regs-1}",
+                    found=str(reg_num),
+                    context=f"ISA: {self.isa_definition.name}, Register bank: {bank_name}"
+                )
+                return 0  # Return x0 as fallback
+                
+        except ValueError:
+            # Report error for unknown register name
+            available_regs = []
+            for bank in banks_to_search:
+                for reg in bank:
+                    if hasattr(reg, 'name'):
+                        # Register object
+                        available_regs.append(reg.name)
+                        aliases = getattr(reg, 'alias', [])
+                        available_regs.extend(aliases)
+                    else:
+                        # Dictionary
+                        available_regs.append(reg.get('name'))
+                        aliases = reg.get('alias', [])
+                        available_regs.extend(aliases)
+            
+            self._report_error(
+                line_number=getattr(operand, 'line', 0),
+                column=getattr(operand, 'column', 0),
+                message=f"Unknown register '{reg_name}'",
+                operand=reg_name,
+                expected=f"Valid register name or number",
+                found=reg_name,
+                context=f"ISA: {self.isa_definition.name}, Available registers: {', '.join(available_regs)}"
+            )
+            return 0  # Return x0 as fallback
     
     def _resolve_immediate_operand(self, operand: OperandNode) -> int:
-        """Resolve immediate operand to integer value, supporting label bitfield extraction (e.g., label[15:9]) and both prefixed/non-prefixed forms."""
-        # Handle memory operands (tuples of immediate and register)
-        if isinstance(operand.value, tuple):
-            offset_node, _ = operand.value
-            value_str = offset_node.value
+        """Resolve immediate operand to integer value"""
+        if operand.type == "immediate":
+            try:
+                # Parse the immediate value
+                value = self._parse_number(operand.value)
+                return value
+                
+            except ValueError as e:
+                self._report_error(
+                    line_number=getattr(operand, 'line', 0),
+                    column=getattr(operand, 'column', 0),
+                    message=f"Invalid immediate value '{operand.value}': {str(e)}",
+                    operand=str(operand.value),
+                    expected="Valid number (decimal, hex, or binary)",
+                    found=str(operand.value),
+                    context=f"ISA: {self.isa_definition.name}"
+                )
+                return 0  # Return 0 as fallback
+                
+        elif operand.type == "label":
+            # This should be handled by _resolve_address_operand
+            return self._resolve_address_operand(operand)
         else:
-            value_str = operand.value
-
-        # If the value is a register object, this is a bug in the parser or mapping
-        if hasattr(value_str, 'name') and hasattr(value_str, 'alias'):
-            raise AssemblerError(f"Register operand passed where immediate expected: {value_str.name}")
-
-        # Get operand formatting config from ISA
-        op_config = getattr(self.isa_definition, 'operand_formatting', {})
-        immediate_prefix = op_config.get('immediate_prefix', '#')
-
-        # Fallback to assembly_syntax for backward compatibility
-        if not immediate_prefix:
-            syntax = self.isa_definition.assembly_syntax
-            immediate_prefix = getattr(syntax, 'immediate_prefix', '#')
-
-        # Remove immediate prefix if present, but also allow non-prefixed
-        if isinstance(value_str, str) and immediate_prefix and value_str.startswith(immediate_prefix):
-            value_str = value_str[len(immediate_prefix):]
-
-        # Support label bitfield extraction
-        if isinstance(value_str, str):
-            m = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+):(\d+)\]$", value_str)
-            if m:
-                label = m.group(1)
-                high = int(m.group(2))
-                low = int(m.group(3))
-                symbol = self.symbol_table.get_symbol(label)
-                if symbol and symbol.defined:
-                    address = symbol.value
-                else:
-                    if self.context.pass_number == 2:
-                        raise AssemblerError(f"Undefined symbol: {label}")
-                    address = 0
-                width = high - low + 1
-                mask = (1 << width) - 1
-                return (address >> low) & mask
-        # Try parsing as number (with or without prefix)
-        try:
-            return self._parse_number(value_str)
-        except AssemblerError:
-            # If parsing fails and prefix is defined, try with prefix
-            if immediate_prefix and isinstance(operand.value, str) and operand.value.startswith(immediate_prefix):
-                return self._parse_number(operand.value[len(immediate_prefix):])
-            raise
+            self._report_error(
+                line_number=getattr(operand, 'line', 0),
+                column=getattr(operand, 'column', 0),
+                message=f"Unexpected operand type '{operand.type}' for immediate field",
+                operand=str(operand.value),
+                expected="immediate or label",
+                found=operand.type,
+                context=f"ISA: {self.isa_definition.name}"
+            )
+            return 0  # Return 0 as fallback
     
     def _resolve_address_operand(self, operand: OperandNode) -> int:
         """Resolve address operand (label or immediate)"""
@@ -1113,8 +1353,14 @@ class Assembler:
     def _insert_field(self, instruction_word: int, bits: str, field_value: int) -> int:
         """Insert field value into instruction word at specified bit positions"""
         try:
-            high, low = parse_bit_range(bits)
-            return set_bits(instruction_word, high, low, field_value)
+            if ',' in bits:
+                # Multi-field specification like "15:12,0"
+                from isa_xform.utils.bit_utils import set_multi_field_bits
+                return set_multi_field_bits(instruction_word, bits, field_value)
+            else:
+                # Single field specification like "15:12"
+                high, low = parse_bit_range(bits)
+                return set_bits(instruction_word, high, low, field_value)
         except ValueError:
             return instruction_word
 

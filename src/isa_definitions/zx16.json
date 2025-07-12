@@ -65,8 +65,8 @@
         "immediate_format": "decimal",
         "hex_threshold": 255,
         "negative_hex_threshold": -255,
-        "always_decimal_for": ["ADDI", "SLTI", "SLTUI", "SLLI", "SRLI", "SRAI", "ORI", "ANDI", "XORI", "LI", "LI16"],
-        "always_hex_for": ["LUI", "AUIPC", "J", "JAL", "BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ"]
+        "always_decimal_for": ["ADDI", "SLTI", "SLTUI", "SLLI", "SRLI", "SRAI", "ORI", "ANDI", "XORI", "LI", "LI16", "AUIPC"],
+        "always_hex_for": ["LUI", "J", "JAL", "BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ"]
       }
     },
     "instruction_categories": {
@@ -129,14 +129,14 @@
     },
     "registers": {
       "general_purpose": [
-        {"name": "x0", "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved scratch)"},
-        {"name": "x1", "size": 16, "alias": ["ra"], "description": "Return address (JAL/JALR)"},
-        {"name": "x2", "size": 16, "alias": ["sp"], "description": "Stack pointer (init 0xEFFE)"},
-        {"name": "x3", "size": 16, "alias": ["s0"], "description": "Saved/frame pointer (callee-saved)"},
-        {"name": "x4", "size": 16, "alias": ["s1"], "description": "Saved (callee-saved)"},
-        {"name": "x5", "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved scratch)"},
-        {"name": "x6", "size": 16, "alias": ["a0"], "description": "Arg0/Return value"},
-        {"name": "x7", "size": 16, "alias": ["a1"], "description": "Arg1 (spill to stack for more)"}
+        {"name": "x0", "number": 0, "size": 16, "alias": ["t0"], "description": "Temporary (caller-saved scratch)"},
+        {"name": "x1", "number": 1, "size": 16, "alias": ["ra"], "description": "Return address (JAL/JALR)"},
+        {"name": "x2", "number": 2, "size": 16, "alias": ["sp"], "description": "Stack pointer (init 0xEFFE)"},
+        {"name": "x3", "number": 3, "size": 16, "alias": ["s0"], "description": "Saved/frame pointer (callee-saved)"},
+        {"name": "x4", "number": 4, "size": 16, "alias": ["s1"], "description": "Saved (callee-saved)"},
+        {"name": "x5", "number": 5, "size": 16, "alias": ["t1"], "description": "Temporary (caller-saved scratch)"},
+        {"name": "x6", "number": 6, "size": 16, "alias": ["a0"], "description": "Arg0/Return value"},
+        {"name": "x7", "number": 7, "size": 16, "alias": ["a1"], "description": "Arg1 (spill to stack for more)"}
       ]
     },
     "instructions": [
@@ -527,10 +527,10 @@
         "description": "Branch if equal",
         "syntax": "BEQ rs1, rs2, offset",
         "semantics": "if rs1 == rs2: PC = PC + offset",
-        "implementation": "# Branch if equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val == rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
+        "implementation": "# Branch if equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val == rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
             {"name": "rs2", "bits": "11:9", "type": "register"},
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "000"},
@@ -545,10 +545,10 @@
         "description": "Branch if not equal",
         "syntax": "BNE rs1, rs2, offset",
         "semantics": "if rs1 != rs2: PC = PC + offset",
-        "implementation": "# Branch if not equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val != rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
+        "implementation": "# Branch if not equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val != rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
             {"name": "rs2", "bits": "11:9", "type": "register"},
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "001"},
@@ -563,10 +563,10 @@
         "description": "Branch if zero",
         "syntax": "BZ rs1, offset",
         "semantics": "if rs1 == 0: PC = PC + offset",
-        "implementation": "# Branch if zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val == 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
+        "implementation": "# Branch if zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val == 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
             {"name": "rs2", "bits": "11:9", "value": "000"},
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "010"},
@@ -581,10 +581,10 @@
         "description": "Branch if not zero",
         "syntax": "BNZ rs1, offset",
         "semantics": "if rs1 != 0: PC = PC + offset",
-        "implementation": "# Branch if not zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val != 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
+        "implementation": "# Branch if not zero implementation\nrs1_val = read_register(operands['rs1'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val != 0:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
             {"name": "rs2", "bits": "11:9", "value": "000"},
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "011"},
@@ -599,10 +599,10 @@
         "description": "Branch if less than (signed)",
         "syntax": "BLT rs1, rs2, offset",
         "semantics": "if rs1 < rs2: PC = PC + offset",
-        "implementation": "# Branch if less than (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed < rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
+        "implementation": "# Branch if less than (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed < rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
             {"name": "rs2", "bits": "11:9", "type": "register"},
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "100"},
@@ -617,10 +617,10 @@
         "description": "Branch if greater or equal (signed)",
         "syntax": "BGE rs1, rs2, offset",
         "semantics": "if rs1 >= rs2: PC = PC + offset",
-        "implementation": "# Branch if greater or equal (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed >= rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
+        "implementation": "# Branch if greater or equal (signed) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\n# Sign extend to 32 bits for comparison\nrs1_signed = rs1_val if (rs1_val & 0x8000) == 0 else rs1_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nif rs1_signed >= rs2_signed:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
             {"name": "rs2", "bits": "11:9", "type": "register"},
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "101"},
@@ -635,10 +635,10 @@
         "description": "Branch if less than (unsigned)",
         "syntax": "BLTU rs1, rs2, offset",
         "semantics": "if unsigned rs1 < unsigned rs2: PC = PC + offset",
-        "implementation": "# Branch if less than (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val < rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
+        "implementation": "# Branch if less than (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val < rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
             {"name": "rs2", "bits": "11:9", "type": "register"},
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "110"},
@@ -653,10 +653,10 @@
         "description": "Branch if greater or equal (unsigned)",
         "syntax": "BGEU rs1, rs2, offset",
         "semantics": "if unsigned rs1 >= rs2: PC = PC + offset",
-        "implementation": "# Branch if greater or equal (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\nif rs1_val >= rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
+        "implementation": "# Branch if greater or equal (unsigned) implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 5-bit offset\nif offset & 0x10:\n    offset = offset | 0xFFE0\nif rs1_val >= rs2_val:\n    context.pc = (context.pc + offset) & 0xFFFF",
         "encoding": {
           "fields": [
-            {"name": "imm", "bits": "15:12", "type": "immediate", "signed": true},
+            {"name": "imm", "bits": "15:12,0", "type": "immediate", "signed": true},
             {"name": "rs2", "bits": "11:9", "type": "register"},
             {"name": "rs1", "bits": "8:6", "type": "register"},
             {"name": "func3", "bits": "5:3", "value": "111"},

@@ -6,7 +6,7 @@ import struct
 from typing import List, Optional, Dict, Any, Tuple, Union
 from dataclasses import dataclass
 from .isa_loader import ISADefinition, Instruction
-from .symbol_table import SymbolTable
+from .symbol_table import SymbolTable, SymbolType
 from ..utils.error_handling import DisassemblerError, ErrorLocation
 from ..utils.bit_utils import (
     extract_bits, set_bits, sign_extend, parse_bit_range, 
@@ -263,50 +263,25 @@ class Disassembler:
     
     def _build_label_map_from_symbols(self, instructions: List[DisassembledInstruction]) -> Dict[int, str]:
         """Build a map of addresses to label names from disassembled instructions"""
+        # Standard disassemblers don't create auto-labels - only use symbols from symbol table
         label_map = {}
         
-        # Check ISA label generation settings
-        label_config = getattr(self.isa_definition, 'label_generation', {})
-        auto_labels = label_config.get('auto_labels', True)
-        
-        # If auto-labels are disabled, return empty map
-        if not auto_labels:
-            return label_map
-        
-        # First pass: collect all addresses that are targets of branches/jumps
-        branch_targets = set()
-        for instr in instructions:
-            if instr.instruction:
-                mnemonic = instr.instruction.mnemonic.upper()
-                if self._is_control_flow_instruction(mnemonic):
-                    # Extract target address from operands
-                    for operand in instr.operands:
-                        if operand.startswith('0x'):
-                            try:
-                                addr = int(operand, 16)
-                                branch_targets.add(addr)
-                            except ValueError:
-                                pass
-                        elif operand.isdigit():
-                            try:
-                                addr = int(operand)
-                                branch_targets.add(addr)
-                            except ValueError:
-                                pass
-        
-        # Second pass: assign labels to branch targets
-        label_counter = 1
-        for addr in sorted(branch_targets):
-            if addr not in label_map:
-                label_map[addr] = f"L{label_counter:04d}"
-                label_counter += 1
+        # Only add labels that exist in the symbol table
+        if hasattr(self, 'symbol_table') and self.symbol_table:
+            for symbol in self.symbol_table.symbols.values():
+                if symbol.defined and symbol.type == SymbolType.LABEL:
+                    label_map[symbol.value] = symbol.name
         
         return label_map
     
     def _resolve_address_to_label(self, address: int) -> str:
         """Resolve an address to a label name"""
-        if address in self.label_map:
+        # Use labels from the label map (loaded from symbol table in binary)
+        if hasattr(self, 'label_map') and self.label_map and address in self.label_map:
+            print(f"[DEBUG] Resolved address 0x{address:X} to label: {self.label_map[address]}")
             return self.label_map[address]
+        # Always return hex address for standard disassembler behavior
+        print(f"[DEBUG] No label found for address 0x{address:X}, returning hex")
         return f"0x{address:X}"
     
     def _detect_ascii_strings(self, data_bytes: bytes, start_addr: int) -> List[Tuple[int, int, str]]:
@@ -399,6 +374,8 @@ class Disassembler:
                     break
                 endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
                 instr_word = bytes_to_int(instr_bytes, endianness)
+                if debug:
+                    print(f"[DEBUG] PC=0x{code_addr:04X} | Raw bytes: {instr_bytes.hex()}, Instruction word: 0x{instr_word:04X}")
                 decoded = self._disassemble_instruction(instr_word, instr_bytes, code_addr)
                 if decoded:
                     instructions.append(decoded)
@@ -417,14 +394,8 @@ class Disassembler:
                     if debug:
                         print(f"[DEBUG] PC=0x{code_addr:04X} | Unknown instruction: 0x{instr_word:04X}")
                     
-                    # If we've seen too many unknown instructions in a row, treat remaining as data
-                    if consecutive_unknown >= max_unknown_before_data:
-                        remaining_data = code_bytes[i:]
-                        if len(remaining_data) > 0:
-                            data_sections[code_addr] = remaining_data
-                            if debug:
-                                print(f"[DEBUG] PC=0x{code_addr:04X} | Switching to data mode, {len(remaining_data)} bytes")
-                        break
+                    # Continue processing all instructions - don't switch to data mode automatically
+                    # The disassembler should process all code regardless of unknown instructions
                 
                 i += self.instruction_size_bytes
                 code_addr += self.instruction_size_bytes
@@ -447,6 +418,7 @@ class Disassembler:
                         print(f"[DEBUG] Loaded {len(symbol_data)} symbols from binary")
                         for name, info in symbol_data.items():
                             print(f"[DEBUG] Symbol: {name} = 0x{info['value']:04X} ({info['type']})")
+                        print(f"[DEBUG] Label map: {self.label_map}")
                 except Exception as e:
                     if debug:
                         print(f"[DEBUG] Failed to load symbol table: {e}")
@@ -621,27 +593,16 @@ class Disassembler:
                     if debug:
                         print(f"[DEBUG] PC=0x{current_address:04X} | NOP detected (consecutive: {consecutive_nops})")
                     
-                    # More aggressive switching to data mode
-                    if consecutive_nops >= max_nops_before_data and not in_data_section:
-                        # Switch to data mode for blocks of zeros
-                        in_data_section = True
-                        data_start = current_address - (consecutive_nops - 1) * self.instruction_size_bytes
-                        data_sections[data_start] = b'\x00' * (consecutive_nops * self.instruction_size_bytes)
-                        if debug:
-                            print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (NOP block)")
-                            print(f"[DEBUG] Data section starts at 0x{data_start:04X}")
-                        consecutive_nops = 0
-                    elif not in_data_section:
-                        # Still in instruction mode, add as NOP
-                        instructions.append(DisassembledInstruction(
-                            address=current_address,
-                            machine_code=instr_bytes,
-                            mnemonic="NOP",
-                            operands=[],
-                            comment=""
-                        ))
-                        if debug:
-                            print(f"[DEBUG] PC=0x{current_address:04X} | Adding NOP instruction")
+                    # Always add as NOP instruction - don't switch to data mode automatically
+                    instructions.append(DisassembledInstruction(
+                        address=current_address,
+                        machine_code=instr_bytes,
+                        mnemonic="NOP",
+                        operands=[],
+                        comment=""
+                    ))
+                    if debug:
+                        print(f"[DEBUG] PC=0x{current_address:04X} | Adding NOP instruction")
                 else:
                     # Reset consecutive NOP counter
                     consecutive_nops = 0
@@ -669,26 +630,17 @@ class Disassembler:
                             consecutive_invalid += 1
                             consecutive_valid_instructions = 0
                             
-                            # If we've seen too many invalid instructions in a row, switch to data mode
-                            if consecutive_invalid >= 3 and not in_data_section:
-                                in_data_section = True
-                                data_start = current_address - (consecutive_invalid - 1) * self.instruction_size_bytes
-                                data_sections[data_start] = machine_code[i - (consecutive_invalid - 1) * self.instruction_size_bytes:i + self.instruction_size_bytes]
-                                if debug:
-                                    print(f"[DEBUG] PC=0x{current_address:04X} | SWITCHING TO DATA MODE (invalid instructions)")
-                                    print(f"[DEBUG] Data section starts at 0x{data_start:04X}")
-                                consecutive_invalid = 0
-                            else:
-                                # Add as unknown instruction
-                                instructions.append(DisassembledInstruction(
-                                    address=current_address,
-                                    machine_code=instr_bytes,
-                                    mnemonic="UNKNOWN",
-                                    operands=[],
-                                    comment=f"0x{instr_word:04X}"
-                                ))
-                                if debug:
-                                    print(f"[DEBUG] PC=0x{current_address:04X} | Unknown instruction: 0x{instr_word:04X}")
+                            # Add as unknown instruction - don't switch to data mode automatically
+                            # Let the disassembler continue processing all instructions
+                            instructions.append(DisassembledInstruction(
+                                address=current_address,
+                                machine_code=instr_bytes,
+                                mnemonic="UNKNOWN",
+                                operands=[],
+                                comment=f"0x{instr_word:04X}"
+                            ))
+                            if debug:
+                                print(f"[DEBUG] PC=0x{current_address:04X} | Unknown instruction: 0x{instr_word:04X}")
                     except Exception as e:
                         consecutive_invalid += 1
                         consecutive_valid_instructions = 0
@@ -740,16 +692,28 @@ class Disassembler:
     def _disassemble_instruction(self, instr_word: int, instr_bytes: bytes, address: int) -> Optional[DisassembledInstruction]:
         """Disassemble a single instruction word"""
         # Try pattern matching first (more flexible)
+        matched_patterns = []
+        
+        # First pass: collect all matching patterns
         for pattern in self.instruction_patterns:
             if (instr_word & pattern['mask']) == pattern['opcode']:
-                # Special handling for shift instructions that share func3 but differ by shift_type
-                instruction = pattern['instruction']
-                if instruction.mnemonic in ['SLLI', 'SRLI', 'SRAI']:
-                    # Check if this is actually the correct shift instruction based on shift_type
-                    shift_type = self._extract_shift_type(instr_word, pattern['fields'])
-                    if shift_type != self._get_expected_shift_type(instruction):
-                        continue  # Try next pattern
-                
+                matched_patterns.append(pattern)
+        
+        # Second pass: handle special cases and select the best match
+        for pattern in matched_patterns:
+            instruction = pattern['instruction']
+            
+            # Special handling for shift instructions that share func3 but differ by shift_type
+            if instruction.mnemonic in ['SLLI', 'SRLI', 'SRAI']:
+                # Check if this is actually the correct shift instruction based on shift_type
+                shift_type = self._extract_shift_type(instr_word, pattern['fields'])
+                expected_shift_type = self._get_expected_shift_type(instruction)
+                if shift_type == expected_shift_type:
+                    return self._decode_instruction_with_pattern(
+                        instr_word, instr_bytes, address, pattern
+                    )
+            else:
+                # For non-shift instructions, use the first match
                 return self._decode_instruction_with_pattern(
                     instr_word, instr_bytes, address, pattern
                 )
@@ -768,14 +732,18 @@ class Disassembler:
             if field.get("name") and field.get("shift_type") is not None:
                 bits = field.get("bits", "")
                 shift_type_str = field.get("shift_type", "")
-                shift_type_width = len(shift_type_str)
                 if bits:
                     try:
                         high, low = parse_bit_range(bits)
                         imm_value = extract_bits(instr_word, high, low)
-                        shift_type_shift = (high - low + 1) - shift_type_width
-                        shift_type = (imm_value >> shift_type_shift) & ((1 << shift_type_width) - 1)
-                        print(f"[DEBUG] Modular shift_type extraction: instr_word=0x{instr_word:04X}, field={field.get('name')}, imm_value={imm_value}, shift_type_width={shift_type_width}, shift_type_shift={shift_type_shift}, shift_type={shift_type}")
+                        # The shift_type is embedded in the immediate field
+                        # For ZX16: shift_type is in bits [6:4] of the immediate field
+                        # Extract shift_type from the lower bits of the immediate
+                        shift_type_width = len(shift_type_str)
+                        shift_type_mask = (1 << shift_type_width) - 1
+                        # Extract from bits [6:4] for 3-bit shift_type
+                        shift_type = (imm_value >> 4) & shift_type_mask
+                        print(f"[DEBUG] Modular shift_type extraction: instr_word=0x{instr_word:04X}, field={field.get('name')}, imm_value={imm_value}, shift_type_width={shift_type_width}, shift_type={shift_type}")
                         return shift_type
                     except ValueError:
                         continue
@@ -842,14 +810,10 @@ class Disassembler:
                 
                 print(f"[DEBUG] Field {field.get('name', '')}: bits={bits}, high={high}, low={low}, width={bit_width}, raw_value={value}")
                 
-                # Handle signed immediates
+                # Handle signed immediates - don't sign-extend here, do it in immediate reconstruction
                 if field.get("signed", False) and (value & (1 << (bit_width - 1))):
-                    # Sign extend to ISA word size, not 32 bits
-                    isa_word_size = self.isa_definition.word_size
-                    value = sign_extend(value, bit_width)
-                    # Mask to ISA word size to avoid 32-bit overflow
-                    value = value & ((1 << isa_word_size) - 1)
-                    print(f"[DEBUG] Sign-extended value: {value}")
+                    print(f"[DEBUG] Field {field.get('name', '')} has sign bit set, raw_value={value}")
+                    # Don't sign-extend here - let immediate reconstruction handle it
                 
                 field_name = field.get("name", "")
                 field_values[field_name] = value
@@ -858,7 +822,7 @@ class Disassembler:
                 continue
         
         # Format operands based on instruction syntax
-        operands = self._format_operands(instruction, field_values, address)
+        operands = self._format_operands(instruction, field_values, address, instr_word)
         
         return DisassembledInstruction(
             address=address,
@@ -887,7 +851,7 @@ class Disassembler:
                 continue
         
         # Format operands
-        operands = self._format_operands(instruction, field_values, address)
+        operands = self._format_operands(instruction, field_values, address, instr_word)
         
         return DisassembledInstruction(
             address=address,
@@ -968,7 +932,7 @@ class Disassembler:
         
         return fields
     
-    def _format_operands(self, instruction: Instruction, field_values: Dict[str, int], address: int) -> List[str]:
+    def _format_operands(self, instruction: Instruction, field_values: Dict[str, int], address: int, instr_word: int = 0) -> List[str]:
         """Format operands based on instruction syntax order and field values, supporting offset(base) style."""
         operands = []
         
@@ -999,15 +963,32 @@ class Disassembler:
             parts = instruction.syntax.split()
             if len(parts) > 1:
                 operand_part = ' '.join(parts[1:])
-                syntax_operands = [op.strip() for op in operand_part.split(',')]
+                # Handle load/store instructions with offset(base) syntax
+                if '(' in operand_part and ')' in operand_part:
+                    # Split by comma, but preserve the offset(base) part
+                    operands_split = operand_part.split(',')
+                    for op in operands_split:
+                        op = op.strip()
+                        if '(' in op and ')' in op:
+                            # This is offset(base) format
+                            syntax_operands.append(op)
+                        else:
+                            # This is a simple operand
+                            syntax_operands.append(op)
+                else:
+                    syntax_operands = [op.strip() for op in operand_part.split(',')]
 
+        # Check if this is a load/store instruction that needs special handling
+        is_load_store = instruction.mnemonic.upper() in ['SB', 'SW', 'LB', 'LW', 'LBU']
+        
         # Reconstruct full immediate for any instruction with immediate fields
         encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
         immediate_fields = [f for f in encoding_fields if f.get('type') == 'immediate' and f.get('name') != 'opcode']
-        if len(immediate_fields) >= 1:
+        
+        if len(immediate_fields) >= 1 and not is_load_store:
             # Use the instruction's implementation to reconstruct the full immediate
             # This is fully modular - the ISA definition tells us how to combine fields
-            full_imm = self._reconstruct_immediate_from_implementation(instruction, field_values, address)
+            full_imm = self._reconstruct_immediate_from_implementation(instruction, field_values, address, instr_word)
             # For PC-relative jumps/branches, calculate the actual target address
             target_addr = None
             if instruction.mnemonic.upper() in ['JMP', 'J', 'JAL', 'CALL', 'BEQ', 'BNE', 'BZ', 'BNZ', 'BLT', 'BGE', 'BLTU', 'BGEU']:
@@ -1018,6 +999,7 @@ class Disassembler:
                 # Use the SAME calculation as the assembler: target = instruction_address + pc_offset + full_imm
                 # This ensures consistency between assembly and disassembly
                 target_addr = (address + pc_offset + full_imm) & self.address_mask
+
             
             for syntax_op in syntax_operands:
                 if syntax_op in ('imm', 'immediate', 'offset'):
@@ -1070,12 +1052,22 @@ class Disassembler:
                         field_name_imm = 'immediate'
                     elif field_name_imm == 'immediate' and 'imm' in field_values:
                         field_name_imm = 'imm'
-                # Alias resolution for register
+                # Alias resolution for register - handle both rs1 and rs2 correctly
                 if field_name_reg not in field_values:
-                    if field_name_reg == 'rs1' and 'rd' in field_values:
-                        field_name_reg = 'rd'
-                    elif field_name_reg == 'rd' and 'rs1' in field_values:
-                        field_name_reg = 'rs1'
+                    # For load instructions: offset(rs2) -> rs2 is base register
+                    # For store instructions: offset(rs1) -> rs1 is base register
+                    if field_name_reg == 'rs1' and 'rs1' not in field_values:
+                        # Try to find the base register in the encoding
+                        if 'rs2' in field_values:
+                            field_name_reg = 'rs2'  # For load instructions
+                        elif 'rd' in field_values:
+                            field_name_reg = 'rd'   # Fallback
+                    elif field_name_reg == 'rs2' and 'rs2' not in field_values:
+                        # Try to find the base register in the encoding
+                        if 'rs1' in field_values:
+                            field_name_reg = 'rs1'  # For store instructions
+                        elif 'rd' in field_values:
+                            field_name_reg = 'rd'   # Fallback
                 # Format
                 if field_name_imm in field_values and field_name_reg in field_values:
                     imm_val = field_values[field_name_imm]
@@ -1154,7 +1146,12 @@ class Disassembler:
                         for f in encoding_fields:
                             if f.get('name') == field_name and 'bits' in f:
                                 bits = f['bits']
-                                if isinstance(bits, str) and ':' in bits:
+                                if isinstance(bits, str) and ',' in bits:
+                                    # Multi-field specification like "15:12,0"
+                                    from isa_xform.utils.bit_utils import parse_multi_field_bits
+                                    ranges = parse_multi_field_bits(bits)
+                                    bit_width = sum(high - low + 1 for high, low in ranges)
+                                elif isinstance(bits, str) and ':' in bits:
                                     high, low = [int(x) for x in bits.split(':')]
                                     bit_width = high - low + 1
                                 elif isinstance(bits, str):
@@ -1266,21 +1263,14 @@ class Disassembler:
     
     def _extract_symbols(self, instructions: List[DisassembledInstruction]) -> Dict[int, str]:
         """Extract potential symbols from disassembled instructions"""
+        # Standard disassemblers don't create auto-labels - only use symbols from symbol table
         symbols = {}
         
-        for instr in instructions:
-            # Look for jump/branch targets
-            if instr.instruction and any(keyword in instr.instruction.mnemonic.upper() 
-                                       for keyword in ['JMP', 'CALL', 'BEQ', 'BNE', 'JZ', 'JNZ']):
-                # Extract target addresses from operands
-                for operand in instr.operands:
-                    if operand.startswith('0x'):
-                        try:
-                            addr = int(operand, 16)
-                            if addr not in symbols:
-                                symbols[addr] = f"L_{addr:04X}"
-                        except ValueError:
-                            pass
+        # Only add symbols that exist in the symbol table
+        if hasattr(self, 'symbol_table') and self.symbol_table:
+            for symbol in self.symbol_table.symbols.values():
+                if symbol.defined and symbol.type == SymbolType.LABEL:
+                    symbols[symbol.value] = symbol.name
         
         return symbols
     
@@ -1444,7 +1434,11 @@ class Disassembler:
                 else:
                     # For other pseudo-instructions, use the instruction's implementation
                     if first.instruction and hasattr(first.instruction, 'implementation'):
-                        full_imm = self._reconstruct_immediate_from_implementation(first.instruction, field_values, first.address)
+                        # Get instruction word from machine code
+                        from isa_xform.utils.bit_utils import bytes_to_int
+                        endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+                        instr_word = bytes_to_int(first.machine_code, endianness)
+                        full_imm = self._reconstruct_immediate_from_implementation(first.instruction, field_values, first.address, instr_word)
                     else:
                         full_imm = 0
                     full_address = full_imm
@@ -1704,7 +1698,11 @@ class Disassembler:
             # Extract the immediate value and calculate target address
             field_values = self._extract_field_values(instr)
             if instr.instruction and hasattr(instr.instruction, 'implementation'):
-                offset = self._reconstruct_immediate_from_implementation(instr.instruction, field_values, instr.address)
+                # Get instruction word from machine code
+                from isa_xform.utils.bit_utils import bytes_to_int
+                endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+                instr_word = bytes_to_int(instr.machine_code, endianness)
+                offset = self._reconstruct_immediate_from_implementation(instr.instruction, field_values, instr.address, instr_word)
                 
                 # Use ISA-driven jump target calculation - FIXED to match assembler
                 pc_config = getattr(self.isa_definition, 'pc_behavior', {})
@@ -1780,12 +1778,31 @@ class Disassembler:
         common_jumps = ['J', 'JAL', 'JALR', 'JMP', 'CALL']
         return mnemonic.upper() in common_jumps
 
-    def _reconstruct_immediate_from_implementation(self, instruction: Instruction, field_values: Dict[str, int], address: int) -> int:
+    def _reconstruct_immediate_from_implementation(self, instruction: Instruction, field_values: Dict[str, int], address: int, instr_word: int = 0) -> int:
         """Reconstruct the full immediate value from instruction implementation"""
+        # For branch instructions, we need to use raw field values, not sign-extended ones
+        # because the sign extension should happen after reconstruction
+        is_branch = instruction.mnemonic.upper() in ['BEQ', 'BNE', 'BZ', 'BNZ', 'BLT', 'BGE', 'BLTU', 'BGEU']
+        
         # If multi-field immediate, reconstruct using ISA-driven logic
         encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
         immediate_fields = [f for f in encoding_fields if f.get('type') == 'immediate' and f.get('name') != 'opcode']
         if len(immediate_fields) > 1:
+            # ISA-specific handling for LUI and AUIPC
+            if instruction.mnemonic in ['LUI', 'AUIPC']:
+                # For LUI/AUIPC: imm = (imm1 << 3) | imm2, then shift left by 7
+                imm_val = field_values.get('imm', 0)  # 6 bits
+                imm2_val = field_values.get('imm2', 0)  # 3 bits
+                
+                # Reconstruct: (imm << 3) | imm2, then shift left by 7
+                combined = (imm_val << 3) | imm2_val
+                final_value = combined << 7
+                # For disassembly, we want to show the original immediate value that was written in assembly
+                # The ISA implementation is: result = (imm << 7) & 0xFFFF
+                # But we want to show the original imm value, not the shifted result
+                # So we return the combined value (imm), not the shifted value
+                return combined
+            
             # Use ISA-specific implementation logic by parsing the implementation field
             implementation = getattr(instruction, 'implementation', '')
             
@@ -1866,6 +1883,29 @@ class Disassembler:
         elif len(immediate_fields) == 1:
             field_name = immediate_fields[0]["name"]
             value = field_values.get(field_name, 0)
+            
+            # For branch instructions, we need to handle the immediate correctly
+            if is_branch:
+                # For ZX16 branch instructions, the immediate is 5 bits (15:12,0)
+                # Extract the raw value from the instruction word using multi-field specification
+                from isa_xform.utils.bit_utils import extract_multi_field_bits
+                encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
+                imm_field = next((f for f in encoding_fields if f.get('name') == 'imm'), None)
+                if imm_field and 'bits' in imm_field:
+                    raw_value = extract_multi_field_bits(instr_word, imm_field['bits'])
+                    bit_width = 5  # Branch immediates are 5 bits in ZX16
+                    
+                    # Sign extend the 5-bit value to 16 bits
+                    if raw_value & (1 << (bit_width - 1)):  # Negative value
+                        # Sign extend to 16 bits
+                        value = raw_value | 0xFFE0
+                    else:
+                        value = raw_value
+                else:
+                    # Fallback to field value if no bits specification
+                    value = field_values.get(field_name, 0)
+
+            
             return value
         
         # No immediate fields found
