@@ -2,18 +2,166 @@
   "name": "SimpleRISC16",
   "version": "1.0",
   "description": "A simple 16-bit RISC processor for educational purposes",
+  "instruction_size": 16,
   "word_size": 16,
   "endianness": "little",
-  "instruction_size": 16,
   "address_space": {
+    "size": 65536,
     "default_code_start": 4096,
     "default_data_start": 8192,
     "default_stack_start": 12288,
     "memory_layout": {
+      "interrupt_vectors": {"start": 0, "end": 1023},
       "code_section": {"start": 4096, "end": 8191},
       "data_section": {"start": 8192, "end": 12287},
-      "stack_section": {"start": 12288, "end": 16383}
+      "stack_section": {"start": 12288, "end": 16383},
+      "mmio": {"start": 16384, "end": 65535}
     }
+  },
+  "pc_behavior": {
+    "points_to": "next_instruction",
+    "offset_for_jumps": 0,
+    "jump_offset_calculation": "target_minus_pc",
+    "disassembly": {
+      "jump_target_calculation": "pc_plus_offset",
+      "pc_value_for_jumps": "instruction_address_plus_pc_offset"
+    }
+  },
+  "instruction_architecture": {
+    "instruction_size": 16,
+    "instruction_size_bytes": 2,
+    "variable_length": false,
+    "alignment": 2,
+    "max_instruction_length": 16,
+    "address_bits": 16,
+    "address_mask": "0xFFFF",
+    "pc_increment": 2,
+    "immediate_widths": {
+      "i_type": 8,
+      "branch": 4,
+      "jump": 12,
+      "load_store": 4
+    },
+    "shift_config": {
+      "type_width": 2,
+      "amount_width": 4
+    },
+    "register_count": 16,
+    "register_bits": 4
+  },
+  "register_formatting": {
+    "prefix": "R",
+    "suffix": "",
+    "case": "upper",
+    "zero_register": "R0",
+    "alternatives": {
+      "R0": ["ZERO"],
+      "R1": ["AT"],
+      "R2": ["V0"],
+      "R3": ["V1"],
+      "R4": ["A0"],
+      "R5": ["A1"],
+      "R6": ["A2"],
+      "R7": ["A3"],
+      "R8": ["T0"],
+      "R9": ["T1"],
+      "R10": ["T2"],
+      "R11": ["T3"],
+      "R12": ["T4"],
+      "R13": ["T5"],
+      "R14": ["S0"],
+      "R15": ["S1"]
+    }
+  },
+  "operand_formatting": {
+    "immediate_prefix": "#",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "register_prefix": "R",
+    "address_format": "0x{addr:X}",
+    "immediate_format": "{value}",
+    "register_format": "R{reg}",
+    "separators": {
+      "operand": ", ",
+      "address": "(",
+      "address_close": ")"
+    },
+    "disassembly": {
+      "immediate_format": "decimal",
+      "hex_threshold": 255,
+      "negative_hex_threshold": -255,
+      "always_decimal_for": ["LDI", "ADDI", "SLTI", "SLTUI", "SLLI", "SRLI", "SRAI", "ORI", "ANDI", "XORI"],
+      "always_hex_for": ["LUI", "JMP", "JAL", "BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ"]
+    }
+  },
+  "instruction_categories": {
+    "control_flow": {
+      "jumps": ["JMP", "JAL", "JALR", "JR"],
+      "branches": ["BEQ", "BNE", "BLT", "BGE", "BZ", "BNZ"],
+      "calls": ["CALL", "ECALL"],
+      "returns": ["RET", "JR"]
+    },
+    "data_movement": ["LD", "ST", "LDI", "MOVE", "LUI", "AUIPC"],
+    "arithmetic": ["ADD", "SUB", "SLT", "SLTU", "INC", "DEC"],
+    "logical": ["AND", "OR", "XOR", "NOT", "NEG", "SLL", "SRL", "SRA"],
+    "stack": ["PUSH", "POP"]
+  },
+  "pseudo_instruction_fallbacks": {
+    "hide_operands_by_default": false,
+    "default_behavior": "show_operands",
+    "fallback_rules": {
+      "NOP": "hide_operands",
+      "RET": "hide_operands",
+      "INC": "hide_operands",
+      "DEC": "hide_operands",
+      "NOT": "hide_operands",
+      "NEG": "hide_operands"
+    }
+  },
+  "data_detection": {
+    "string_encodings": ["ascii", "utf8"],
+    "ascii_threshold": 0.8,
+    "min_string_length": 3,
+    "max_string_length": 100,
+    "detect_zeros": true,
+    "detect_patterns": ["repeating", "incrementing", "decrementing"]
+  },
+  "symbol_resolution": {
+    "case_sensitive": false,
+    "scope_rules": {
+      "local": ".",
+      "global": "",
+      "external": "_"
+    },
+    "naming_conventions": {
+      "functions": "func_{name}",
+      "variables": "var_{name}",
+      "constants": "CONST_{name}"
+    },
+    "precedence": ["local", "global", "external"]
+  },
+  "error_messages": {
+    "unknown_instruction": "Unknown instruction '{instruction}' at line {line}",
+    "invalid_operand": "Invalid operand '{operand}' for instruction '{instruction}'",
+    "undefined_symbol": "Undefined symbol '{symbol}' referenced at line {line}",
+    "invalid_address": "Invalid address {address} for {context}",
+    "format": {
+      "locale": "en_US",
+      "date_format": "YYYY-MM-DD",
+      "time_format": "HH:MM:SS"
+    }
+  },
+  "constants": {
+    "word_mask": {"value": 65535, "description": "16-bit word mask (0xFFFF)"},
+    "sign_bit_mask": {"value": 32768, "description": "16-bit sign bit mask (0x8000)"},
+    "max_signed_value": {"value": 32767, "description": "Maximum 16-bit signed value (0x7FFF)"},
+    "min_signed_value": {"value": -32768, "description": "Minimum 16-bit signed value (-0x8000)"},
+    "address_mask": {"value": 65535, "description": "16-bit address mask (0xFFFF)"},
+    "register_count": {"value": 16, "description": "Number of registers (R0-R15)"},
+    "immediate_sign_bit_8": {"value": 128, "description": "8-bit immediate sign bit (0x80)"},
+    "immediate_sign_extend_8": {"value": 65280, "description": "8-bit immediate sign extension (0xFF00)"},
+    "branch_sign_extend_4": {"value": 65520, "description": "4-bit branch sign extension (0xFFF0)"},
+    "shift_amount_mask": {"value": 15, "description": "4-bit shift amount mask (0xF)"}
   },
   "registers": {
     "general_purpose": [

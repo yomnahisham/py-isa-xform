@@ -34,7 +34,20 @@
       "alignment": 2,
       "max_instruction_length": 16,
       "address_bits": 16,
-      "address_mask": "0xFFFF"
+      "address_mask": "0xFFFF",
+      "pc_increment": 2,
+      "immediate_widths": {
+        "i_type": 7,
+        "branch": 5,
+        "jump": 13,
+        "load_store": 6
+      },
+      "shift_config": {
+        "type_width": 3,
+        "amount_width": 4
+      },
+      "register_count": 8,
+      "register_bits": 3
     },
     "register_formatting": {
       "prefix": "x",
@@ -126,6 +139,18 @@
         "date_format": "YYYY-MM-DD",
         "time_format": "HH:MM:SS"
       }
+    },
+    "constants": {
+      "word_mask": {"value": 65535, "description": "16-bit word mask (0xFFFF)"},
+      "sign_bit_mask": {"value": 32768, "description": "16-bit sign bit mask (0x8000)"},
+      "max_signed_value": {"value": 32767, "description": "Maximum 16-bit signed value (0x7FFF)"},
+      "min_signed_value": {"value": -32768, "description": "Minimum 16-bit signed value (-0x8000)"},
+      "address_mask": {"value": 65535, "description": "16-bit address mask (0xFFFF)"},
+      "register_count": {"value": 8, "description": "Number of registers (x0-x7)"},
+      "immediate_sign_bit_7": {"value": 64, "description": "7-bit immediate sign bit (0x40)"},
+      "immediate_sign_extend_7": {"value": 65408, "description": "7-bit immediate sign extension (0xFF80)"},
+      "branch_sign_extend_5": {"value": 65504, "description": "5-bit branch sign extension (0xFFE0)"},
+      "shift_amount_mask": {"value": 15, "description": "4-bit shift amount mask (0xF)"}
     },
     "registers": {
       "general_purpose": [

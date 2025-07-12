@@ -6,7 +6,7 @@
   "word_size": 32,
   "endianness": "little",
   "address_space": {
-    "size": 32,
+    "size": 4294967296,
     "default_code_start": 4096,
     "default_data_start": 32768,
     "default_stack_start": 4294901760,
@@ -34,7 +34,20 @@
     "alignment": 4,
     "max_instruction_length": 32,
     "address_bits": 32,
-    "address_mask": 4294967295
+    "address_mask": "0xFFFFFFFF",
+    "pc_increment": 4,
+    "immediate_widths": {
+      "i_type": 12,
+      "branch": 12,
+      "jump": 20,
+      "load_store": 12
+    },
+    "shift_config": {
+      "type_width": 3,
+      "amount_width": 5
+    },
+    "register_count": 16,
+    "register_bits": 4
   },
   "register_formatting": {
     "prefix": "r",
@@ -46,7 +59,18 @@
       "r1": ["ra", "return"],
       "r2": ["sp", "stack"],
       "r3": ["fp", "frame"],
-      "r4": ["gp", "global"]
+      "r4": ["gp", "global"],
+      "r5": ["t0"],
+      "r6": ["t1"],
+      "r7": ["t2"],
+      "r8": ["s0"],
+      "r9": ["s1"],
+      "r10": ["a0"],
+      "r11": ["a1"],
+      "r12": ["a2"],
+      "r13": ["a3"],
+      "r14": ["a4"],
+      "r15": ["a5"]
     }
   },
   "operand_formatting": {
@@ -61,6 +85,13 @@
       "operand": ", ",
       "address": "(",
       "address_close": ")"
+    },
+    "disassembly": {
+      "immediate_format": "decimal",
+      "hex_threshold": 255,
+      "negative_hex_threshold": -255,
+      "always_decimal_for": ["ADDI", "SLTI", "SLTUI", "SLLI", "SRLI", "SRAI", "ORI", "ANDI", "XORI", "LI"],
+      "always_hex_for": ["LUI", "J", "JAL", "BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ"]
     }
   },
   "instruction_categories": {
@@ -70,11 +101,68 @@
       "calls": ["CALL", "ECALL"],
       "returns": ["RET", "JR"]
     },
-    "data_movement": ["LOAD", "STORE", "MOVE", "LI", "LUI", "AUIPC"],
+    "data_movement": ["LW", "SW", "MOVE", "LI", "LUI", "AUIPC"],
     "arithmetic": ["ADD", "SUB", "MUL", "DIV", "MOD", "INC", "DEC"],
     "logical": ["AND", "OR", "XOR", "NOT", "NEG", "SHL", "SHR", "SAR"],
     "quantum": ["QUBIT", "QMEASURE", "QROTATE", "QENTANGLE"],
     "stack": ["PUSH", "POP"]
+  },
+  "pseudo_instruction_fallbacks": {
+    "hide_operands_by_default": false,
+    "default_behavior": "show_operands",
+    "fallback_rules": {
+      "NOP": "hide_operands",
+      "RET": "hide_operands",
+      "INC": "hide_operands",
+      "DEC": "hide_operands",
+      "NOT": "hide_operands",
+      "NEG": "hide_operands"
+    }
+  },
+  "data_detection": {
+    "string_encodings": ["ascii", "utf8"],
+    "ascii_threshold": 0.8,
+    "min_string_length": 3,
+    "max_string_length": 100,
+    "detect_zeros": true,
+    "detect_patterns": ["repeating", "incrementing", "decrementing"]
+  },
+  "symbol_resolution": {
+    "case_sensitive": false,
+    "scope_rules": {
+      "local": ".",
+      "global": "",
+      "external": "_"
+    },
+    "naming_conventions": {
+      "functions": "func_{name}",
+      "variables": "var_{name}",
+      "constants": "CONST_{name}"
+    },
+    "precedence": ["local", "global", "external"]
+  },
+  "error_messages": {
+    "unknown_instruction": "Unknown instruction '{instruction}' at line {line}",
+    "invalid_operand": "Invalid operand '{operand}' for instruction '{instruction}'",
+    "undefined_symbol": "Undefined symbol '{symbol}' referenced at line {line}",
+    "invalid_address": "Invalid address {address} for {context}",
+    "format": {
+      "locale": "en_US",
+      "date_format": "YYYY-MM-DD",
+      "time_format": "HH:MM:SS"
+    }
+  },
+  "constants": {
+    "word_mask": {"value": 4294967295, "description": "32-bit word mask (0xFFFFFFFF)"},
+    "sign_bit_mask": {"value": 2147483648, "description": "32-bit sign bit mask (0x80000000)"},
+    "max_signed_value": {"value": 2147483647, "description": "Maximum 32-bit signed value (0x7FFFFFFF)"},
+    "min_signed_value": {"value": -2147483648, "description": "Minimum 32-bit signed value (-0x80000000)"},
+    "address_mask": {"value": 4294967295, "description": "32-bit address mask (0xFFFFFFFF)"},
+    "register_count": {"value": 16, "description": "Number of registers (r0-r15)"},
+    "immediate_sign_bit_12": {"value": 2048, "description": "12-bit immediate sign bit (0x800)"},
+    "immediate_sign_extend_12": {"value": 4294963200, "description": "12-bit immediate sign extension (0xFFFFF000)"},
+    "branch_sign_extend_12": {"value": 4294963200, "description": "12-bit branch sign extension (0xFFFFF000)"},
+    "shift_amount_mask": {"value": 31, "description": "5-bit shift amount mask (0x1F)"}
   },
   "control_flow_instructions": ["J", "JAL", "JALR", "JR", "BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ", "CALL", "ECALL", "RET"],
   "jump_instructions": ["J", "JAL", "JALR", "JR", "CALL", "RET"],
@@ -448,15 +536,6 @@
     "string_delimiters": ["\"", "'"],
     "case_sensitive": false,
     "instruction_separator": "\n"
-  },
-  "constants": {
-    "RESET_VECTOR": 4096,
-    "INT_VECTORS": 0,
-    "CODE_START": 4096,
-    "MMIO_BASE": 65536,
-    "MMIO_SIZE": 65536,
-    "STACK_TOP": 4294967295,
-    "MEM_SIZE": 4294967296
   },
   "ecall_services": {
     "0x000": {

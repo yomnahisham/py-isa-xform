@@ -5,7 +5,153 @@
   "instruction_size": 16,
   "word_size": 16,
   "endianness": "little",
-  "address_space": {"size": 1024, "default_code_start": 0},
+  "address_space": {
+    "size": 1024,
+    "default_code_start": 0,
+    "default_data_start": 512,
+    "default_stack_start": 768,
+    "memory_layout": {
+      "interrupt_vectors": {"start": 0, "end": 15},
+      "code_section": {"start": 0, "end": 511},
+      "data_section": {"start": 512, "end": 767},
+      "stack_section": {"start": 768, "end": 1023},
+      "mmio": {"start": 1024, "end": 1023}
+    }
+  },
+  "pc_behavior": {
+    "points_to": "next_instruction",
+    "offset_for_jumps": 0,
+    "jump_offset_calculation": "target_minus_pc",
+    "disassembly": {
+      "jump_target_calculation": "pc_plus_offset",
+      "pc_value_for_jumps": "instruction_address_plus_pc_offset"
+    }
+  },
+  "instruction_architecture": {
+    "instruction_size": 16,
+    "instruction_size_bytes": 2,
+    "variable_length": false,
+    "alignment": 2,
+    "max_instruction_length": 16,
+    "address_bits": 10,
+    "address_mask": "0x3FF",
+    "pc_increment": 2,
+    "immediate_widths": {
+      "i_type": 10,
+      "branch": 8,
+      "jump": 10,
+      "load_store": 6
+    },
+    "shift_config": {
+      "type_width": 2,
+      "amount_width": 4
+    },
+    "register_count": 4,
+    "register_bits": 2
+  },
+  "register_formatting": {
+    "prefix": "r",
+    "suffix": "",
+    "case": "lower",
+    "zero_register": "r0",
+    "alternatives": {
+      "r0": ["zero"],
+      "r1": ["one"],
+      "r2": ["two"],
+      "r3": ["three"]
+    }
+  },
+  "operand_formatting": {
+    "immediate_prefix": "#",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "register_prefix": "r",
+    "address_format": "0x{addr:X}",
+    "immediate_format": "{value}",
+    "register_format": "r{reg}",
+    "separators": {
+      "operand": ", ",
+      "address": "(",
+      "address_close": ")"
+    },
+    "disassembly": {
+      "immediate_format": "decimal",
+      "hex_threshold": 255,
+      "negative_hex_threshold": -255,
+      "always_decimal_for": ["CUSTIMM", "ADDI", "SLTI", "SLTUI", "SLLI", "SRLI", "SRAI", "ORI", "ANDI", "XORI"],
+      "always_hex_for": ["LUI", "J", "JAL", "BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ"]
+    }
+  },
+  "instruction_categories": {
+    "control_flow": {
+      "jumps": ["J", "JAL", "JALR", "JR"],
+      "branches": ["BEQ", "BNE", "BLT", "BGE", "BZ", "BNZ"],
+      "calls": ["CALL", "ECALL"],
+      "returns": ["RET", "JR"]
+    },
+    "data_movement": ["LW", "SW", "MOVE", "LI", "LUI", "AUIPC"],
+    "arithmetic": ["ADD", "SUB", "CUSTADD", "SLT", "SLTU", "INC", "DEC"],
+    "logical": ["AND", "OR", "XOR", "NOT", "NEG", "SLL", "SRL", "SRA"],
+    "custom": ["CUSTADD", "CUSTIMM"],
+    "stack": ["PUSH", "POP"]
+  },
+  "pseudo_instruction_fallbacks": {
+    "hide_operands_by_default": false,
+    "default_behavior": "show_operands",
+    "fallback_rules": {
+      "NOP": "hide_operands",
+      "RET": "hide_operands",
+      "INC": "hide_operands",
+      "DEC": "hide_operands",
+      "NOT": "hide_operands",
+      "NEG": "hide_operands"
+    }
+  },
+  "data_detection": {
+    "string_encodings": ["ascii", "utf8"],
+    "ascii_threshold": 0.8,
+    "min_string_length": 3,
+    "max_string_length": 100,
+    "detect_zeros": true,
+    "detect_patterns": ["repeating", "incrementing", "decrementing"]
+  },
+  "symbol_resolution": {
+    "case_sensitive": false,
+    "scope_rules": {
+      "local": ".",
+      "global": "",
+      "external": "_"
+    },
+    "naming_conventions": {
+      "functions": "func_{name}",
+      "variables": "var_{name}",
+      "constants": "CONST_{name}"
+    },
+    "precedence": ["local", "global", "external"]
+  },
+  "error_messages": {
+    "unknown_instruction": "Unknown instruction '{instruction}' at line {line}",
+    "invalid_operand": "Invalid operand '{operand}' for instruction '{instruction}'",
+    "undefined_symbol": "Undefined symbol '{symbol}' referenced at line {line}",
+    "invalid_address": "Invalid address {address} for {context}",
+    "format": {
+      "locale": "en_US",
+      "date_format": "YYYY-MM-DD",
+      "time_format": "HH:MM:SS"
+    }
+  },
+  "constants": {
+    "word_mask": {"value": 65535, "description": "16-bit word mask (0xFFFF)"},
+    "sign_bit_mask": {"value": 32768, "description": "16-bit sign bit mask (0x8000)"},
+    "max_signed_value": {"value": 32767, "description": "Maximum 16-bit signed value (0x7FFF)"},
+    "min_signed_value": {"value": -32768, "description": "Minimum 16-bit signed value (-0x8000)"},
+    "address_mask": {"value": 1023, "description": "10-bit address mask (0x3FF)"},
+    "register_count": {"value": 4, "description": "Number of registers (r0-r3)"},
+    "immediate_sign_bit_10": {"value": 512, "description": "10-bit immediate sign bit (0x200)"},
+    "immediate_sign_extend_10": {"value": 64512, "description": "10-bit immediate sign extension (0xFC00)"},
+    "branch_sign_extend_8": {"value": 65280, "description": "8-bit branch sign extension (0xFF00)"},
+    "shift_amount_mask": {"value": 15, "description": "4-bit shift amount mask (0xF)"}
+  },
   "registers": {
     "general_purpose": [
       {"name": "r0", "size": 16, "alias": ["zero"]},
@@ -13,13 +159,6 @@
       {"name": "r2", "size": 16, "alias": ["two"]},
       {"name": "r3", "size": 16, "alias": ["three"]}
     ]
-  },
-  "assembly_syntax": {
-    "register_prefix": "",
-    "immediate_prefix": "#",
-    "hex_prefix": "0x",
-    "binary_prefix": "0b",
-    "case_sensitive": false
   },
   "instructions": [
     {
