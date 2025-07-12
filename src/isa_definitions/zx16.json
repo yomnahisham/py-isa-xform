@@ -179,7 +179,7 @@
         "format": "R-type",
         "description": "Set if less than (signed)",
         "syntax": "SLT rd, rs2",
-        "semantics": "rd = (rd < rs2) ? 1 : 0",
+        "semantics": "rd = 1 if rd  < rs2  else 0",
         "implementation": "# Set if less than (signed) implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\n# Sign extend to 32 bits for comparison\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nrs2_signed = rs2_val if (rs2_val & 0x8000) == 0 else rs2_val - 0x10000\nresult = 1 if rd_signed < rs2_signed else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -196,7 +196,7 @@
         "format": "R-type",
         "description": "Set if less than (unsigned)",
         "syntax": "SLTU rd, rs2",
-        "semantics": "rd = (unsigned rd < unsigned rs2) ? 1 : 0",
+        "semantics": "rd = 1 if unsigned(rd)  < unsigned(rs2)  else 0",
         "implementation": "# Set if less than (unsigned) implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = 1 if rd_val < rs2_val else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -382,7 +382,7 @@
         "format": "I-type",
         "description": "Set if less than immediate (signed)",
         "syntax": "SLTI rd, imm",
-        "semantics": "rd = (rd < sign_extend(imm)) ? 1 : 0",
+        "semantics": "rd = 1 if rd < sign_extend(imm) else 0",
         "implementation": "# Set if less than immediate (signed) implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\n# Sign extend to 32 bits for comparison\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nimm_signed = imm_val if (imm_val & 0x8000) == 0 else imm_val - 0x10000\nresult = 1 if rd_signed < imm_signed else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -398,7 +398,7 @@
         "format": "I-type",
         "description": "Set if less than immediate (unsigned)",
         "syntax": "SLTUI rd, imm",
-        "semantics": "rd = (unsigned rd < unsigned sign_extend(imm)) ? 1 : 0",
+        "semantics": "rd = 1 if unsigned(rd) < imm else 0",
         "implementation": "# Set if less than immediate (unsigned) implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\n# Sign extend 7-bit immediate\nif imm_val & 0x40:\n    imm_val = imm_val | 0xFF80\n# Treat as unsigned comparison\nresult = 1 if rd_val < (imm_val & 0xFFFF) else 0\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -414,7 +414,7 @@
         "format": "I-type",
         "description": "Shift left logical immediate",
         "syntax": "SLLI rd, imm",
-        "semantics": "rd = rd << imm[3:0]",
+        "semantics": "rd = rd << imm",
         "implementation": "# Shift left logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val << shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -430,7 +430,7 @@
         "format": "I-type",
         "description": "Shift right logical immediate",
         "syntax": "SRLI rd, imm",
-        "semantics": "rd = rd >> imm[3:0]",
+        "semantics": "rd = rd >> imm",
         "implementation": "# Shift right logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -446,7 +446,7 @@
         "format": "I-type",
         "description": "Shift right arithmetic immediate",
         "syntax": "SRAI rd, imm",
-        "semantics": "rd = rd >> imm[3:0]",
+        "semantics": "rd = rd >> imm",
         "implementation": "# Shift right arithmetic immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
