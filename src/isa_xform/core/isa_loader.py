@@ -18,6 +18,7 @@ class Register:
     """Represents a register definition"""
     name: str
     size: int
+    number: int = 0
     alias: List[str] = field(default_factory=list)
     description: Optional[str] = None
 
@@ -173,6 +174,103 @@ class ISADefinition:
     constants: Dict[str, Constant] = field(default_factory=dict)
     ecall_services: Dict[str, ECallService] = field(default_factory=dict)
     validation_rules: Dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        """Initialize ISA-derived constants and validate configuration"""
+        self._init_isa_constants()
+        self._validate_isa_config()
+    
+    def _init_isa_constants(self):
+        """Initialize ISA-derived constants for modular operation"""
+        # Word size derived constants
+        self.word_mask = (1 << self.word_size) - 1
+        self.sign_bit_mask = 1 << (self.word_size - 1)
+        self.max_signed_value = (1 << (self.word_size - 1)) - 1
+        self.min_signed_value = -(1 << (self.word_size - 1))
+        
+        # Instruction size derived constants
+        self.instruction_size_bytes = self.instruction_size // 8
+        
+        # Address space derived constants
+        if hasattr(self, 'address_space') and self.address_space:
+            # Check if address_space has a size attribute (from instruction_architecture)
+            if hasattr(self, 'instruction_architecture') and self.instruction_architecture:
+                addr_bits = self.instruction_architecture.get('address_bits', self.word_size)
+                self.address_space_size = 1 << addr_bits
+                self.address_mask = (1 << addr_bits) - 1
+            else:
+                # Default to word_size if not specified
+                self.address_space_size = 1 << self.word_size
+                self.address_mask = self.word_mask
+        
+        # Register count derived constants
+        self.register_count = 0
+        if self.registers:
+            for reg_list in self.registers.values():
+                self.register_count += len(reg_list)
+        
+        # Immediate widths from instruction_architecture
+        self.immediate_widths = self.instruction_architecture.get('immediate_widths', {})
+        self.shift_config = self.instruction_architecture.get('shift_config', {})
+        
+        # PC behavior constants
+        self.pc_increment = self.instruction_architecture.get('pc_increment', self.instruction_size_bytes)
+        
+        # Initialize constants if not already present
+        if not self.constants:
+            self.constants = {}
+        
+        # Add ISA-derived constants
+        self.constants.update({
+            'word_mask': Constant('word_mask', self.word_mask, 'Word size mask'),
+            'sign_bit_mask': Constant('sign_bit_mask', self.sign_bit_mask, 'Sign bit mask'),
+            'max_signed_value': Constant('max_signed_value', self.max_signed_value, 'Maximum signed value'),
+            'min_signed_value': Constant('min_signed_value', self.min_signed_value, 'Minimum signed value'),
+            'address_mask': Constant('address_mask', self.address_mask, 'Address space mask'),
+            'register_count': Constant('register_count', self.register_count, 'Number of registers')
+        })
+    
+    def _validate_isa_config(self):
+        """Validate ISA configuration for consistency"""
+        # Validate word size and instruction size
+        if self.word_size <= 0:
+            raise ValueError(f"Invalid word_size: {self.word_size}")
+        if self.instruction_size <= 0:
+            raise ValueError(f"Invalid instruction_size: {self.instruction_size}")
+        if self.instruction_size % 8 != 0:
+            raise ValueError(f"Instruction size must be multiple of 8: {self.instruction_size}")
+        
+        # Validate endianness
+        if self.endianness.lower() not in ['little', 'big']:
+            raise ValueError(f"Invalid endianness: {self.endianness}")
+        
+        # Validate register count
+        if self.register_count == 0:
+            raise ValueError("ISA must have at least one register")
+        
+        # Validate address space
+        if hasattr(self, 'address_space_size') and self.address_space_size <= 0:
+            raise ValueError(f"Invalid address space size: {self.address_space_size}")
+    
+    def get_immediate_sign_bit(self, immediate_width: int) -> int:
+        """Get sign bit mask for immediate of given width"""
+        return 1 << (immediate_width - 1)
+    
+    def get_immediate_sign_extend(self, immediate_width: int) -> int:
+        """Get sign extension mask for immediate of given width"""
+        return ((1 << (self.word_size - immediate_width)) - 1) << immediate_width
+    
+    def get_shift_type_width(self) -> int:
+        """Get shift type bit width from ISA configuration"""
+        return self.shift_config.get('type_width', 3)  # Default to 3 for ZX16 compatibility
+    
+    def get_shift_amount_width(self) -> int:
+        """Get shift amount bit width from ISA configuration"""
+        return self.shift_config.get('amount_width', 4)  # Default to 4 for ZX16 compatibility
+    
+    def get_immediate_width(self, instruction_type: str) -> int:
+        """Get immediate width for instruction type"""
+        return self.immediate_widths.get(instruction_type, 7)  # Default to 7 for ZX16 compatibility
 
 
 class ISALoader:
@@ -259,6 +357,7 @@ class ISALoader:
                 register = Register(
                     name=reg_data["name"],
                     size=reg_data["size"],
+                    number=reg_data.get("number", 0),
                     alias=reg_data.get("alias", []),
                     description=reg_data.get("description")
                 )

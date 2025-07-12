@@ -15,16 +15,6 @@ from ..utils.bit_utils import (
     create_mask, bytes_to_int, int_to_bytes
 )
 
-# def sign_extend(value: int, bits: int) -> int:
-#     """Sign extend a value from specified number of bits to 16 bits"""
-#     if value & (1 << (bits - 1)):
-#         mask = (1 << bits) - 1
-#         return value | (~mask)
-#     return value & ((1 << bits) - 1)
-
-# def unsigned(value: int) -> int:
-#     unsigned = np.uint16(value)
-#     return unsigned
 class Simulator:
     def __init__(self, isa_definition: ISADefinition, symbol_table: Optional[SymbolTable] = None, disassembler: Optional[Disassembler] = None):
         self.isa_definition = isa_definition
@@ -90,16 +80,12 @@ class Simulator:
                     code_size = data[16:20]
                     code_size = int.from_bytes(code_size, byteorder='little')
                     self.memory[code_start:code_start + code_size] = data[entry_point:entry_point + code_size]
-                    #print(self.memory[self.pc:self.pc + code_size])
                     entry_point += code_size
                     data_start = data[20:24]
                     data_start = int.from_bytes(data_start, byteorder='little')
                     data_size = data[24:28]
                     data_size = int.from_bytes(data_size, byteorder='little')
-                    #print(f"Data Start: {data_start} Data Size: {data_size}")
                     self.memory[data_start:data_start + data_size] = data[entry_point:entry_point + data_size]
-                    #print(self.memory[data_start:data_start + data_size])
-                    #self.memory[:len(data)] = data
             else:
                 with open(filename, 'rb') as f:
                     data = f.read()
@@ -116,8 +102,6 @@ class Simulator:
                     data_size = data[24:28]
                     data_size = int.from_bytes(data_size, byteorder='big')
                     self.memory[self.data_start:self.data_start + data_size] = data[data_start:data_start + data_size]
-                    # Reverse the byte order for big-endian
-                    #self.memory[:len(data)] = data[::-1]
             print(f"Loaded {len(data)} bytes from '{filename}' into memory")
             return True
         except FileNotFoundError:
@@ -151,12 +135,14 @@ class Simulator:
         for operand in operands:
             if operand in reg_names:
                 idx = reg_names.index(operand)
-                pattern = r'\b' + re.escape(operand) + r'\b'  # Match whole word
-                result = result.replace(pattern, f"regs[{idx}]")
+                pattern = f" {re.escape(operand)}"
+                result = result.replace(pattern, f" regs[{idx}]")
+                result = result.replace(f"{operand} ", f"regs[{idx}] ")
             elif operand in reg_aliases:
                 idx = reg_aliases.index(operand)
-                pattern = r'\b' + re.escape(operand) + r'\b'  # Match whole word
-                result = result.replace(pattern, f"regs[{idx}]")
+                pattern = f" {re.escape(operand)}"
+                result = result.replace(pattern, f" regs[{idx}]")
+                result = result.replace(f"{operand} ", f"regs[{idx}] ")
             else:
                 continue
             
@@ -279,6 +265,7 @@ class Simulator:
                 if temp_pc == self.pc:
                     self.pc += self.pc_step
                 if "NOP" in current_instruction.mnemonic:
+                    return True
                     continue
                 else:
                     if step:
