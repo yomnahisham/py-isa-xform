@@ -50,7 +50,12 @@ class Disassembler:
         if isinstance(address_space, dict) and 'size' in address_space:
             address_space_size = address_space['size']
         else:
-            address_space_size = 16  # Default to 16-bit address space
+            # Try to get from instruction_architecture
+            instr_arch = getattr(isa_definition, 'instruction_architecture', {})
+            if isinstance(instr_arch, dict) and 'address_bits' in instr_arch:
+                address_space_size = instr_arch['address_bits']
+            else:
+                address_space_size = 16  # Default to 16-bit address space
         self.address_mask = (1 << address_space_size) - 1
         
         # Build lookup tables for fast disassembly
@@ -175,6 +180,11 @@ class Disassembler:
             if not hasattr(pseudo, 'expansion') or not pseudo.expansion:
                 continue
             
+            # Skip multi-instruction pseudo-instructions - they're handled separately
+            disassembly_config = getattr(pseudo, 'disassembly', {})
+            if disassembly_config.get('reconstruction_type') == 'multi_instruction':
+                continue
+            
             # Parse the expansion to understand the pattern
             expansion_lines = pseudo.expansion.strip().split('\n')
             if not expansion_lines:
@@ -186,11 +196,19 @@ class Disassembler:
                 continue
             
             # Parse the first instruction to understand the pattern
+            # Split by spaces, then clean up commas and semicolons
             parts = first_line.split()
             if len(parts) < 2:
                 continue
             
-            first_mnemonic = parts[0].upper()
+            # Clean up parts by removing trailing commas and semicolons
+            cleaned_parts = []
+            for part in parts:
+                cleaned_part = part.rstrip(',;')
+                if cleaned_part:  # Only add non-empty parts
+                    cleaned_parts.append(cleaned_part)
+            
+            first_mnemonic = cleaned_parts[0].upper()
             
             # Build pattern for this pseudo-instruction
             if first_mnemonic not in self.pseudo_patterns:
@@ -205,23 +223,55 @@ class Disassembler:
             
             # Add conditions based on the expansion pattern
             # For example, NOP: ADD x0, x0
-            if len(parts) >= 3:
-                rd = parts[1]
-                rs2 = parts[2] if len(parts) > 2 else None
+            if len(cleaned_parts) >= 3:
+                rd = cleaned_parts[1]
+                rs2 = cleaned_parts[2] if len(cleaned_parts) > 2 else None
                 
-                if rd == 'x0' and rs2 == 'x0':
-                    pattern['conditions'].append(('rd', 0))
-                    pattern['conditions'].append(('rs2', 0))
-                elif rd == 'x0':
+                # Parse register numbers
+                if rd.startswith('x'):
+                    try:
+                        rd_num = int(rd[1:])
+                        pattern['conditions'].append(('rd', rd_num))
+                    except ValueError:
+                        pass
+                
+                if rs2 and rs2.startswith('x'):
+                    try:
+                        rs2_num = int(rs2[1:])
+                        pattern['conditions'].append(('rs2', rs2_num))
+                    except ValueError:
+                        pass
+                
+                # Handle special cases like x0
+                if rd == 'x0':
                     pattern['conditions'].append(('rd', 0))
                 elif rs2 == 'x0':
                     pattern['conditions'].append(('rs2', 0))
+            
+            # Add conditions for immediate values
+            # For example, INC: ADDI rd, 1
+            if len(cleaned_parts) >= 3:
+                # Check if the last part is a number (immediate)
+                try:
+                    imm_value = int(cleaned_parts[-1])
+                    pattern['conditions'].append(('imm', imm_value))
+                except ValueError:
+                    # Not a number, skip
+                    pass
             
             self.pseudo_patterns[first_mnemonic].append(pattern)
     
     def _build_label_map_from_symbols(self, instructions: List[DisassembledInstruction]) -> Dict[int, str]:
         """Build a map of addresses to label names from disassembled instructions"""
         label_map = {}
+        
+        # Check ISA label generation settings
+        label_config = getattr(self.isa_definition, 'label_generation', {})
+        auto_labels = label_config.get('auto_labels', True)
+        
+        # If auto-labels are disabled, return empty map
+        if not auto_labels:
+            return label_map
         
         # First pass: collect all addresses that are targets of branches/jumps
         branch_targets = set()
@@ -692,6 +742,14 @@ class Disassembler:
         # Try pattern matching first (more flexible)
         for pattern in self.instruction_patterns:
             if (instr_word & pattern['mask']) == pattern['opcode']:
+                # Special handling for shift instructions that share func3 but differ by shift_type
+                instruction = pattern['instruction']
+                if instruction.mnemonic in ['SLLI', 'SRLI', 'SRAI']:
+                    # Check if this is actually the correct shift instruction based on shift_type
+                    shift_type = self._extract_shift_type(instr_word, pattern['fields'])
+                    if shift_type != self._get_expected_shift_type(instruction):
+                        continue  # Try next pattern
+                
                 return self._decode_instruction_with_pattern(
                     instr_word, instr_bytes, address, pattern
                 )
@@ -702,6 +760,42 @@ class Disassembler:
             instruction = self.opcode_to_instruction[opcode]
             return self._decode_simple_instruction(instr_word, instr_bytes, address, instruction)
         
+        return None
+    
+    def _extract_shift_type(self, instr_word: int, fields: List[Dict[str, Any]]) -> Optional[int]:
+        """Extract shift type from instruction word for any field with shift_type property (modular, ISA-driven)"""
+        for field in fields:
+            if field.get("name") and field.get("shift_type") is not None:
+                bits = field.get("bits", "")
+                shift_type_str = field.get("shift_type", "")
+                shift_type_width = len(shift_type_str)
+                if bits:
+                    try:
+                        high, low = parse_bit_range(bits)
+                        imm_value = extract_bits(instr_word, high, low)
+                        shift_type_shift = (high - low + 1) - shift_type_width
+                        shift_type = (imm_value >> shift_type_shift) & ((1 << shift_type_width) - 1)
+                        print(f"[DEBUG] Modular shift_type extraction: instr_word=0x{instr_word:04X}, field={field.get('name')}, imm_value={imm_value}, shift_type_width={shift_type_width}, shift_type_shift={shift_type_shift}, shift_type={shift_type}")
+                        return shift_type
+                    except ValueError:
+                        continue
+        return None
+    
+    def _get_expected_shift_type(self, instruction: Instruction) -> Optional[int]:
+        """Get the expected shift type for a shift instruction"""
+        if not hasattr(instruction, 'encoding') or not isinstance(instruction.encoding, dict):
+            return None
+        
+        fields = instruction.encoding.get('fields', [])
+        for field in fields:
+            if field.get("name") == "imm" and "shift_type" in field:
+                shift_type_str = field.get("shift_type", "")
+                try:
+                    expected = int(shift_type_str, 2)
+                    print(f"[DEBUG] Expected shift type for {instruction.mnemonic}: {shift_type_str} = {expected}")
+                    return expected
+                except ValueError:
+                    continue
         return None
     
     def _extract_simple_opcode(self, instr_word: int) -> int:
@@ -746,12 +840,16 @@ class Disassembler:
                 bit_width = high - low + 1
                 value = extract_bits(instr_word, high, low)
                 
-                #print(f"[DEBUG] Field {field.get('name', '')}: bits={bits}, high={high}, low={low}, width={bit_width}, raw_value={value}")
+                print(f"[DEBUG] Field {field.get('name', '')}: bits={bits}, high={high}, low={low}, width={bit_width}, raw_value={value}")
                 
                 # Handle signed immediates
                 if field.get("signed", False) and (value & (1 << (bit_width - 1))):
+                    # Sign extend to ISA word size, not 32 bits
+                    isa_word_size = self.isa_definition.word_size
                     value = sign_extend(value, bit_width)
-                    #print(f"[DEBUG] Sign-extended value: {value}")
+                    # Mask to ISA word size to avoid 32-bit overflow
+                    value = value & ((1 << isa_word_size) - 1)
+                    print(f"[DEBUG] Sign-extended value: {value}")
                 
                 field_name = field.get("name", "")
                 field_values[field_name] = value
@@ -903,34 +1001,50 @@ class Disassembler:
                 operand_part = ' '.join(parts[1:])
                 syntax_operands = [op.strip() for op in operand_part.split(',')]
 
-        # Reconstruct full immediate for any instruction with multiple immediate fields
+        # Reconstruct full immediate for any instruction with immediate fields
         encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
         immediate_fields = [f for f in encoding_fields if f.get('type') == 'immediate' and f.get('name') != 'opcode']
-        if len(immediate_fields) > 1:
+        if len(immediate_fields) >= 1:
             # Use the instruction's implementation to reconstruct the full immediate
             # This is fully modular - the ISA definition tells us how to combine fields
             full_imm = self._reconstruct_immediate_from_implementation(instruction, field_values, address)
             # For PC-relative jumps/branches, calculate the actual target address
+            target_addr = None
             if instruction.mnemonic.upper() in ['JMP', 'J', 'JAL', 'CALL', 'BEQ', 'BNE', 'BZ', 'BNZ', 'BLT', 'BGE', 'BLTU', 'BGEU']:
-                # Use ISA-driven PC behavior for jump target calculation
+                # Use ISA-driven PC behavior for jump target calculation - FIXED to match assembler
                 pc_config = getattr(self.isa_definition, 'pc_behavior', {})
                 pc_offset = pc_config.get('offset_for_jumps', 0)
-                target_addr = (field_values.get('address', address) + pc_offset + full_imm) & self.address_mask if 'address' in field_values else (address + pc_offset + full_imm) & self.address_mask
-                for syntax_op in syntax_operands:
-                    if syntax_op in ('imm', 'immediate', 'offset'):
-                        resolved = self._resolve_address_to_label(target_addr)
-                        operands.append(resolved)
-                    elif syntax_op in ('rd', 'rs1', 'rs2'):
-                        reg_val = field_values.get(syntax_op, 0)
-                        operands.append(self._format_register(reg_val, register_prefix))
-                    else:
-                        if syntax_op in field_values:
-                            operands.append(str(field_values[syntax_op]))
-                return operands
-            # Now format operands using the reconstructed immediate (default)
+                
+                # Use the SAME calculation as the assembler: target = instruction_address + pc_offset + full_imm
+                # This ensures consistency between assembly and disassembly
+                target_addr = (address + pc_offset + full_imm) & self.address_mask
+            
             for syntax_op in syntax_operands:
                 if syntax_op in ('imm', 'immediate', 'offset'):
-                    operands.append(f"{immediate_prefix}{full_imm}")
+                    if target_addr is not None:
+                        resolved = self._resolve_address_to_label(target_addr)
+                        operands.append(resolved)
+                    else:
+                        # For non-jump instructions, format the immediate normally
+                        disassembly_config = op_config.get('disassembly', {})
+                        always_hex_for = disassembly_config.get('always_hex_for', [])
+                        
+                        # Check if this is a signed immediate that should be shown as negative
+                        field_signed = False
+                        for f in immediate_fields:
+                            if f.get('signed', False):
+                                field_signed = True
+                                break
+                        
+                        if field_signed and full_imm > (1 << (self.isa_definition.word_size - 1)):
+                            # Convert to signed representation
+                            signed_value = full_imm - (1 << self.isa_definition.word_size)
+                            formatted = f"{immediate_prefix}{signed_value}"
+                        elif instruction.mnemonic.upper() in always_hex_for:
+                            formatted = f"{immediate_prefix}{hex_prefix}{full_imm:X}"
+                        else:
+                            formatted = f"{immediate_prefix}{full_imm}"
+                        operands.append(formatted)
                 elif syntax_op in ('rd', 'rs1', 'rs2'):
                     reg_val = field_values.get(syntax_op, 0)
                     operands.append(self._format_register(reg_val, register_prefix))
@@ -1009,18 +1123,76 @@ class Disassembler:
                 # Check if this is a branch/jump target address
                 if (self._is_control_flow_instruction(instruction.mnemonic) and 
                     field_name in ('immediate', 'imm', 'offset')):
-                    # Calculate actual target address using ISA-driven PC behavior
+                    # Calculate actual target address using ISA-driven PC behavior - FIXED to match assembler
                     pc_config = getattr(self.isa_definition, 'pc_behavior', {})
                     pc_offset = pc_config.get('offset_for_jumps', 0)
+                    
+                    # Use the SAME calculation as the assembler: target = instruction_address + pc_offset + value
+                    # This ensures consistency between assembly and disassembly
                     target_addr = (address + pc_offset + value) & self.address_mask
                     resolved = self._resolve_address_to_label(target_addr)
                     operands.append(resolved)
                 else:
-                    # Regular immediate formatting using ISA configuration
-                    if value > 255 or value < -255:
-                        operands.append(f"{immediate_prefix}{hex_prefix}{value:X}")
+                    # ISA-driven immediate formatting
+                    disassembly_config = op_config.get('disassembly', {})
+                    immediate_format = disassembly_config.get('immediate_format', 'decimal')
+                    hex_threshold = disassembly_config.get('hex_threshold', 255)
+                    negative_hex_threshold = disassembly_config.get('negative_hex_threshold', -255)
+                    always_decimal_for = disassembly_config.get('always_decimal_for', [])
+                    always_hex_for = disassembly_config.get('always_hex_for', [])
+                    # Check if this field is signed
+                    field_signed = False
+                    encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
+                    for f in encoding_fields:
+                        if f.get('name') == field_name and f.get('signed', False):
+                            field_signed = True
+                            break
+                    # If signed and value represents a negative number, show as negative
+                    if field_signed:
+                        print(f"[DEBUG] Field is signed, value={value}")
+                        bit_width = 0
+                        for f in encoding_fields:
+                            if f.get('name') == field_name and 'bits' in f:
+                                bits = f['bits']
+                                if isinstance(bits, str) and ':' in bits:
+                                    high, low = [int(x) for x in bits.split(':')]
+                                    bit_width = high - low + 1
+                                elif isinstance(bits, str):
+                                    bit_width = 1
+                        print(f"[DEBUG] Bit width for field {field_name}: {bit_width}")
+                        if bit_width > 0:
+                            sign_bit = 1 << (bit_width - 1)
+                            mask = (1 << bit_width) - 1
+                            value_masked = value & mask
+                            print(f"[DEBUG] sign_bit=0x{sign_bit:X}, mask=0x{mask:X}, value_masked=0x{value_masked:X}")
+                            if value_masked & sign_bit:
+                                signed_value = value_masked - (1 << bit_width)
+                                print(f"[DEBUG] Value has sign bit, signed_value={signed_value}")
+                                formatted_value = f"{immediate_prefix}{signed_value}"
+                            else:
+                                print(f"[DEBUG] Value has no sign bit, using value_masked={value_masked}")
+                                formatted_value = f"{immediate_prefix}{value_masked}"
+                        else:
+                            print(f"[DEBUG] No bit width found, using original value={value}")
+                            formatted_value = f"{immediate_prefix}{value}"
+                    elif instruction.mnemonic.upper() in always_decimal_for:
+                        formatted_value = f"{immediate_prefix}{value}"
+                    elif instruction.mnemonic.upper() in always_hex_for:
+                        formatted_value = f"{immediate_prefix}{hex_prefix}{value:X}"
                     else:
-                        operands.append(f"{immediate_prefix}{value}")
+                        # Get immediate formatting config from ISA
+                        imm_config = getattr(self.isa_definition, 'immediate_formatting', {})
+                        always_show_signed = imm_config.get('always_show_signed', False)
+                        use_decimal_for_small = imm_config.get('use_decimal_for_small', True)
+                        hex_threshold = imm_config.get('hex_threshold', 255)
+                        if always_show_signed and value > (1 << (self.isa_definition.word_size - 1)):
+                            signed_value = value - (1 << self.isa_definition.word_size)
+                            formatted_value = f"{immediate_prefix}{signed_value}"
+                        elif use_decimal_for_small and value <= hex_threshold:
+                            formatted_value = f"{immediate_prefix}{value}"
+                        else:
+                            formatted_value = f"{immediate_prefix}{hex_prefix}{value:X}"
+                    operands.append(formatted_value)
             elif field_name == 'address':
                 symbol = self.symbol_table.get_symbol_at_address(value)
                 if symbol:
@@ -1032,38 +1204,41 @@ class Disassembler:
         return operands
     
     def _format_register(self, reg_num: int, register_prefix: str) -> str:
-        """Format register name using ISA's register configuration"""
-        # Get register formatting config from ISA
+        """Format register name using ISA's register configuration, searching all register banks."""
         reg_config = getattr(self.isa_definition, 'register_formatting', {})
+        prefer_canonical = reg_config.get('prefer_canonical', False)
+        always_use_xn = reg_config.get('always_use_xn', False)
+        use_aliases = reg_config.get('aliases', True)
         prefix = reg_config.get('prefix', 'x')
         suffix = reg_config.get('suffix', '')
         case = reg_config.get('case', 'lower')
         alternatives = reg_config.get('alternatives', {})
-        
-        # Look up register name in ISA definition
+
+        # If ISA prefers canonical names or always use xN, return xN format
+        if prefer_canonical or always_use_xn:
+            return f"{prefix}{reg_num}{suffix}"
+
+        # Search all register banks (general, vector, etc.)
         for category, registers in self.isa_definition.registers.items():
             if reg_num < len(registers):
                 reg = registers[reg_num]
                 reg_name = reg.name
-                
                 # Apply case transformation
                 if case == 'upper':
                     reg_name = reg_name.upper()
                 elif case == 'lower':
                     reg_name = reg_name.lower()
-                
-                # Check for alternative names
-                if reg_name in alternatives:
+                # Check for alternative names only if aliases are enabled
+                if use_aliases and reg_name in alternatives:
                     alt_names = alternatives[reg_name]
                     if alt_names:
-                        reg_name = alt_names[0]  # Use first alternative
-                
-                # The register name from ISA already includes the prefix, so don't add it again
-                # Just apply suffix if needed
+                        reg_name = alt_names[0]
                 return f"{reg_name}{suffix}"
-        
         # Fallback to generic name with prefix
-        return f"{prefix}R{reg_num}{suffix}"
+        if prefix:
+            return f"{prefix}{reg_num}{suffix}"
+        else:
+            return f"R{reg_num}{suffix}"
     
     def _get_register_name(self, reg_num: int) -> str:
         """Get register name from register number using ISA configuration"""
@@ -1124,7 +1299,11 @@ class Disassembler:
         
         # Apply pseudo-instruction reconstruction if enabled
         if reconstruct_pseudo:
-            sorted_instructions = self._reconstruct_pseudo_instructions(sorted_instructions)
+            # Check ISA setting for pseudo-instruction reconstruction
+            pseudo_config = getattr(self.isa_definition, 'pseudo_instruction_reconstruction', {})
+            pseudo_enabled = pseudo_config.get('enabled', True)
+            if pseudo_enabled:
+                sorted_instructions = self._reconstruct_pseudo_instructions(sorted_instructions)
         
         for instr in sorted_instructions:
             line_parts = []
@@ -1167,9 +1346,17 @@ class Disassembler:
                 if include_addresses:
                     lines.append(f"    ; Data section at 0x{addr:04X}")
                 
-                # Detect ASCII strings in the data
-                strings = self._detect_ascii_strings(data_bytes, addr)
-                string_positions = {pos: (length, text) for pos, length, text in strings}
+                # Check ISA data formatting settings
+                data_config = getattr(self.isa_definition, 'data_formatting', {})
+                force_word = data_config.get('force_word', False)
+                ascii_detection = data_config.get('ascii_detection', True)
+                
+                # Detect ASCII strings in the data only if not forced to word format
+                strings = []
+                string_positions = {}
+                if not force_word and ascii_detection:
+                    strings = self._detect_ascii_strings(data_bytes, addr)
+                    string_positions = {pos: (length, text) for pos, length, text in strings}
                 
                 # Output data with string detection
                 i = 0
@@ -1179,8 +1366,8 @@ class Disassembler:
                 while i < len(data_bytes):
                     current_pos = addr + i
                     
-                    # Check if we're at a string position
-                    if current_pos in string_positions:
+                    # Check if we're at a string position (only if ASCII detection is enabled)
+                    if string_positions and current_pos in string_positions:
                         length, text = string_positions[current_pos]
                         # Get string directive name from ISA definition, with fallback to .ascii
                         string_directive = getattr(self.isa_definition, 'string_directive', '.ascii')
@@ -1346,17 +1533,81 @@ class Disassembler:
         
         mnemonic = instr.instruction.mnemonic.upper()
         
+        # First, check if this instruction could be part of a multi-instruction pseudo-instruction
+        # by looking at the ISA definition's pseudo-instructions
+        for pseudo in getattr(self.isa_definition, 'pseudo_instructions', []):
+            disassembly_config = getattr(pseudo, 'disassembly', {})
+            if disassembly_config.get('reconstruction_type') == 'multi_instruction':
+                instruction_list = disassembly_config.get('instructions', [])
+                if mnemonic == instruction_list[0].upper() and len(instruction_list) > 1:
+                    # This could be the first instruction of a multi-instruction pseudo
+                    # Check if the next instruction matches the second instruction in the sequence
+                    if index + 1 < len(instructions):
+                        next_instr = instructions[index + 1]
+                        if (next_instr.instruction and 
+                            next_instr.instruction.mnemonic.upper() == instruction_list[1].upper()):
+                            # Check if they use the same register (for LI16, LA, etc.)
+                            if self._check_multi_instruction_pseudo(instr, next_instr, pseudo):
+                                return pseudo.mnemonic
+        
+        # Fallback to simple pattern matching for single-instruction pseudo-instructions
         if mnemonic not in self.pseudo_patterns:
             return None
         
         # Extract field values from the instruction
         field_values = self._extract_field_values(instr)
         
+        # Check if pseudo-instruction reconstruction is enabled for this ISA
+        pseudo_config = getattr(self.isa_definition, 'pseudo_instruction_reconstruction', {})
+        pseudo_enabled = pseudo_config.get('enabled', True)
+        
+        # If pseudo-instruction reconstruction is disabled, don't reconstruct
+        if not pseudo_enabled:
+            return None
+        
         for pattern in self.pseudo_patterns[mnemonic]:
             if self._matches_pseudo_pattern(field_values, pattern):
+                # Additional check: for XOR instructions, only reconstruct as CLR if it's actually a clear operation
+                # This prevents legitimate XOR operations from being incorrectly reconstructed
+                if mnemonic == 'XOR' and pattern['pseudo_mnemonic'] == 'CLR':
+                    # Check if this is actually a clear operation (XOR rd, rd)
+                    # Extract rd and rs2 from field values
+                    rd = field_values.get('rd', -1)
+                    rs2 = field_values.get('rs2', -1)
+                    # Only reconstruct as CLR if both operands are the same register
+                    if rd == rs2 and rd >= 0:
+                        return pattern['pseudo_mnemonic']
+                    # Otherwise, keep it as XOR (legitimate XOR operation)
+                    continue
                 return pattern['pseudo_mnemonic']
         
         return None
+    
+    def _check_multi_instruction_pseudo(self, first_instr: DisassembledInstruction, second_instr: DisassembledInstruction, pseudo: Any) -> bool:
+        """Check if two consecutive instructions form a multi-instruction pseudo-instruction"""
+        # Extract field values from both instructions
+        first_fields = self._extract_field_values(first_instr)
+        second_fields = self._extract_field_values(second_instr)
+        
+        # For LI16, check if both instructions use the same register
+        # LI16 expansion: LUI rd, imm[15:9]; ORI rd, imm[8:0]
+        if pseudo.mnemonic == 'LI16':
+            # Check if both instructions target the same register
+            first_rd = first_fields.get('rd', -1)
+            second_rd = second_fields.get('rd', -1)
+            return first_rd == second_rd
+        
+        # For LA, check if both instructions use the same register
+        # LA expansion: AUIPC rd, label[15:7]; ADDI rd, label[6:0]
+        elif pseudo.mnemonic == 'LA':
+            # Check if both instructions target the same register
+            first_rd = first_fields.get('rd', -1)
+            second_rd = second_fields.get('rd', -1)
+            return first_rd == second_rd
+        
+        # Default: assume they form a pseudo-instruction if they're consecutive
+        # and match the instruction sequence
+        return True
     
     def _extract_field_values(self, instr: DisassembledInstruction) -> Dict[str, int]:
         """Extract field values from a disassembled instruction"""
@@ -1392,9 +1643,14 @@ class Disassembler:
                 value = extract_bits(instr_word, high, low)
                 
                 # Handle signed immediates
-                if field.get('signed', False) and (value & (1 << (bit_width - 1))):
+                if field.get("signed", False) and (value & (1 << (bit_width - 1))):
+                    # Sign extend to ISA word size, not 32 bits
+                    isa_word_size = self.isa_definition.word_size
                     value = sign_extend(value, bit_width)
+                    # Mask to ISA word size to avoid 32-bit overflow
+                    value = value & ((1 << isa_word_size) - 1)
                 
+                field_name = field.get("name", "")
                 field_values[field_name] = value
             except ValueError:
                 continue
@@ -1450,30 +1706,15 @@ class Disassembler:
             if instr.instruction and hasattr(instr.instruction, 'implementation'):
                 offset = self._reconstruct_immediate_from_implementation(instr.instruction, field_values, instr.address)
                 
-                # Use ISA-driven jump target calculation
+                # Use ISA-driven jump target calculation - FIXED to match assembler
                 pc_config = getattr(self.isa_definition, 'pc_behavior', {})
-                disassembly_config = pc_config.get('disassembly', {})
-                jump_calc = disassembly_config.get('jump_target_calculation', 'pc_plus_offset')
-                pc_value = disassembly_config.get('pc_value_for_jumps', 'instruction_address_plus_pc_offset')
+                pc_offset = pc_config.get('offset_for_jumps', 0)
                 
-                # Calculate PC value based on ISA configuration
-                if pc_value == 'instruction_address_plus_pc_offset':
-                    pc_offset = pc_config.get('offset_for_jumps', 0)
-                    pc_at_jump = instr.address + pc_offset
-                elif pc_value == 'instruction_address_plus_2':
-                    pc_at_jump = instr.address + 2
-                else:
-                    pc_at_jump = instr.address
+                # Use the SAME calculation as the assembler: target = instruction_address + pc_offset + offset
+                # This ensures consistency between assembly and disassembly
+                target_address = (instr.address + pc_offset + offset) & self.address_mask
                 
-                # Calculate target based on ISA configuration
-                if jump_calc == 'pc_plus_offset':
-                    target_address = (pc_at_jump + offset) & self.address_mask
-                elif jump_calc == 'instruction_address_plus_offset':
-                    target_address = (instr.address + offset) & self.address_mask
-                else:
-                    target_address = (pc_at_jump + offset) & self.address_mask
-                
-                print(f"[DEBUG] ISA-driven: pc_value={pc_value}, jump_calc={jump_calc}, pc_at_jump=0x{pc_at_jump:X}, target_address=0x{target_address:X}")
+                print(f"[DEBUG] ISA-driven: pc_offset={pc_offset}, instruction_address=0x{instr.address:X}, offset={offset}, target_address=0x{target_address:X}")
             else:
                 # Fallback: try to extract from operands
                 target_address = 0
@@ -1545,7 +1786,55 @@ class Disassembler:
         encoding_fields = getattr(instruction, 'encoding', {}).get('fields', [])
         immediate_fields = [f for f in encoding_fields if f.get('type') == 'immediate' and f.get('name') != 'opcode']
         if len(immediate_fields) > 1:
-            # 1. Compute total width and sign bit
+            # Use ISA-specific implementation logic by parsing the implementation field
+            implementation = getattr(instruction, 'implementation', '')
+            
+            # Parse the implementation to find immediate reconstruction logic
+            # Look for patterns like "imm = (imm1 << 3) | imm2" or similar
+            import re
+            
+            # First, try to find variable assignments to understand the mapping
+            # Look for patterns like "imm1 = operands['imm']" or "imm1 = operands['imm']"
+            var_mapping = {}
+            var_pattern = r'(\w+)\s*=\s*operands\[[\'"]([^\'"]+)[\'"]\]'
+            for match in re.finditer(var_pattern, implementation):
+                var_name = match.group(1)
+                field_name = match.group(2)
+                var_mapping[var_name] = field_name
+            
+            # Common patterns for multi-field immediate reconstruction
+            patterns = [
+                # Pattern: imm = (imm1 << N) | imm2
+                r'imm\s*=\s*\((\w+)\s*<<\s*(\d+)\)\s*\|\s*(\w+)',
+                # Pattern: imm = imm1 << N | imm2
+                r'imm\s*=\s*(\w+)\s*<<\s*(\d+)\s*\|\s*(\w+)',
+                # Pattern: result = (imm1 << N) | imm2
+                r'result\s*=\s*\((\w+)\s*<<\s*(\d+)\)\s*\|\s*(\w+)',
+                # Pattern: result = imm1 << N | imm2
+                r'result\s*=\s*(\w+)\s*<<\s*(\d+)\s*\|\s*(\w+)',
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, implementation)
+                if match:
+                    var1_name = match.group(1)
+                    shift_amount = int(match.group(2))
+                    var2_name = match.group(3)
+                    
+                    # Map variable names to actual field names
+                    field1_name = var_mapping.get(var1_name, var1_name)
+                    field2_name = var_mapping.get(var2_name, var2_name)
+                    
+                    # Get the field values
+                    field1_val = field_values.get(field1_name, 0)
+                    field2_val = field_values.get(field2_name, 0)
+                    
+                    # Reconstruct using the ISA's logic: (field1 << shift) | field2
+                    combined = (field1_val << shift_amount) | field2_val
+                    return combined
+            
+            # If no pattern matches, fall back to generic field reconstruction
+            # Sort fields by their bit position in the instruction
             field_specs = []
             for f in immediate_fields:
                 bits = f.get("bits", "")
@@ -1555,22 +1844,29 @@ class Disassembler:
                     high = low = int(bits)
                 width = high - low + 1
                 field_specs.append((f["name"], low, width))
+            
             # Sort by low bit (LSB first)
             field_specs.sort(key=lambda x: x[1])
             total_width = sum(w for _, _, w in field_specs)
             sign_bit = 1 << (total_width - 1)
             mask = (1 << total_width) - 1
-            # 2. Combine fields into a single value
+            
+            # Combine fields into a single value
             combined = 0
             for name, low, width in field_specs:
                 val = field_values.get(name, 0) & ((1 << width) - 1)
                 combined |= val << (low - field_specs[0][1])
-            # 3. Sign-extend if needed
+            
+            # Sign-extend if needed
             if combined & sign_bit:
                 combined = combined - (1 << total_width)
             return combined
+        
         # If single-field immediate, return the value directly
         elif len(immediate_fields) == 1:
-            return field_values.get(immediate_fields[0]['name'], 0)
-        # If no immediate fields, return 0
-        return 0 
+            field_name = immediate_fields[0]["name"]
+            value = field_values.get(field_name, 0)
+            return value
+        
+        # No immediate fields found
+        return 0
