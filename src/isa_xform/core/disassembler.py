@@ -1847,11 +1847,13 @@ class Disassembler:
                             else:
                                 lines.append(f"    {directive} {hex_values}")
                         elif directive == '.word':
-                            hex_values = ', '.join(f'0x{v:04X}' for v in values)
-                            if include_addresses:
-                                lines.append(f"    {addr:04X}: {directive} {hex_values}")
-                            else:
-                                lines.append(f"    {directive} {hex_values}")
+                            # Output each word on a separate line
+                            for i, value in enumerate(values):
+                                current_addr = addr + (i * (self.isa_definition.word_size // 8))
+                                if include_addresses:
+                                    lines.append(f"    {current_addr:04X}: {directive} 0x{value:04X}")
+                                else:
+                                    lines.append(f"    {directive} 0x{value:04X}")
                 else:
                     # Fallback to original logic
                     # Detect ASCII strings in the data only if not forced to word format
