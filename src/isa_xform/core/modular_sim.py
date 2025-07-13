@@ -401,8 +401,8 @@ class Simulator:
                     print("Audio playback stopped")
                 elif name == "read_keyboard":
                     #self.regs[7] = self.get_key(chr(self.regs[6])) # a0 register is the key to read, a1 register will hold the result
-                    key_code = self.regs[6]  # Key code requested by user program
-                    self.regs[7] = self.key_state.get(key_code, 0)
+                    key_code = self.regs[6].value  # Use the int value
+                    self.regs[7].set_value(self.key_state.get(key_code, 0))
                 elif name == "registers_dump":
                     for i, reg in enumerate(self.regs):
                         print(f"{self.reg_names[i]}: {reg}")
