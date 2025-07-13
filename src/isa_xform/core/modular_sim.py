@@ -3,14 +3,13 @@ import struct
 import re
 import numpy as np
 import warnings
-from pynput.keyboard import Key, Listener
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
-from .disassembler import Disassembler, DisassembledInstruction, DisassemblyResult
-from .isa_loader import ISADefinition, Register
-from .symbol_table import SymbolTable
-from ..utils.bit_utils import (
+from isa_xform.core.disassembler import Disassembler, DisassembledInstruction, DisassemblyResult
+from isa_xform.core.isa_loader import ISADefinition, ISALoader, Register
+from isa_xform.core.symbol_table import SymbolTable
+from isa_xform.utils.bit_utils import (
     extract_bits, set_bits, sign_extend, parse_bit_range, 
     create_mask, bytes_to_int, int_to_bytes
 )
@@ -224,16 +223,6 @@ class Register:
     def __repr__(self):
         return self.__str__()
 
-def sign_extend(value: int, bits: int) -> int:
-    """Sign extend a value from specified number of bits to 16 bits"""
-    if value & (1 << (bits - 1)):
-        mask = (1 << bits) - 1
-        return value | (~mask)
-    return value & ((1 << bits) - 1)
-
-def unsigned(value: int) -> int:
-    unsigned = np.uint16(value)
-    return unsigned
 class Simulator:
     def __init__(self, isa_definition: ISADefinition, symbol_table: Optional[SymbolTable] = None, disassembler: Optional[Disassembler] = None):
         self.isa_definition = isa_definition
@@ -242,77 +231,63 @@ class Simulator:
         self.memory = bytearray(65536)  # 64KB memory
         self.pc = isa_definition.address_space.default_code_start
         self.data_start = isa_definition.address_space.default_data_start
+        self.stack_start = isa_definition.address_space.default_stack_start
         self.pc_step = self.isa_definition.word_size // 8
         self.regs = [Register(name=reg.name, alias=reg.alias, size=self.isa_definition.word_size) for reg in isa_definition.registers['general_purpose']]
         self.sp_index = next((i for i, reg in enumerate(self.regs) if reg.alias[0] == 'sp'), 0)
         self.regs[self.sp_index]._normalize(self.stack_start)
         self.key = "start"
-
-    def listen_for_key(self, target_key):
-        def on_press(key):
-            try:
-                # For alphanumeric keys
-                if key.char == target_key:
-                    print(f"You pressed '{target_key}'!")
-                    self.key = 1
-                    return False  # Stop the listener
-            except AttributeError:
-                # For special keys
-                if key == target_key:
-                    print(f"You pressed {target_key}!")
-                    self.key = 1
-                    return False
-                self.key = 0
-
-        with Listener(on_press=on_press) as listener:
-            listener.join()
-
+        self.key_state = {}
+        self.running = True
+        self.PCrange = isa_definition.address_space.memory_layout["code_section"]["end"]
 
     def load_memory_from_file(self, filename: str) -> bool:
+        """Loads machine code from a file into memory"""
+        if not Path(filename).exists():
+            print(f"Error: File '{filename}' not found", file=sys.stderr)
+            return False
         try:
-            with open(filename, 'rb') as f:
-                data = f.read()
-                if len(data) > len(self.memory):
-                    print(f"Error: File '{filename}' exceeds memory size", file=sys.stderr)
-                    return False
-                self.memory[:len(data)] = data
+            # check for endiannness
+            if self.isa_definition.endianness == 'little':
+                with open(filename, 'rb') as f:
+                    data = f.read()
+                    if len(data) > len(self.memory):
+                        print(f"Error: File '{filename}' exceeds memory size", file=sys.stderr)
+                        return False
+                    entry_point = data[8:12]
+                    entry_point = int.from_bytes(entry_point, byteorder='little')
+                    code_start = data[12:16]
+                    code_start = int.from_bytes(code_start, byteorder='little')
+                    code_size = data[16:20]
+                    code_size = int.from_bytes(code_size, byteorder='little')
+                    self.memory[code_start:code_start + code_size] = data[entry_point:entry_point + code_size]
+                    entry_point += code_size
+                    data_start = data[20:24]
+                    data_start = int.from_bytes(data_start, byteorder='little')
+                    data_size = data[24:28]
+                    data_size = int.from_bytes(data_size, byteorder='little')
+                    self.memory[data_start:data_start + data_size] = data[entry_point:entry_point + data_size]
+            else:
+                with open(filename, 'rb') as f:
+                    data = f.read()
+                    if len(data) > len(self.memory):
+                        print(f"Error: File '{filename}' exceeds memory size", file=sys.stderr)
+                        return False
+                    code_start = data[12:16]
+                    code_start = int.from_bytes(code_start, byteorder='big')
+                    code_size = data[16:20]
+                    code_size = int.from_bytes(code_size, byteorder='big')
+                    self.memory[self.pc:self.pc + code_size] = data[code_start:code_start + code_size]
+                    data_start = data[20:24]
+                    data_start = int.from_bytes(data_start, byteorder='big')
+                    data_size = data[24:28]
+                    data_size = int.from_bytes(data_size, byteorder='big')
+                    self.memory[self.data_start:self.data_start + data_size] = data[data_start:data_start + data_size]
             print(f"Loaded {len(data)} bytes from '{filename}' into memory")
             return True
         except FileNotFoundError:
             print(f"Error: File '{filename}' not found", file=sys.stderr)
             return False
-    
-    def read_memory_byte(self, addr: int) -> int:
-        if 0 <= addr < len(self.memory):
-            return self.memory[addr]
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
-            return 0
-    
-    def write_memory_byte(self, addr: int, value: int):
-        if 0 <= addr < len(self.memory):
-            self.memory[addr] = value & 0xFF
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
-    
-    def read_memory_word(self, addr: int) -> int: # TO BE VISITED
-        if 0 <= addr < len(self.memory) - self.pc_step:
-            if self.isa_definition.endianness == 'little':
-                return struct.unpack('<H', self.memory[addr:addr + self.pc_step])[0] 
-            else:                
-                return struct.unpack('>H', self.memory[addr:addr + self.pc_step])[0] 
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
-            return 0
-        
-    def write_memory_word(self, addr: int, value: int): # TO BE VISITED
-        if 0 <= addr < len(self.memory) - 1:
-            if self.isa_definition.endianness == 'little':
-                self.memory[addr:addr + self.pc_step] = struct.pack('<H', value & 0xFFFF)
-            else:
-                self.memory[addr:addr + self.pc_step] = struct.pack('>H', value & 0xFFFF)
-        else:
-            print(f"Error: Memory access out of bounds at address {addr}", file=sys.stderr)
     
     def extract_parameters(self, syntax: str) -> List[str]:
         """ Extracts parameter names from assembly string"""
@@ -349,6 +324,8 @@ class Simulator:
                 pattern = f" {re.escape(operand)}"
                 result = result.replace(pattern, f" regs[{idx}].value")
                 result = result.replace(f"{operand} ", f"regs[{idx}].value ")
+            elif operand.endswith(' '):
+                print(operand)
             else:
                 continue
             
@@ -357,10 +334,6 @@ class Simulator:
         return result        
     
     
-    def get_key(self, target_key: str) -> int:
-        # Simplified key detection - returns 0 for now
-        # This can be enhanced later with proper keyboard handling
-        return 0
     
     def map_disassembly_result_to_pc(self, disassembly_result: DisassemblyResult) -> Dict[int, DisassembledInstruction]:
         """Maps disassembled instructions to their program counter (PC) addresses"""
@@ -373,7 +346,7 @@ class Simulator:
     def print_registers(self):
         """Prints the current state of registers"""
         print(self.regs)
-
+    
     
     def execute_instruction(self, disassembled_instruction: DisassembledInstruction) -> bool:
         """Executes a disassembled instruction"""
@@ -428,8 +401,8 @@ class Simulator:
                     print("Audio playback stopped")
                 elif name == "read_keyboard":
                     #self.regs[7] = self.get_key(chr(self.regs[6])) # a0 register is the key to read, a1 register will hold the result
-                    self.listen_for_key(chr(self.regs[6]))
-                    self.regs[7] = self.key
+                    key_code = self.regs[6]  # Key code requested by user program
+                    self.regs[7] = self.key_state.get(key_code, 0)
                 elif name == "registers_dump":
                     for i, reg in enumerate(self.regs):
                         print(f"{self.reg_names[i]}: {reg}")
@@ -442,64 +415,193 @@ class Simulator:
                 
                 return True
         
-            
-
-                
             else:
                 generic_assembly = disassembled_instruction.instruction.syntax
                 instruction = disassembled_instruction.instruction
                 actual_assembly = f"{instruction.mnemonic}  {', '.join(disassembled_instruction.operands)}"
                 code = instruction.semantics
-                # generic_assembly = disassembled_instruction.instructions[0].instruction.syntax
-                # instruction = disassembled_instruction.instructions[0]
-                # actual_assembly = f"{instruction.mnemonic}  {', '.join(instruction.operands)}"
-                # code = disassembled_instruction.instructions[0].instruction.semantics
 
                 generic_parameters = self.extract_parameters(generic_assembly)
                 actual_parameters = self.extract_parameters(actual_assembly)
                 code = self.generic_to_register_name(code, generic_parameters, actual_parameters)
                 executable_string = self.register_name_to_index(code, actual_parameters)
                 print(f"Executing: {executable_string}")
-                exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self, 'unsigned': unsigned, 'sign_extend': sign_extend, 'read_memory_word': self.read_memory_word, 'write_memory_word': self.write_memory_word})
+                exec(executable_string, {'regs': self.regs, 'memory': self.memory, 'self': self})
                 return True
         return True
-        
+    
+    def read_memory_byte(self, addr: int) -> int:
+        if 0 <= addr < len(self.memory):
+            return self.memory[addr]
+        else:
+            print(f"Warning: Attempted to read from invalid memory address 0x{addr:04X}")
+            return 0
 
-    def run(self, step: bool = False):
-        """Runs the simulator, disassembling and executing instructions in memory"""
-        disassembly_result = self.disassembler.disassemble(self.memory, self.pc)
-        instuctions_map = self.map_disassembly_result_to_pc(disassembly_result)
-        loop = "start"
-        print(f"Code Start: {self.pc}")
-        print(f"Data Start: {self.data_start} ")
-        print(f"Memory: {self.memory[self.data_start]} ")
-
-        while self.pc < len(self.memory) and (loop != 'q' or (not step)):
+    def dump_memory(self, start: int, end: int):
+        for addr in range(start, end + 1):
+            print(f"0x{addr:04X}: {self.read_memory_byte(addr):02X}")
             
-            current_instruction = instuctions_map[self.pc] if self.pc in instuctions_map else None
-            if current_instruction is None:
-                print(f"Skipping instruction at PC: {self.pc} (NoneType)")
-                continue
 
-            print(f"PC: {self.pc:04X} - {current_instruction.mnemonic} {', '.join(current_instruction.operands)}")
-            temp_pc = self.pc
-            if self.execute_instruction(current_instruction):
-                if temp_pc == self.pc:
-                    self.pc += self.pc_step
-                if "NOP" in current_instruction.mnemonic:
-                    continue
-                else:
-                    if step:
-                        self.print_registers()
-                        loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
-                    else:
-                        self.print_registers()
-                        if self.pc >= len(disassembly_result.instructions):
-                            print("Reached end of disassembled instructions")
-                            break
-                
-            else:
-                print("Execution terminated by instruction")
-                break
-        print("Simulation completed")
+    ###################### GRAPHICS ######################
+import pygame
 
+# ========== Constants ==========
+SCREEN_WIDTH = 320
+SCREEN_HEIGHT = 240
+TILE_SIZE = 16
+ROWS = SCREEN_HEIGHT // TILE_SIZE
+COLS = SCREEN_WIDTH // TILE_SIZE
+
+TILE_MAP_ADDR = 0xF000
+TILE_DATA_ADDR = 0xF200
+PALETTE_ADDR = 0xFA00
+
+# ========== Palette Reader ==========
+def get_palette(memory):
+    palette = []
+    for i in range(16):
+        byte = memory[PALETTE_ADDR + i]
+        r = ((byte >> 5) & 0b111) * 255 // 7
+        g = ((byte >> 2) & 0b111) * 255 // 7
+        b = (byte & 0b11) * 255 // 3
+        palette.append((r, g, b))
+    return palette
+
+# ========== Tile Reader ==========
+def get_tile(memory, tile_index):
+    base = TILE_DATA_ADDR + tile_index * 128
+    pixels = []
+    for i in range(128):
+        if base + i >= len(memory):
+            pixels.append(0)  # default to color index 0 (black)
+            pixels.append(0)
+        else:
+            byte = memory[base + i]
+            pixels.append(byte & 0x0F)
+            pixels.append((byte >> 4) & 0x0F)
+    return pixels
+
+# ========== Draw Screen ==========
+def draw_screen(screen, memory):
+    palette = get_palette(memory)
+    for row in range(ROWS):
+        for col in range(COLS):
+            tile_index = memory[TILE_MAP_ADDR + row * COLS + col]
+            tile_pixels = get_tile(memory, tile_index)
+            for y in range(TILE_SIZE):
+                for x in range(TILE_SIZE):
+                    color_index = tile_pixels[y * TILE_SIZE + x]
+                    color = palette[color_index]
+                    screen.set_at((col * TILE_SIZE + x, row * TILE_SIZE + y), color)
+    
+def run_simulator_with_graphics(simulator, step=False):
+    simulator.running = True
+
+    # Init pygame
+    pygame.init()
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("ZX16 Simulator + Graphics")
+    clock = pygame.time.Clock()
+
+    monitored_keys = {
+        pygame.K_w: 0x77,         # 'w'
+        pygame.K_s: 0x73,         # 's'
+        pygame.K_UP: 0x26,        # up arrow
+        pygame.K_DOWN: 0x28       # down arrow
+    }
+    simulator.key_state = {code: 0 for code in monitored_keys.values()}
+
+    print(f"Code Start: {simulator.pc}")
+    print(f"Data Start: {simulator.data_start}")
+
+    instructions_map = simulator.map_disassembly_result_to_pc(
+        simulator.disassembler.disassemble(simulator.memory, simulator.pc)
+    )
+
+    while simulator.pc < len(simulator.memory) and simulator.running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                simulator.running = False
+                pygame.quit()
+                return
+
+        # Update keys
+        keys = pygame.key.get_pressed()
+        for pygame_key, internal_code in monitored_keys.items():
+            simulator.key_state[internal_code] = 1 if keys[pygame_key] else 0
+
+        # Handle PC out of code bounds
+        if simulator.pc >= simulator.PCrange:
+            print(f"PC {simulator.pc:04X} out of memory bounds (max: {len(simulator.memory) - 1:04X})")
+            break
+
+        # Re-disassemble if needed
+        if simulator.pc not in instructions_map:
+            disassembly_result = simulator.disassembler.disassemble(simulator.memory, simulator.pc)
+            instructions_map.update(simulator.map_disassembly_result_to_pc(disassembly_result))
+
+        current_instruction = instructions_map.get(simulator.pc)
+        if current_instruction is None or current_instruction.instruction is None:
+            print(f"Skipping instruction at PC: {simulator.pc:04X} (no instruction found)")
+            simulator.pc += simulator.pc_step
+            continue
+
+        # Print instruction
+        print(f"PC: {simulator.pc:04X} - {current_instruction.instruction.mnemonic} {', '.join(current_instruction.operands)}")
+        simulator.print_registers()
+
+        # Execute instruction
+        prev_pc = simulator.pc
+        try:
+            success = simulator.execute_instruction(current_instruction)
+        except Exception as e:
+            print(f"Error executing instruction at PC {simulator.pc:04X}: {e}")
+            break
+
+        if not success:
+            print("Execution terminated by instruction.")
+            break
+
+        # If PC hasn't changed, increment
+        if simulator.pc == prev_pc:
+            simulator.pc += simulator.pc_step
+
+        # Step mode
+        if step:
+            input("Press Enter to continue (or Ctrl+C to quit)...")
+
+        draw_screen(screen, simulator.memory)
+        pygame.display.flip()
+        clock.tick(30)
+
+    print("Simulation completed")
+    simulator.dump_memory(0xFA00, 0xFA03)
+
+def main():
+    if len(sys.argv) != 2:
+        print(f"Usage: {sys.argv[0]} <machine_code_file>", file=sys.stderr)
+        sys.exit(1)
+
+
+    filename = sys.argv[1]
+    print(f"Start: Loading {filename}")
+    
+    # Check if file exists
+    if not Path(filename).exists():
+        print(f"Error: File '{filename}' not found", file=sys.stderr)
+        sys.exit(1)
+    
+    isa_loader = ISALoader()
+    symbol_table = SymbolTable()
+    disassembler = Disassembler(isa_loader.load_isa("zx16"), symbol_table)
+    simulator = Simulator(isa_loader.load_isa("zx16"), symbol_table, disassembler)
+    if not simulator.load_memory_from_file(filename):
+        sys.exit(1)
+
+    run_simulator_with_graphics(simulator)
+
+    return 0
+
+
+if __name__ == "__main__":
+    main()
