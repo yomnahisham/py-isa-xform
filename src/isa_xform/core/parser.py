@@ -130,7 +130,7 @@ class Parser:
             self.immediate_prefix = syntax.immediate_prefix
             self.hex_prefix = syntax.hex_prefix
             self.binary_prefix = syntax.binary_prefix
-            self.case_sensitive = syntax.case_sensitive
+            self.case_sensitive = syntax.case_sensitive if hasattr(syntax, 'case_sensitive') else True
     
     def parse(self, text: str, file: Optional[str] = None) -> List[ASTNode]:
         """Parse assembly text into AST nodes"""
@@ -318,11 +318,8 @@ class Parser:
         
         # Map ParsedOperand to OperandNode
         if parsed.type == 'register' and parsed.value is not None:
-            # Normalize register name if case insensitive
-            if not self.case_sensitive:
-                normalized_name = parsed.value.name.upper()
-            else:
-                normalized_name = parsed.value.name
+            # Always preserve the original register name from the ISA definition
+            normalized_name = parsed.value.name
             return OperandNode(normalized_name, 'register', line_num, 1, file)
         elif parsed.type == 'immediate' and parsed.value is not None:
             return OperandNode(parsed.value, 'immediate', line_num, 1, file)
@@ -336,16 +333,14 @@ class Parser:
         else:
             # Fallback to legacy
             return self._parse_operand(operand_str, line_num, file)
-    
+
     def _parse_operand(self, operand_str: str, line_num: int, file: Optional[str]) -> Optional[OperandNode]:
         operand_str = operand_str.strip()
         if not operand_str:
             return None
-        
         # Get register formatting config from ISA
         reg_config = getattr(self.isa_definition, 'register_formatting', {})
         prefix = reg_config.get('prefix', 'x')
-        
         # Handle offset($reg) or offset(Rreg)
         if '(' in operand_str and operand_str.endswith(')'):
             offset_part, reg_part = operand_str.split('(', 1)
@@ -360,7 +355,6 @@ class Parser:
             reg_node = OperandNode(reg, "register", line_num, 1, file)
             # Return as a memory operand node
             return OperandNode((offset_node, reg_node), "mem", line_num, 1, file)
-        
         # Immediate value (starts with #)
         if operand_str.startswith('#'):
             value = operand_str[1:]  # Remove #
@@ -377,26 +371,24 @@ class Parser:
                 except ValueError:
                     pass
             return OperandNode(value, "immediate", line_num, 1, file)
-        
         # Register (starts with prefix or is a register name)
         if operand_str.startswith(prefix):
             reg_name = operand_str[len(prefix):]
             if self._is_register(operand_str):
-                return OperandNode(operand_str, "register", line_num, 1, file)
-            if self._is_register(reg_name):
-                return OperandNode(operand_str, "register", line_num, 1, file)  # Keep full name with prefix
-        if self._is_register(operand_str):
-            # Normalize register name to uppercase if case insensitive
-            if not self.case_sensitive:
-                normalized_name = operand_str.upper()
-            else:
+                # Always preserve the original case from the ISA definition
                 normalized_name = operand_str
+                return OperandNode(normalized_name, "register", line_num, 1, file)
+            if self._is_register(reg_name):
+                # Always preserve the original case from the ISA definition
+                normalized_name = operand_str
+                return OperandNode(normalized_name, "register", line_num, 1, file)  # Keep full name with prefix
+        if self._is_register(operand_str):
+            # Always preserve the original case from the ISA definition
+            normalized_name = operand_str
             return OperandNode(normalized_name, "register", line_num, 1, file)
-        
         # Check if it's a number
         if self._is_number(operand_str):
             return OperandNode(operand_str, "immediate", line_num, 1, file)
-        
         # Must be a label
         return OperandNode(operand_str, "label", line_num, 1, file)
     

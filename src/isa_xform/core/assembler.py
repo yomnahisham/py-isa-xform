@@ -900,10 +900,12 @@ class Assembler:
         """Resolve immediate operand to integer value"""
         if operand.type == "immediate":
             try:
-                # Parse the immediate value
+                # If already int, return as is
+                if isinstance(operand.value, int):
+                    return operand.value
+                # Parse the immediate value if it's a string
                 value = self._parse_number(operand.value)
                 return value
-                
             except ValueError as e:
                 self._report_error(
                     line_number=getattr(operand, 'line', 0),
@@ -915,7 +917,6 @@ class Assembler:
                     context=f"ISA: {self.isa_definition.name}"
                 )
                 return 0  # Return 0 as fallback
-                
         elif operand.type == "label":
             # This should be handled by _resolve_address_operand
             return self._resolve_address_operand(operand)
