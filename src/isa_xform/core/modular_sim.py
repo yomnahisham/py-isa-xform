@@ -6,10 +6,10 @@ import warnings
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
-from .disassembler import Disassembler, DisassembledInstruction, DisassemblyResult
-from .isa_loader import ISADefinition, Register
-from .symbol_table import SymbolTable
-from ..utils.bit_utils import (
+from isa_xform.core.disassembler import Disassembler, DisassembledInstruction, DisassemblyResult
+from isa_xform.core.isa_loader import ISADefinition, ISALoader, Register
+from isa_xform.core.symbol_table import SymbolTable
+from isa_xform.utils.bit_utils import (
     extract_bits, set_bits, sign_extend, parse_bit_range, 
     create_mask, bytes_to_int, int_to_bytes
 )
@@ -495,8 +495,6 @@ def draw_screen(screen, memory):
                     screen.set_at((col * TILE_SIZE + x, row * TILE_SIZE + y), color)
     
 def run_simulator_with_graphics(simulator, step=False):
-    disassembly_result = simulator.disassembler.disassemble(simulator.memory, simulator.pc)
-    instructions_map = simulator.map_disassembly_result_to_pc(disassembly_result)
     simulator.running = True
 
     # Init pygame
@@ -514,7 +512,11 @@ def run_simulator_with_graphics(simulator, step=False):
     simulator.key_state = {code: 0 for code in monitored_keys.values()}
 
     print(f"Code Start: {simulator.pc}")
-    print(f"Data Start: {simulator.data_start} ")
+    print(f"Data Start: {simulator.data_start}")
+
+    instructions_map = simulator.map_disassembly_result_to_pc(
+        simulator.disassembler.disassemble(simulator.memory, simulator.pc)
+    )
 
     while simulator.pc < len(simulator.memory) and simulator.running:
         for event in pygame.event.get():
@@ -528,40 +530,78 @@ def run_simulator_with_graphics(simulator, step=False):
         for pygame_key, internal_code in monitored_keys.items():
             simulator.key_state[internal_code] = 1 if keys[pygame_key] else 0
 
-        # Fetch and execute instruction
+        # Handle PC out of code bounds
+        if simulator.pc >= simulator.PCrange:
+            print(f"PC {simulator.pc:04X} out of memory bounds (max: {len(simulator.memory) - 1:04X})")
+            break
+
+        # Re-disassemble if needed
         if simulator.pc not in instructions_map:
-            if simulator.pc >= simulator.PCrange:
-                print(f"PC {simulator.pc:04X} out of memory bounds (max: {len(simulator.memory) - 1:04X})")
-                simulator.running = False
-                break
-            else:
-                print(f"Skipping instruction at PC: {simulator.pc:04X} (no instruction found)")
-                simulator.pc += simulator.pc_step
-                break
-                continue
+            disassembly_result = simulator.disassembler.disassemble(simulator.memory, simulator.pc)
+            instructions_map.update(simulator.map_disassembly_result_to_pc(disassembly_result))
 
-            print(f"PC: {self.pc:04X} - {current_instruction.mnemonic} {', '.join(current_instruction.operands)}")
-            temp_pc = self.pc
-            if self.execute_instruction(current_instruction):
-                if temp_pc == self.pc:
-                    self.pc += self.pc_step
-                if "NOP" in current_instruction.mnemonic:
-                    return True
-                    continue
-                else:
-                    if step:
-                        self.print_registers()
-                        loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
-                    else:
-                        self.print_registers()
-                        # print("Reached end of disassembled instructions")
-                        # break
-                    # for i in range(0, 65536, 2):
-                    #     if self.memory[i] | (self.memory[i+1] << 8) != 0:
-                    #         print(f"Memory[{i:04X}]: {self.memory[i] | (self.memory[i+1] << 8) if i+1 < len(self.memory) else 0}")
-                
-            else:
-                print("Execution terminated by instruction")
-                break
-        print("Simulation completed")
+        current_instruction = instructions_map.get(simulator.pc)
+        if current_instruction is None:
+            print(f"Skipping instruction at PC: {simulator.pc:04X} (no instruction found)")
+            simulator.pc += simulator.pc_step
+            continue
 
+        # Print instruction
+        print(f"PC: {simulator.pc:04X} - {current_instruction.instruction.mnemonic} {', '.join(current_instruction.operands)}")
+        simulator.print_registers()
+
+        # Execute instruction
+        prev_pc = simulator.pc
+        try:
+            success = simulator.execute_instruction(current_instruction)
+        except Exception as e:
+            print(f"Error executing instruction at PC {simulator.pc:04X}: {e}")
+            break
+
+        if not success:
+            print("Execution terminated by instruction.")
+            break
+
+        # If PC hasn't changed, increment
+        if simulator.pc == prev_pc:
+            simulator.pc += simulator.pc_step
+
+        # Step mode
+        if step:
+            input("Press Enter to continue (or Ctrl+C to quit)...")
+
+        draw_screen(screen, simulator.memory)
+        pygame.display.flip()
+        clock.tick(30)
+
+    print("Simulation completed")
+    simulator.dump_memory(0xFA00, 0xFA03)
+
+def main():
+    if len(sys.argv) != 2:
+        print(f"Usage: {sys.argv[0]} <machine_code_file>", file=sys.stderr)
+        sys.exit(1)
+
+
+    filename = sys.argv[1]
+    print(f"Start: Loading {filename}")
+    
+    # Check if file exists
+    if not Path(filename).exists():
+        print(f"Error: File '{filename}' not found", file=sys.stderr)
+        sys.exit(1)
+    
+    isa_loader = ISALoader()
+    symbol_table = SymbolTable()
+    disassembler = Disassembler(isa_loader.load_isa("zx16"), symbol_table)
+    simulator = Simulator(isa_loader.load_isa("zx16"), symbol_table, disassembler)
+    if not simulator.load_memory_from_file(filename):
+        sys.exit(1)
+
+    run_simulator_with_graphics(simulator)
+
+    return 0
+
+
+if __name__ == "__main__":
+    main()
