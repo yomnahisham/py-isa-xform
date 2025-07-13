@@ -1,0 +1,971 @@
+{
+    "name": "RV32I",
+    "version": "2.1",
+    "description": "RISC-V 32-bit Integer Base Instruction Set",
+    "instruction_size": 32,
+    "word_size": 32,
+    "endianness": "little",
+    "address_space": {
+        "size": 4294967296,
+        "default_code_start": 0,
+        "default_data_start": 0,
+        "default_stack_start": 0,
+        "memory_layout": {
+            "code_section": {"start": 0, "end": 4294967295},
+            "data_section": {"start": 0, "end": 4294967295},
+            "stack_section": {"start": 0, "end": 4294967295}
+        }
+    },
+    "pc_behavior": {
+        "points_to": "next_instruction",
+        "offset_for_jumps": 0,
+        "jump_offset_calculation": "target_minus_pc",
+        "disassembly": {
+            "jump_target_calculation": "pc_plus_offset",
+            "pc_value_for_jumps": "instruction_address_plus_pc_offset"
+        }
+    },
+    "instruction_architecture": {
+        "instruction_size": 32,
+        "instruction_size_bytes": 4,
+        "variable_length": false,
+        "alignment": 4,
+        "max_instruction_length": 32,
+        "address_bits": 32,
+        "address_mask": "0xFFFFFFFF",
+        "pc_increment": 4,
+        "immediate_widths": {
+            "i_type": 12,
+            "s_type": 12,
+            "b_type": 13,
+            "u_type": 20,
+            "j_type": 21
+        },
+        "shift_config": {
+            "type_width": 1,
+            "amount_width": 5
+        },
+        "register_count": 32,
+        "register_bits": 5
+    },
+    "register_formatting": {
+        "prefix": "x",
+        "suffix": "",
+        "case": "lower",
+        "zero_register": "x0",
+        "alternatives": {
+            "x0": ["zero"],
+            "x1": ["ra"],
+            "x2": ["sp"],
+            "x3": ["gp"],
+            "x4": ["tp"],
+            "x5": ["t0"],
+            "x6": ["t1"],
+            "x7": ["t2"],
+            "x8": ["s0", "fp"],
+            "x9": ["s1"],
+            "x10": ["a0"],
+            "x11": ["a1"],
+            "x12": ["a2"],
+            "x13": ["a3"],
+            "x14": ["a4"],
+            "x15": ["a5"],
+            "x16": ["a6"],
+            "x17": ["a7"],
+            "x18": ["s2"],
+            "x19": ["s3"],
+            "x20": ["s4"],
+            "x21": ["s5"],
+            "x22": ["s6"],
+            "x23": ["s7"],
+            "x24": ["s8"],
+            "x25": ["s9"],
+            "x26": ["s10"],
+            "x27": ["s11"],
+            "x28": ["t3"],
+            "x29": ["t4"],
+            "x30": ["t5"],
+            "x31": ["t6"]
+        }
+    },
+    "operand_formatting": {
+        "immediate_prefix": "",
+        "hex_prefix": "0x",
+        "binary_prefix": "0b",
+        "register_prefix": "x",
+        "address_format": "0x{addr:X}",
+        "immediate_format": "{value}",
+        "register_format": "x{reg}",
+        "separators": {
+            "operand": ", ",
+            "address": "(",
+            "address_close": ")"
+        },
+        "disassembly": {
+            "immediate_format": "decimal",
+            "hex_threshold": 255,
+            "negative_hex_threshold": -255,
+            "always_decimal_for": ["ADDI", "SLTI", "SLTIU", "XORI", "ORI", "ANDI", "SLLI", "SRLI", "SRAI"],
+            "always_hex_for": ["LUI", "AUIPC", "JAL", "JALR", "BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU"]
+        }
+    },
+    "assembly_syntax": {
+        "comment_char": "#",
+        "comment_chars": ["#"],
+        "label_suffix": ":",
+        "register_prefix": "x",
+        "immediate_prefix": "",
+        "hex_prefix": "0x",
+        "binary_prefix": "0b",
+        "case_sensitive": false
+    },
+    "registers": {
+        "general_purpose": [
+            {"name": "x0", "number": 0, "size": 32, "alias": ["zero"], "description": "Hard-wired zero"},
+            {"name": "x1", "number": 1, "size": 32, "alias": ["ra"], "description": "Return address"},
+            {"name": "x2", "number": 2, "size": 32, "alias": ["sp"], "description": "Stack pointer"},
+            {"name": "x3", "number": 3, "size": 32, "alias": ["gp"], "description": "Global pointer"},
+            {"name": "x4", "number": 4, "size": 32, "alias": ["tp"], "description": "Thread pointer"},
+            {"name": "x5", "number": 5, "size": 32, "alias": ["t0"], "description": "Temporary/alternate link register"},
+            {"name": "x6", "number": 6, "size": 32, "alias": ["t1"], "description": "Temporary"},
+            {"name": "x7", "number": 7, "size": 32, "alias": ["t2"], "description": "Temporary"},
+            {"name": "x8", "number": 8, "size": 32, "alias": ["s0", "fp"], "description": "Saved register/frame pointer"},
+            {"name": "x9", "number": 9, "size": 32, "alias": ["s1"], "description": "Saved register"},
+            {"name": "x10", "number": 10, "size": 32, "alias": ["a0"], "description": "Function argument/return value"},
+            {"name": "x11", "number": 11, "size": 32, "alias": ["a1"], "description": "Function argument/return value"},
+            {"name": "x12", "number": 12, "size": 32, "alias": ["a2"], "description": "Function argument"},
+            {"name": "x13", "number": 13, "size": 32, "alias": ["a3"], "description": "Function argument"},
+            {"name": "x14", "number": 14, "size": 32, "alias": ["a4"], "description": "Function argument"},
+            {"name": "x15", "number": 15, "size": 32, "alias": ["a5"], "description": "Function argument"},
+            {"name": "x16", "number": 16, "size": 32, "alias": ["a6"], "description": "Function argument"},
+            {"name": "x17", "number": 17, "size": 32, "alias": ["a7"], "description": "Function argument"},
+            {"name": "x18", "number": 18, "size": 32, "alias": ["s2"], "description": "Saved register"},
+            {"name": "x19", "number": 19, "size": 32, "alias": ["s3"], "description": "Saved register"},
+            {"name": "x20", "number": 20, "size": 32, "alias": ["s4"], "description": "Saved register"},
+            {"name": "x21", "number": 21, "size": 32, "alias": ["s5"], "description": "Saved register"},
+            {"name": "x22", "number": 22, "size": 32, "alias": ["s6"], "description": "Saved register"},
+            {"name": "x23", "number": 23, "size": 32, "alias": ["s7"], "description": "Saved register"},
+            {"name": "x24", "number": 24, "size": 32, "alias": ["s8"], "description": "Saved register"},
+            {"name": "x25", "number": 25, "size": 32, "alias": ["s9"], "description": "Saved register"},
+            {"name": "x26", "number": 26, "size": 32, "alias": ["s10"], "description": "Saved register"},
+            {"name": "x27", "number": 27, "size": 32, "alias": ["s11"], "description": "Saved register"},
+            {"name": "x28", "number": 28, "size": 32, "alias": ["t3"], "description": "Temporary"},
+            {"name": "x29", "number": 29, "size": 32, "alias": ["t4"], "description": "Temporary"},
+            {"name": "x30", "number": 30, "size": 32, "alias": ["t5"], "description": "Temporary"},
+            {"name": "x31", "number": 31, "size": 32, "alias": ["t6"], "description": "Temporary"}
+        ]
+    },
+    "constants": {
+        "word_mask": {"value": 4294967295, "description": "32-bit word mask (0xFFFFFFFF)"},
+        "sign_bit_mask": {"value": 2147483648, "description": "32-bit sign bit mask (0x80000000)"},
+        "max_signed_value": {"value": 2147483647, "description": "Maximum 32-bit signed value (0x7FFFFFFF)"},
+        "min_signed_value": {"value": -2147483648, "description": "Minimum 32-bit signed value (-0x80000000)"},
+        "address_mask": {"value": 4294967295, "description": "32-bit address mask (0xFFFFFFFF)"},
+        "register_count": {"value": 32, "description": "Number of registers (x0-x31)"},
+        "immediate_sign_bit_12": {"value": 2048, "description": "12-bit immediate sign bit (0x800)"},
+        "immediate_sign_extend_12": {"value": 4294963200, "description": "12-bit immediate sign extension (0xFFFFF800)"},
+        "branch_sign_extend_13": {"value": 4294959104, "description": "13-bit branch sign extension (0xFFFFE000)"},
+        "jump_sign_extend_21": {"value": 4290772992, "description": "21-bit jump sign extension (0xFFE00000)"},
+        "shift_amount_mask": {"value": 31, "description": "5-bit shift amount mask (0x1F)"}
+    },
+    "instruction_categories": {
+        "control_flow": {
+            "jumps": ["JAL", "JALR"],
+            "branches": ["BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU"],
+            "calls": ["ECALL", "EBREAK"],
+            "returns": ["JALR"]
+        },
+        "data_movement": ["LB", "LH", "LW", "LBU", "LHU", "SB", "SH", "SW", "LUI", "AUIPC"],
+        "arithmetic": ["ADD", "ADDI", "SUB", "SLT", "SLTI", "SLTU", "SLTIU"],
+        "logical": ["AND", "ANDI", "OR", "ORI", "XOR", "XORI", "SLL", "SLLI", "SRL", "SRLI", "SRA", "SRAI"]
+    },
+    "pseudo_instruction_fallbacks": {
+        "hide_operands_by_default": false,
+        "default_behavior": "show_operands",
+        "fallback_rules": {
+            "NOP": "hide_operands",
+            "RET": "hide_operands",
+            "MV": "hide_operands",
+            "NOT": "hide_operands",
+            "NEG": "hide_operands",
+            "J": "hide_operands",
+            "JR": "hide_operands",
+            "CALL": "hide_operands",
+            "TAIL": "hide_operands"
+        }
+    },
+    "data_detection": {
+        "string_encodings": ["ascii", "utf8"],
+        "ascii_threshold": 0.8,
+        "min_string_length": 3,
+        "max_string_length": 100,
+        "detect_zeros": true,
+        "detect_patterns": ["repeating", "incrementing", "decrementing"]
+    },
+    "symbol_resolution": {
+        "case_sensitive": false,
+        "scope_rules": {
+            "local": ".",
+            "global": "",
+            "external": "_"
+        },
+        "naming_conventions": {
+            "functions": "func_{name}",
+            "variables": "var_{name}",
+            "constants": "CONST_{name}"
+        },
+        "precedence": ["local", "global", "external"]
+    },
+    "error_messages": {
+        "unknown_instruction": "Unknown instruction '{instruction}' at line {line}",
+        "invalid_operand": "Invalid operand '{operand}' for instruction '{instruction}'",
+        "undefined_symbol": "Undefined symbol '{symbol}' referenced at line {line}",
+        "invalid_address": "Invalid address {address} for {context}",
+        "format": {
+            "locale": "en_US",
+            "date_format": "YYYY-MM-DD",
+            "time_format": "HH:MM:SS"
+        }
+    },
+    "instructions": [
+        {
+            "mnemonic": "ADD",
+            "opcode": "0110011",
+            "format": "R-type",
+            "description": "Add registers",
+            "syntax": "ADD rd, rs1, rs2",
+            "semantics": "rd = rs1 + rs2",
+            "implementation": "# Add instruction implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = (rs1_val + rs2_val) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0000000"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "000"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SUB",
+            "opcode": "0110011",
+            "format": "R-type",
+            "description": "Subtract registers",
+            "syntax": "SUB rd, rs1, rs2",
+            "semantics": "rd = rs1 - rs2",
+            "implementation": "# Subtract instruction implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = (rs1_val - rs2_val) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0100000"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "000"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SLL",
+            "opcode": "0110011",
+            "format": "R-type",
+            "description": "Shift left logical",
+            "syntax": "SLL rd, rs1, rs2",
+            "semantics": "rd = rs1 << (rs2 & 0x1F)",
+            "implementation": "# Shift left logical implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0x1F\nresult = (rs1_val << shift_amount) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0000000"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "001"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SLT",
+            "opcode": "0110011",
+            "format": "R-type",
+            "description": "Set if less than (signed)",
+            "syntax": "SLT rd, rs1, rs2",
+            "semantics": "rd = (rs1 < rs2) ? 1 : 0",
+            "implementation": "# Set if less than implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = 1 if (rs1_val & 0x80000000) != (rs2_val & 0x80000000) ? (rs1_val & 0x80000000) != 0 : rs1_val < rs2_val else 0\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0000000"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "010"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SLTU",
+            "opcode": "0110011",
+            "format": "R-type",
+            "description": "Set if less than unsigned",
+            "syntax": "SLTU rd, rs1, rs2",
+            "semantics": "rd = (rs1 < rs2) ? 1 : 0",
+            "implementation": "# Set if less than unsigned implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = 1 if rs1_val < rs2_val else 0\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0000000"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "011"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "XOR",
+            "opcode": "0110011",
+            "format": "R-type",
+            "description": "XOR registers",
+            "syntax": "XOR rd, rs1, rs2",
+            "semantics": "rd = rs1 ^ rs2",
+            "implementation": "# XOR instruction implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = rs1_val ^ rs2_val\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0000000"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "100"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SRL",
+            "opcode": "0110011",
+            "format": "R-type",
+            "description": "Shift right logical",
+            "syntax": "SRL rd, rs1, rs2",
+            "semantics": "rd = rs1 >> (rs2 & 0x1F)",
+            "implementation": "# Shift right logical implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0x1F\nresult = (rs1_val >> shift_amount) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0000000"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "101"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SRA",
+            "opcode": "0110011",
+            "format": "R-type",
+            "description": "Shift right arithmetic",
+            "syntax": "SRA rd, rs1, rs2",
+            "semantics": "rd = rs1 >> (rs2 & 0x1F)",
+            "implementation": "# Shift right arithmetic implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0x1F\n# Arithmetic shift preserves sign bit\nif (rs1_val & 0x80000000) != 0:\n    result = (rs1_val >> shift_amount) | (0xFFFFFFFF << (32 - shift_amount))\nelse:\n    result = (rs1_val >> shift_amount)\nresult &= 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0100000"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "101"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "OR",
+            "opcode": "0110011",
+            "format": "R-type",
+            "description": "OR registers",
+            "syntax": "OR rd, rs1, rs2",
+            "semantics": "rd = rs1 | rs2",
+            "implementation": "# OR instruction implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = rs1_val | rs2_val\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0000000"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "110"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "AND",
+            "opcode": "0110011",
+            "format": "R-type",
+            "description": "AND registers",
+            "syntax": "AND rd, rs1, rs2",
+            "semantics": "rd = rs1 & rs2",
+            "implementation": "# AND instruction implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = rs1_val & rs2_val\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0000000"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "111"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "ADDI",
+            "opcode": "0010011",
+            "format": "I-type",
+            "description": "Add immediate",
+            "syntax": "ADDI rd, rs1, imm",
+            "semantics": "rd = rs1 + imm",
+            "implementation": "# Add immediate implementation\nrs1_val = read_register(operands['rs1'])\nimm_val = sign_extend(operands['imm'], 12)\nresult = (rs1_val + imm_val) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "000"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0010011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SLTI",
+            "opcode": "0010011",
+            "format": "I-type",
+            "description": "Set if less than immediate (signed)",
+            "syntax": "SLTI rd, rs1, imm",
+            "semantics": "rd = (rs1 < imm) ? 1 : 0",
+            "implementation": "# Set if less than immediate implementation\nrs1_val = read_register(operands['rs1'])\nimm_val = sign_extend(operands['imm'], 12)\nresult = 1 if rs1_val < imm_val else 0\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "010"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0010011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SLTIU",
+            "opcode": "0010011",
+            "format": "I-type",
+            "description": "Set if less than immediate unsigned",
+            "syntax": "SLTIU rd, rs1, imm",
+            "semantics": "rd = (rs1 < imm) ? 1 : 0",
+            "implementation": "# Set if less than immediate unsigned implementation\nrs1_val = read_register(operands['rs1'])\nimm_val = sign_extend(operands['imm'], 12)\nresult = 1 if rs1_val < imm_val else 0\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "011"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0010011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "XORI",
+            "opcode": "0010011",
+            "format": "I-type",
+            "description": "XOR immediate",
+            "syntax": "XORI rd, rs1, imm",
+            "semantics": "rd = rs1 ^ imm",
+            "implementation": "# XOR immediate implementation\nrs1_val = read_register(operands['rs1'])\nimm_val = sign_extend(operands['imm'], 12)\nresult = rs1_val ^ imm_val\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "100"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0010011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "ORI",
+            "opcode": "0010011",
+            "format": "I-type",
+            "description": "OR immediate",
+            "syntax": "ORI rd, rs1, imm",
+            "semantics": "rd = rs1 | imm",
+            "implementation": "# OR immediate implementation\nrs1_val = read_register(operands['rs1'])\nimm_val = sign_extend(operands['imm'], 12)\nresult = rs1_val | imm_val\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "110"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0010011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "ANDI",
+            "opcode": "0010011",
+            "format": "I-type",
+            "description": "AND immediate",
+            "syntax": "ANDI rd, rs1, imm",
+            "semantics": "rd = rs1 & imm",
+            "implementation": "# AND immediate implementation\nrs1_val = read_register(operands['rs1'])\nimm_val = sign_extend(operands['imm'], 12)\nresult = rs1_val & imm_val\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "111"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0010011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SLLI",
+            "opcode": "0010011",
+            "format": "I-type",
+            "description": "Shift left logical immediate",
+            "syntax": "SLLI rd, rs1, shamt",
+            "semantics": "rd = rs1 << shamt",
+            "implementation": "# Shift left logical immediate implementation\nrs1_val = read_register(operands['rs1'])\nshamt = operands['shamt'] & 0x1F\nresult = (rs1_val << shamt) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0000000"},
+                    {"name": "shamt", "bits": "24:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "001"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0010011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SRLI",
+            "opcode": "0010011",
+            "format": "I-type",
+            "description": "Shift right logical immediate",
+            "syntax": "SRLI rd, rs1, shamt",
+            "semantics": "rd = rs1 >> shamt",
+            "implementation": "# Shift right logical immediate implementation\nrs1_val = read_register(operands['rs1'])\nshamt = operands['shamt'] & 0x1F\nresult = (rs1_val >> shamt) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0000000"},
+                    {"name": "shamt", "bits": "24:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "101"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0010011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SRAI",
+            "opcode": "0010011",
+            "format": "I-type",
+            "description": "Shift right arithmetic immediate",
+            "syntax": "SRAI rd, rs1, shamt",
+            "semantics": "rd = rs1 >> shamt",
+            "implementation": "# Shift right arithmetic immediate implementation\nrs1_val = read_register(operands['rs1'])\nshamt = operands['shamt'] & 0x1F\n# Arithmetic shift preserves sign bit\nif (rs1_val & 0x80000000) != 0:\n    result = (rs1_val >> shamt) | (0xFFFFFFFF << (32 - shamt))\nelse:\n    result = (rs1_val >> shamt)\nresult &= 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "funct7", "bits": "31:25", "value": "0100000"},
+                    {"name": "shamt", "bits": "24:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "101"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0010011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "LB",
+            "opcode": "0000011",
+            "format": "I-type",
+            "description": "Load byte",
+            "syntax": "LB rd, offset(rs1)",
+            "semantics": "rd = Memory[rs1 + offset]",
+            "implementation": "# Load byte implementation\nrs1_val = read_register(operands['rs1'])\noffset = sign_extend(operands['offset'], 12)\naddr = (rs1_val + offset) & 0xFFFFFFFF\nvalue = read_memory_byte(addr)\nresult = sign_extend(value, 8)\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "000"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0000011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "LH",
+            "opcode": "0000011",
+            "format": "I-type",
+            "description": "Load halfword",
+            "syntax": "LH rd, offset(rs1)",
+            "semantics": "rd = Memory[rs1 + offset]",
+            "implementation": "# Load halfword implementation\nrs1_val = read_register(operands['rs1'])\noffset = sign_extend(operands['offset'], 12)\naddr = (rs1_val + offset) & 0xFFFFFFFF\nvalue = read_memory_halfword(addr)\nresult = sign_extend(value, 16)\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "001"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0000011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "LW",
+            "opcode": "0000011",
+            "format": "I-type",
+            "description": "Load word",
+            "syntax": "LW rd, offset(rs1)",
+            "semantics": "rd = Memory[rs1 + offset]",
+            "implementation": "# Load word implementation\nrs1_val = read_register(operands['rs1'])\noffset = sign_extend(operands['offset'], 12)\naddr = (rs1_val + offset) & 0xFFFFFFFF\nvalue = read_memory_word(addr)\nwrite_register(operands['rd'], value)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "010"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0000011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "LBU",
+            "opcode": "0000011",
+            "format": "I-type",
+            "description": "Load byte unsigned",
+            "syntax": "LBU rd, offset(rs1)",
+            "semantics": "rd = Memory[rs1 + offset]",
+            "implementation": "# Load byte unsigned implementation\nrs1_val = read_register(operands['rs1'])\noffset = sign_extend(operands['offset'], 12)\naddr = (rs1_val + offset) & 0xFFFFFFFF\nvalue = read_memory_byte(addr)\nresult = value & 0xFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "100"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0000011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "LHU",
+            "opcode": "0000011",
+            "format": "I-type",
+            "description": "Load halfword unsigned",
+            "syntax": "LHU rd, offset(rs1)",
+            "semantics": "rd = Memory[rs1 + offset]",
+            "implementation": "# Load halfword unsigned implementation\nrs1_val = read_register(operands['rs1'])\noffset = sign_extend(operands['offset'], 12)\naddr = (rs1_val + offset) & 0xFFFFFFFF\nvalue = read_memory_halfword(addr)\nresult = value & 0xFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "101"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0000011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SB",
+            "opcode": "0100011",
+            "format": "S-type",
+            "description": "Store byte",
+            "syntax": "SB rs2, offset(rs1)",
+            "semantics": "Memory[rs1 + offset] = rs2",
+            "implementation": "# Store byte implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = sign_extend(operands['offset'], 12)\naddr = (rs1_val + offset) & 0xFFFFFFFF\nvalue = rs2_val & 0xFF\nwrite_memory_byte(addr, value)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm_11_5", "bits": "31:25", "type": "immediate"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "000"},
+                    {"name": "imm_4_0", "bits": "11:7", "type": "immediate"},
+                    {"name": "opcode", "bits": "6:0", "value": "0100011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SH",
+            "opcode": "0100011",
+            "format": "S-type",
+            "description": "Store halfword",
+            "syntax": "SH rs2, offset(rs1)",
+            "semantics": "Memory[rs1 + offset] = rs2",
+            "implementation": "# Store halfword implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = sign_extend(operands['offset'], 12)\naddr = (rs1_val + offset) & 0xFFFFFFFF\nvalue = rs2_val & 0xFFFF\nwrite_memory_halfword(addr, value)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm_11_5", "bits": "31:25", "type": "immediate"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "001"},
+                    {"name": "imm_4_0", "bits": "11:7", "type": "immediate"},
+                    {"name": "opcode", "bits": "6:0", "value": "0100011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "SW",
+            "opcode": "0100011",
+            "format": "S-type",
+            "description": "Store word",
+            "syntax": "SW rs2, offset(rs1)",
+            "semantics": "Memory[rs1 + offset] = rs2",
+            "implementation": "# Store word implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = sign_extend(operands['offset'], 12)\naddr = (rs1_val + offset) & 0xFFFFFFFF\nwrite_memory_word(addr, rs2_val)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm_11_5", "bits": "31:25", "type": "immediate"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "010"},
+                    {"name": "imm_4_0", "bits": "11:7", "type": "immediate"},
+                    {"name": "opcode", "bits": "6:0", "value": "0100011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "BEQ",
+            "opcode": "1100011",
+            "format": "B-type",
+            "description": "Branch if equal",
+            "syntax": "BEQ rs1, rs2, offset",
+            "semantics": "if (rs1 == rs2) pc += offset",
+            "implementation": "# Branch if equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = sign_extend(operands['offset'], 13)\nif rs1_val == rs2_val:\n    pc = (pc + offset) & 0xFFFFFFFF",
+            "encoding": {
+                "fields": [
+                    {"name": "imm_12", "bits": "31", "type": "immediate"},
+                    {"name": "imm_10_5", "bits": "30:25", "type": "immediate"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "000"},
+                    {"name": "imm_4_1", "bits": "11:8", "type": "immediate"},
+                    {"name": "imm_11", "bits": "7", "type": "immediate"},
+                    {"name": "opcode", "bits": "6:0", "value": "1100011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "BNE",
+            "opcode": "1100011",
+            "format": "B-type",
+            "description": "Branch if not equal",
+            "syntax": "BNE rs1, rs2, offset",
+            "semantics": "if (rs1 != rs2) pc += offset",
+            "implementation": "# Branch if not equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = sign_extend(operands['offset'], 13)\nif rs1_val != rs2_val:\n    pc = (pc + offset) & 0xFFFFFFFF",
+            "encoding": {
+                "fields": [
+                    {"name": "imm_12", "bits": "31", "type": "immediate"},
+                    {"name": "imm_10_5", "bits": "30:25", "type": "immediate"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "001"},
+                    {"name": "imm_4_1", "bits": "11:8", "type": "immediate"},
+                    {"name": "imm_11", "bits": "7", "type": "immediate"},
+                    {"name": "opcode", "bits": "6:0", "value": "1100011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "BLT",
+            "opcode": "1100011",
+            "format": "B-type",
+            "description": "Branch if less than (signed)",
+            "syntax": "BLT rs1, rs2, offset",
+            "semantics": "if (rs1 < rs2) pc += offset",
+            "implementation": "# Branch if less than implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = sign_extend(operands['offset'], 13)\nif rs1_val < rs2_val:\n    pc = (pc + offset) & 0xFFFFFFFF",
+            "encoding": {
+                "fields": [
+                    {"name": "imm_12", "bits": "31", "type": "immediate"},
+                    {"name": "imm_10_5", "bits": "30:25", "type": "immediate"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "100"},
+                    {"name": "imm_4_1", "bits": "11:8", "type": "immediate"},
+                    {"name": "imm_11", "bits": "7", "type": "immediate"},
+                    {"name": "opcode", "bits": "6:0", "value": "1100011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "BGE",
+            "opcode": "1100011",
+            "format": "B-type",
+            "description": "Branch if greater than or equal (signed)",
+            "syntax": "BGE rs1, rs2, offset",
+            "semantics": "if (rs1 >= rs2) pc += offset",
+            "implementation": "# Branch if greater than or equal implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = sign_extend(operands['offset'], 13)\nif rs1_val >= rs2_val:\n    pc = (pc + offset) & 0xFFFFFFFF",
+            "encoding": {
+                "fields": [
+                    {"name": "imm_12", "bits": "31", "type": "immediate"},
+                    {"name": "imm_10_5", "bits": "30:25", "type": "immediate"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "101"},
+                    {"name": "imm_4_1", "bits": "11:8", "type": "immediate"},
+                    {"name": "imm_11", "bits": "7", "type": "immediate"},
+                    {"name": "opcode", "bits": "6:0", "value": "1100011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "BLTU",
+            "opcode": "1100011",
+            "format": "B-type",
+            "description": "Branch if less than unsigned",
+            "syntax": "BLTU rs1, rs2, offset",
+            "semantics": "if (rs1 < rs2) pc += offset",
+            "implementation": "# Branch if less than unsigned implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = sign_extend(operands['offset'], 13)\nif rs1_val < rs2_val:\n    pc = (pc + offset) & 0xFFFFFFFF",
+            "encoding": {
+                "fields": [
+                    {"name": "imm_12", "bits": "31", "type": "immediate"},
+                    {"name": "imm_10_5", "bits": "30:25", "type": "immediate"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "110"},
+                    {"name": "imm_4_1", "bits": "11:8", "type": "immediate"},
+                    {"name": "imm_11", "bits": "7", "type": "immediate"},
+                    {"name": "opcode", "bits": "6:0", "value": "1100011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "BGEU",
+            "opcode": "1100011",
+            "format": "B-type",
+            "description": "Branch if greater than or equal unsigned",
+            "syntax": "BGEU rs1, rs2, offset",
+            "semantics": "if (rs1 >= rs2) pc += offset",
+            "implementation": "# Branch if greater than or equal unsigned implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = sign_extend(operands['offset'], 13)\nif rs1_val >= rs2_val:\n    pc = (pc + offset) & 0xFFFFFFFF",
+            "encoding": {
+                "fields": [
+                    {"name": "imm_12", "bits": "31", "type": "immediate"},
+                    {"name": "imm_10_5", "bits": "30:25", "type": "immediate"},
+                    {"name": "rs2", "bits": "24:20", "type": "register"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "111"},
+                    {"name": "imm_4_1", "bits": "11:8", "type": "immediate"},
+                    {"name": "imm_11", "bits": "7", "type": "immediate"},
+                    {"name": "opcode", "bits": "6:0", "value": "1100011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "JAL",
+            "opcode": "1101111",
+            "format": "J-type",
+            "description": "Jump and link",
+            "syntax": "JAL rd, offset",
+            "semantics": "rd = pc + 4; pc += offset",
+            "implementation": "# Jump and link implementation\noffset = sign_extend(operands['offset'], 21)\nreturn_addr = (pc + 4) & 0xFFFFFFFF\nwrite_register(operands['rd'], return_addr)\npc = (pc + offset) & 0xFFFFFFFF",
+            "encoding": {
+                "fields": [
+                    {"name": "imm_20", "bits": "31", "type": "immediate"},
+                    {"name": "imm_10_1", "bits": "30:21", "type": "immediate"},
+                    {"name": "imm_11", "bits": "20", "type": "immediate"},
+                    {"name": "imm_19_12", "bits": "19:12", "type": "immediate"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "1101111"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "JALR",
+            "opcode": "1100111",
+            "format": "I-type",
+            "description": "Jump and link register",
+            "syntax": "JALR rd, rs1, offset",
+            "semantics": "rd = pc + 4; pc = (rs1 + offset) & ~1",
+            "implementation": "# Jump and link register implementation\nrs1_val = read_register(operands['rs1'])\noffset = sign_extend(operands['offset'], 12)\nreturn_addr = (pc + 4) & 0xFFFFFFFF\nwrite_register(operands['rd'], return_addr)\npc = (rs1_val + offset) & 0xFFFFFFFE",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "type": "immediate"},
+                    {"name": "rs1", "bits": "19:15", "type": "register"},
+                    {"name": "funct3", "bits": "14:12", "value": "000"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "1100111"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "LUI",
+            "opcode": "0110111",
+            "format": "U-type",
+            "description": "Load upper immediate",
+            "syntax": "LUI rd, imm",
+            "semantics": "rd = imm << 12",
+            "implementation": "# Load upper immediate implementation\nimm_val = sign_extend(operands['imm'], 20)\nresult = (imm_val << 12) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:12", "type": "immediate"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0110111"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "AUIPC",
+            "opcode": "0010111",
+            "format": "U-type",
+            "description": "Add upper immediate to PC",
+            "syntax": "AUIPC rd, imm",
+            "semantics": "rd = pc + (imm << 12)",
+            "implementation": "# Add upper immediate to PC implementation\nimm_val = sign_extend(operands['imm'], 20)\nresult = (pc + (imm_val << 12)) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:12", "type": "immediate"},
+                    {"name": "rd", "bits": "11:7", "type": "register"},
+                    {"name": "opcode", "bits": "6:0", "value": "0010111"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "ECALL",
+            "opcode": "1110011",
+            "format": "I-type",
+            "description": "Environment call",
+            "syntax": "ECALL",
+            "semantics": "Environment call",
+            "implementation": "# Environment call implementation\n# This would typically trigger a system call or exception\nraise EnvironmentCallException()",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "value": "000000000000"},
+                    {"name": "rs1", "bits": "19:15", "value": "00000"},
+                    {"name": "funct3", "bits": "14:12", "value": "000"},
+                    {"name": "rd", "bits": "11:7", "value": "00000"},
+                    {"name": "opcode", "bits": "6:0", "value": "1110011"}
+                ]
+            }
+        },
+        {
+            "mnemonic": "EBREAK",
+            "opcode": "1110011",
+            "format": "I-type",
+            "description": "Environment break",
+            "syntax": "EBREAK",
+            "semantics": "Environment break",
+            "implementation": "# Environment break implementation\n# This would typically trigger a debugger breakpoint\nraise EnvironmentBreakException()",
+            "encoding": {
+                "fields": [
+                    {"name": "imm", "bits": "31:20", "value": "000000000001"},
+                    {"name": "rs1", "bits": "19:15", "value": "00000"},
+                    {"name": "funct3", "bits": "14:12", "value": "000"},
+                    {"name": "rd", "bits": "11:7", "value": "00000"},
+                    {"name": "opcode", "bits": "6:0", "value": "1110011"}
+                ]
+            }
+        }
+    ],
+    "register_parsing": {
+        "mode": "prefix",
+        "prefix": "x",
+        "allow_numeric": false,
+        "case_sensitive": false
+    }
+} 

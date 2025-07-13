@@ -177,13 +177,15 @@ class OperandParser:
         )
     
     def _parse_register(self, operand_text: str, line: int, column: int) -> ParsedOperand:
-        """Parse register operand"""
-        # Remove prefix if present
-        if operand_text.startswith(self.register_prefix):
-            operand_text = operand_text[len(self.register_prefix):]
-        
-        # Look up register
+        """Parse register operand - truly modular approach"""
+        # Try to find register as-is first (with prefix)
         register = self._find_register(operand_text)
+        
+        # If not found and operand starts with prefix, try without prefix
+        if not register and operand_text.startswith(self.register_prefix):
+            operand_text_without_prefix = operand_text[len(self.register_prefix):]
+            register = self._find_register(operand_text_without_prefix)
+        
         if not register:
             return ParsedOperand(
                 type='register',
@@ -259,42 +261,42 @@ class OperandParser:
         )
     
     def _find_register(self, name: str) -> Optional[Register]:
-        """Find register by name or alias using JSON configuration"""
-        # Get alternatives from JSON config
-        alternatives = self.reg_config.get('alternatives', {})
+        # Use register_parsing config if available
+        parsing_cfg = getattr(self.isa_definition, 'register_parsing', {})
+        mode = parsing_cfg.get('mode', 'prefix')
+        prefix = parsing_cfg.get('prefix', getattr(self, 'register_prefix', ''))
+        allow_numeric = parsing_cfg.get('allow_numeric', False)
+        case_sensitive = parsing_cfg.get('case_sensitive', False)
         
-        # Normalize name for case-insensitive comparison
-        if not self.syntax.case_sensitive:
-            name = name.upper()
+        key = name if case_sensitive else name.upper()
         
-        # Check direct name match
-        for category, reg_list in self.registers.items():
-            for register in reg_list:
-                reg_name = register.name.upper() if not self.syntax.case_sensitive else register.name
-                if reg_name == name:
-                    return register
-                
-                # Check aliases
-                for alias in register.alias:
-                    alias_name = alias.upper() if not self.syntax.case_sensitive else alias
-                    if alias_name == name:
-                        return register
-                
-                # Check alternatives from JSON config
-                if register.name in alternatives:
-                    for alt_name in alternatives[register.name]:
-                        alt_name_normalized = alt_name.upper() if not self.syntax.case_sensitive else alt_name
-                        if alt_name_normalized == name:
-                            return register
+        # 1. Exact match (name or alias)
+        for reg_list in self.registers.values():
+            for reg in reg_list:
+                reg_name = reg.name if case_sensitive else reg.name.upper()
+                if reg_name == key:
+                    return reg
+                for alias in reg.alias:
+                    alias_name = alias if case_sensitive else alias.upper()
+                    if alias_name == key:
+                        return reg
+        
+        # 2. Numeric fallback (if allowed)
+        if allow_numeric and name.isdigit():
+            reg_num = int(name)
+            for reg_list in self.registers.values():
+                if 0 <= reg_num < len(reg_list):
+                    return reg_list[reg_num]
+        
+        # 3. Prefix stripping fallback (if mode is prefix and prefix is set)
+        if mode == 'prefix' and prefix and name.startswith(prefix):
+            stripped = name[len(prefix):]
+            # Try again with stripped name
+            return self._find_register(stripped)
         
         return None
-    
+
     def _is_register_name(self, text: str) -> bool:
-        """Check if text looks like a register name"""
-        # Remove prefix if present
-        if text.startswith(self.register_prefix):
-            text = text[len(self.register_prefix):]
-        
         return self._find_register(text) is not None
     
     def _is_immediate_value(self, text: str) -> bool:

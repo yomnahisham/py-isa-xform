@@ -247,7 +247,9 @@ class Parser:
                 # Parse syntax like "ADD $rd, $rs1, $rs2" to extract operand types
                 syntax_parts = instruction_def.syntax.split()
                 if len(syntax_parts) > 1:
-                    syntax_operands = syntax_parts[1:]  # Skip mnemonic
+                    # Join the rest and split by comma to get proper operand types
+                    syntax_operand_str = ' '.join(syntax_parts[1:])  # Skip mnemonic
+                    syntax_operands = [part.strip().rstrip(',') for part in syntax_operand_str.split(',') if part.strip()]
                     for syntax_op in syntax_operands:
                         if syntax_op.startswith('$'):
                             expected_types.append(syntax_op[1:])  # Remove $ prefix
@@ -338,7 +340,6 @@ class Parser:
         operand_str = operand_str.strip()
         if not operand_str:
             return None
-        # Get register formatting config from ISA
         reg_config = getattr(self.isa_definition, 'register_formatting', {})
         prefix = reg_config.get('prefix', 'x')
         # Handle offset($reg) or offset(Rreg)
