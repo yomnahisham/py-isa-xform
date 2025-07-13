@@ -657,18 +657,22 @@ class Assembler:
                 if field and "bits" in field and instruction and hasattr(instruction, "encoding"):
                     encoding_fields = instruction.encoding.get("fields", [])
                     immediate_fields = [f for f in encoding_fields if f.get("type") == "immediate" and f.get("name") != "opcode"]
+                    print(f"[DEBUG] Multi-field check: instruction={instruction.mnemonic}, immediate_fields={len(immediate_fields)}, field_name={field_name}")
                     if len(immediate_fields) > 1:
                         # ISA-specific multi-field immediate encoding
                         if instruction.mnemonic in ['LUI', 'AUIPC']:
+                            print(f"[DEBUG] AUIPC/LUI multi-field: field_name={field_name}, value={value}")
                             # For LUI/AUIPC: The immediate is encoded directly into 9 bits (imm + imm2)
                             # The ISA implementation is: result = (imm << 7) & 0xFFFF
                             # But during encoding, we just split the 9-bit value into imm (6 bits) and imm2 (3 bits)
                             # No shifting needed during encoding - the shifting happens during execution
                             if field_name == 'imm':  # imm1 (upper 6 bits)
                                 result = (value >> 3) & 0x3F  # 6 bits
+                                print(f"[DEBUG] AUIPC imm field: value={value} >> 3 = {value >> 3}, result={result}")
                                 return result
                             elif field_name == 'imm2':  # imm2 (lower 3 bits)
                                 result = value & 0x7  # 3 bits
+                                print(f"[DEBUG] AUIPC imm2 field: value={value} & 0x7 = {result}")
                                 return result
                             else:
                                 return value & ((1 << bit_width) - 1)
@@ -1233,9 +1237,10 @@ class Assembler:
                 break
         if not pseudo:
             raise AssemblerError(f"Unknown instruction: {node.mnemonic}")
-        expansion = pseudo.expansion
-        if not expansion:
-            raise AssemblerError(f"Pseudo-instruction '{node.mnemonic}' has no expansion defined")
+        
+        # Check if smart expansion is needed
+        from .smart_expansion import create_smart_expansion_handler
+        smart_handler = create_smart_expansion_handler(self.isa_definition)
         
         # Store the current address for LA instruction expansion
         # Use the passed instruction address if available, otherwise use current address
@@ -1243,6 +1248,37 @@ class Assembler:
             la_instruction_address = instruction_address
         else:
             la_instruction_address = self.context.current_address
+        
+        # Check if this pseudo-instruction supports smart expansion
+        expansion = pseudo.expansion  # Default to normal expansion
+        metadata = {}
+        
+        if smart_handler.should_use_smart_expansion(pseudo) and self.context.pass_number == 2:
+            # Try to resolve target value for smart expansion
+            target_value = None
+            if node.operands and len(node.operands) > 1:
+                # For LA rd, label - the second operand is the label
+                label_operand = node.operands[1]
+                if label_operand.type == "label":
+                    try:
+                        target_value = self._resolve_address_operand(label_operand)
+                    except:
+                        pass  # Fall back to normal expansion
+            
+            if target_value is not None:
+                # Use smart expansion
+                expansion, metadata = smart_handler.calculate_smart_expansion(
+                    pseudo, target_value, la_instruction_address
+                )
+                
+                # Log smart expansion if overflow was detected
+                if metadata.get('overflow_detected', False):
+                    print(f"[SMART_EXPANSION] {node.mnemonic} overflow detected, using redistributed bits")
+                    print(f"  Original: AUIPC={metadata.get('original_auipc_bits', 0)}, ADDI={metadata.get('original_addi_bits', 0)}")
+                    print(f"  Redistributed: AUIPC={metadata.get('redistributed_auipc_bits', 0)}, ADDI={metadata.get('redistributed_addi_bits', 0)}")
+        
+        if not expansion:
+            raise AssemblerError(f"Pseudo-instruction '{node.mnemonic}' has no expansion defined")
         
         # Build operand map based on pseudo-instruction syntax
         operand_map = {}

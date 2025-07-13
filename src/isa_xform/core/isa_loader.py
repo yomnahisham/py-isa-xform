@@ -81,6 +81,7 @@ class PseudoInstruction:
     expansion: str
     validation_rules: Dict[str, Any] = field(default_factory=dict)
     disassembly: Dict[str, Any] = field(default_factory=dict)
+    smart_expansion: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -391,7 +392,8 @@ class ISALoader:
                 description=pseudo_data["description"],
                 syntax=pseudo_data["syntax"],
                 expansion=pseudo_data["expansion"],
-                disassembly=pseudo_data.get("disassembly", {})
+                disassembly=pseudo_data.get("disassembly", {}),
+                smart_expansion=pseudo_data.get("smart_expansion", {})
             )
             pseudo_instructions.append(pseudo_instruction)
 
