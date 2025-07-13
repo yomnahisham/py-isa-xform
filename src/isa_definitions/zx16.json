@@ -1116,6 +1116,14 @@
         "description": "Load address",
         "syntax": "LA rd, label",
         "expansion": "AUIPC rd, label[15:7]; ADDI rd, label[6:0]",
+        "smart_expansion": {
+          "enabled": true,
+          "description": "Intelligently redistribute bits between AUIPC and ADDI when ADDI immediate overflows",
+          "strategy": "overflow_redistribution",
+          "max_addi_bits": 7,
+          "max_auipc_bits": 9,
+          "overflow_threshold": 63
+        },
         "disassembly": {
           "hide_operands": false,
           "show_as_pseudo": true,
