@@ -330,5 +330,11 @@
       "date_format": "YYYY-MM-DD",
       "time_format": "HH:MM:SS"
     }
+  },
+  "register_parsing": {
+    "mode": "prefix",
+    "prefix": "r",
+    "allow_numeric": true,
+    "case_sensitive": false
   }
 } 

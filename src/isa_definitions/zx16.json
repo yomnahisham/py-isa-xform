@@ -1387,5 +1387,11 @@
       "reconstruct_original": true,
       "preserve_labels": true,
       "use_original_syntax": true
+    },
+    "register_parsing": {
+      "mode": "numeric",
+      "prefix": "",
+      "allow_numeric": true,
+      "case_sensitive": false
     }
   } 
