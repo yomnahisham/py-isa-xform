@@ -2,7 +2,7 @@ import sys
 import struct
 import re
 import numpy as np
-import keyboard
+import warnings
 from pynput.keyboard import Key, Listener
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -14,6 +14,215 @@ from ..utils.bit_utils import (
     extract_bits, set_bits, sign_extend, parse_bit_range, 
     create_mask, bytes_to_int, int_to_bytes
 )
+
+@dataclass
+class Register:
+    def __init__(self, name: str, alias: str, size: int = 16, value: int = 0):
+        self.name = name
+        self.alias = alias
+        self.value = value
+        self.size = size
+        self.mask = (1 << self.size) - 1
+        self.sign_bit = 1 << (self.size - 1)
+        self.value = self._normalize(self.value)
+    
+    def _normalize(self, value: int) -> int:
+        """Normalize value to register size"""
+        return value & self.mask
+    
+    def _to_signed(self, value: int) -> int:
+        """Convert unsigned value to signed based on register size"""
+        if value & self.sign_bit:
+            return value - (1 << self.size)
+        return value
+    
+    def _from_signed(self, value: int) -> int:
+        """Convert signed value to unsigned representation"""
+        if value < 0:
+            return (1 << self.size) + value
+        return value
+    
+    
+    # Arithmetic operations
+    def __add__(self, other):
+        if isinstance(other, Register):
+            result = (self.value + other.value) & self.mask
+        else:
+            result = (self.value + other) & self.mask
+        return Register(name=self.name, alias= self.alias, size=self.size, value=result)
+    
+    def __sub__(self, other):
+        if isinstance(other, Register):
+            result = (self.value - other.value) & self.mask
+        else:
+            result = (self.value - other) & self.mask
+        return Register(name=self.name, alias= self.alias, size=self.size, value=result)
+    
+    def __mul__(self, other):
+        if isinstance(other, Register):
+            result = (self.value * other.value) & self.mask
+        else:
+            result = (self.value * other) & self.mask
+        return Register(name=self.name, alias= self.alias, size=self.size, value=result)
+    
+    def __truediv__(self, other):
+        if isinstance(other, Register):
+            signed_self = self._to_signed(self.value)
+            signed_other = self._to_signed(other.value)
+            result = self._from_signed(int(signed_self / signed_other))
+        else:
+            signed_self = self._to_signed(self.value)
+            result = self._from_signed(int(signed_self / other))
+        return Register(self.size, result & self.mask)
+    
+    def __mod__(self, other):
+        if isinstance(other, Register):
+            result = (self.value % other.value) & self.mask
+        else:
+            result = (self.value % other) & self.mask
+        return Register(name=self.name, alias= self.alias, size=self.size, value=result)
+    
+    # Logical operations
+    def __and__(self, other):
+        if isinstance(other, Register):
+            result = self.value & other.value
+        else:
+            result = self.value & other
+        return Register(name=self.name, alias= self.alias, size=self.size, value=result)
+    
+    def __or__(self, other):
+        if isinstance(other, Register):
+            result = self.value | other.value
+        else:
+            result = self.value | other
+        return Register(name=self.name, alias= self.alias, size=self.size, value=result)
+    
+    def __xor__(self, other):
+        if isinstance(other, Register):
+            result = self.value ^ other.value
+        else:
+            result = self.value ^ other
+        return Register(name=self.name, alias= self.alias, size=self.size, value=result)
+    
+    def __lshift__(self, other):
+        if isinstance(other, Register):
+            shift = other.value
+        else:
+            shift = other
+        result = (self.value << shift) & self.mask
+        return Register(name=self.name, alias= self.alias, size=self.size, value=result)
+    
+    def __rshift__(self, other):
+        if isinstance(other, Register):
+            shift = other.value
+        else:
+            shift = other
+        result = self.value >> shift
+        return Register(name=self.name, alias= self.alias, size=self.size, value=result)
+    
+    def __invert__(self):
+        result = (~self.value) & self.mask
+        return Register(name=self.name, alias= self.alias, size=self.size, value=result)
+    
+    # Comparison operations
+    def __eq__(self, other):
+        if isinstance(other, Register):
+            return self.value == other.value
+        return self.value == other
+    
+    def __lt__(self, other):
+        if isinstance(other, Register):
+            return self._to_signed(self.value) < self._to_signed(other.value)
+        return self._to_signed(self.value) < other
+    
+    def __le__(self, other):
+        return self.__lt__(other) or self.__eq__(other)
+    
+    def __gt__(self, other):
+        if isinstance(other, Register):
+            return self._to_signed(self.value) > self._to_signed(other.value)
+        return self._to_signed(self.value) > other
+    
+    def __ge__(self, other):
+        return self.__gt__(other) or self.__eq__(other)
+    
+    # In-place operations
+    def __iadd__(self, other):
+        if isinstance(other, Register):
+            self.value = (self.value + other.value) & self.mask
+        else:
+            self.value = (self.value + other) & self.mask
+        return self
+    
+    def __isub__(self, other):
+        if isinstance(other, Register):
+            self.value = (self.value - other.value) & self.mask
+        else:
+            self.value = (self.value - other) & self.mask
+        return self
+    
+    def __imul__(self, other):
+        if isinstance(other, Register):
+            self.value = (self.value * other.value) & self.mask
+        else:
+            self.value = (self.value * other) & self.mask
+        return self
+    
+    def __ilshift__(self, other):
+        if isinstance(other, Register):
+            shift = other.value
+        else:
+            shift = other
+        self.value = (self.value << shift) & self.mask
+        return self
+    
+    def __irshift__(self, other):
+        if isinstance(other, Register):
+            shift = other.value
+        else:
+            shift = other
+        self.value = self.value >> shift
+        return self
+    
+    def __iand__(self, other):
+        if isinstance(other, Register):
+            self.value = self.value & other.value
+        else:
+            self.value = self.value & other
+        return self
+    
+    def __ior__(self, other):
+        if isinstance(other, Register):
+            self.value = self.value | other.value
+        else:
+            self.value = self.value | other
+        return self
+    
+    def __ixor__(self, other):
+        if isinstance(other, Register):
+            self.value = self.value ^ other.value
+        else:
+            self.value = self.value ^ other
+        return self
+    
+    # Utility methods
+    def signed_value(self) -> int:
+        """Get the signed interpretation of the register value"""
+        return self._to_signed(self.value)
+    
+    def unsigned_value(self) -> int:
+        """Get the unsigned interpretation of the register value"""
+        return self.value
+    
+    def set_value(self, value: int):
+        """Set the register value"""
+        self.value = self._normalize(value)
+    
+    def __str__(self):
+        return f"{self.name} ({self.alias[0]}): {self.signed_value()}"
+    
+    def __repr__(self):
+        return self.__str__()
 
 def sign_extend(value: int, bits: int) -> int:
     """Sign extend a value from specified number of bits to 16 bits"""
@@ -34,8 +243,9 @@ class Simulator:
         self.pc = isa_definition.address_space.default_code_start
         self.data_start = isa_definition.address_space.default_data_start
         self.pc_step = self.isa_definition.word_size // 8
-        self.regs = [0] * len(self.isa_definition.registers['general_purpose'])
-        self.reg_names = [reg.alias[0] for reg in self.isa_definition.registers['general_purpose']]
+        self.regs = [Register(name=reg.name, alias=reg.alias, size=self.isa_definition.word_size) for reg in isa_definition.registers['general_purpose']]
+        self.sp_index = next((i for i, reg in enumerate(self.regs) if reg.alias[0] == 'sp'), 0)
+        self.regs[self.sp_index]._normalize(self.stack_start)
         self.key = "start"
 
     def listen_for_key(self, target_key):
@@ -127,13 +337,19 @@ class Simulator:
         result = syntax
         reg_objs = self.isa_definition.registers['general_purpose']
         reg_names = [reg.name if hasattr(reg, 'name') else str(reg) for reg in reg_objs]
+        reg_aliases = [reg.alias[0] if hasattr(reg, 'alias') and reg.alias else str(reg) for reg in reg_objs]
         for operand in operands:
             if operand in reg_names:
                 idx = reg_names.index(operand)
-                result = result.replace(operand, f"regs[{idx}]")
+                pattern = f" {re.escape(operand)}"
+                result = result.replace(pattern, f" regs[{idx}].value")
+                result = result.replace(f"{operand} ", f"regs[{idx}].value ")
+            elif operand in reg_aliases:
+                idx = reg_aliases.index(operand)
+                pattern = f" {re.escape(operand)}"
+                result = result.replace(pattern, f" regs[{idx}].value")
+                result = result.replace(f"{operand} ", f"regs[{idx}].value ")
             else:
-                
-                # print(f"Warning: Operand '{operand}' not found in register names or aliases.", file=sys.stderr)
                 continue
             
         result = result.replace("memory", "self.memory")
@@ -142,10 +358,8 @@ class Simulator:
     
     
     def get_key(self, target_key: str) -> int:
-        event = keyboard.read_event()
-        if event.event_type == keyboard.KEY_DOWN:
-            if event.name == target_key:
-                return 1
+        # Simplified key detection - returns 0 for now
+        # This can be enhanced later with proper keyboard handling
         return 0
     
     def map_disassembly_result_to_pc(self, disassembly_result: DisassemblyResult) -> Dict[int, DisassembledInstruction]:
@@ -155,6 +369,10 @@ class Simulator:
             if instruction is not None:
                 pc_map[instruction.address] = instruction
         return pc_map
+    
+    def print_registers(self):
+        """Prints the current state of registers"""
+        print(self.regs)
 
     
     def execute_instruction(self, disassembled_instruction: DisassembledInstruction) -> bool:
@@ -272,11 +490,10 @@ class Simulator:
                     continue
                 else:
                     if step:
-                        values = [reg for reg in self.regs]
-                        print(self.regs)
-                        #print(f"Registers: {', '.join(f'{name}: {value}' for name, value in zip(self.reg_names, values))}")
+                        self.print_registers()
                         loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
                     else:
+                        self.print_registers()
                         if self.pc >= len(disassembly_result.instructions):
                             print("Reached end of disassembled instructions")
                             break
