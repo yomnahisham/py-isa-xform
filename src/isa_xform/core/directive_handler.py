@@ -246,6 +246,33 @@ class DirectiveHandler:
         """Handle .bss directive"""
         return DirectiveResult(section_change="bss")
     
+    def _handle_fill(self, arguments: List[str], context: DirectiveContext) -> DirectiveResult:
+        """Handle .fill directive - Fill N items, M bytes each, with value"""
+        if len(arguments) < 3:
+            raise AssemblerError(".fill requires three arguments: count, size, value")
+        
+        try:
+            count = self._parse_number(arguments[0])
+            size = self._parse_number(arguments[1])
+            value = self._parse_number(arguments[2])
+            
+            if count < 0:
+                raise ValueError("Count cannot be negative")
+            if size <= 0:
+                raise ValueError("Size must be positive")
+            if value < 0 or value >= (1 << (size * 8)):
+                raise ValueError(f"Value {value} does not fit in {size} bytes")
+            
+            # Generate the fill data
+            endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+            bytes_data = bytearray()
+            for _ in range(count):
+                bytes_data.extend(value.to_bytes(size, endianness))
+            
+            return DirectiveResult(bytes_generated=bytes_data)
+        except ValueError as e:
+            raise AssemblerError(f"Invalid argument in .fill directive: {e}")
+    
     def _handle_generic(self, arguments: List[str], context: DirectiveContext) -> DirectiveResult:
         """Generic handler for ISA-specific directives"""
         # This could be extended to support custom directive implementations

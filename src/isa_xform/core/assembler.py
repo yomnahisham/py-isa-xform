@@ -94,7 +94,8 @@ class Assembler:
             self.instruction_by_mnemonic[mnemonic] = instruction
     
     def _build_directive_handlers(self):
-        """Build directive handler mapping"""
+        """Build directive handler mapping - now truly modular"""
+        # Keep built-in handlers for common directives
         self.directive_handlers = {
             '.org': self._handle_org_directive,
             '.word': self._handle_word_directive,
@@ -106,8 +107,17 @@ class Assembler:
             '.section': self._handle_section_directive,
             '.global': self._handle_global_directive,
             '.equ': self._handle_equ_directive,
-            '.align': self._handle_align_directive
+            '.align': self._handle_align_directive,
         }
+        
+        # Add dynamic handlers for all ISA-defined directives
+        self._register_isa_directives()
+    
+    def _register_isa_directives(self):
+        """Register all directives defined in the ISA as dynamic handlers"""
+        for directive_name, directive_def in self.isa_definition.directives.items():
+            # Register every ISA directive as a dynamic handler
+            self.directive_handlers[directive_name] = self._handle_dynamic_directive
     
     def _compile_directive_implementations(self):
         """Compile custom directive implementations from ISA definition"""
@@ -293,9 +303,16 @@ class Assembler:
                     # Use directive handler dispatch
                     handler = self.directive_handlers.get(node.name.lower())
                     if handler:
-                        # Automatically detect data directives and put them in data section
-                        data_directives = {'.word', '.half', '.byte', '.space', '.ascii', '.asciiz'}
-                        if node.name.lower() in data_directives or current_section == "data":
+                        # Dynamically detect data directives from ISA definition
+                        is_data_directive = (
+                            node.name.lower() in {'.word', '.half', '.byte', '.space', '.ascii', '.asciiz'} or
+                            current_section == "data" or
+                            (node.name.lower() in self.isa_definition.directives and 
+                             self.isa_definition.directives[node.name.lower()].action in 
+                             {"allocate_bytes", "allocate_space", "allocate_string", "fill"})
+                        )
+                        
+                        if is_data_directive:
                             # Use logical data address for data
                             self.context.current_address = logical_data_address
                             data_bytes.extend(handler(node) or b"")
@@ -1045,7 +1062,7 @@ class Assembler:
         else:
             # Check if it's a custom directive from ISA definition
             if directive_name in self.isa_definition.directives:
-                return self._handle_custom_directive(node)
+                return self._handle_dynamic_directive(node)
         
         return None
     
@@ -1174,51 +1191,78 @@ class Assembler:
                 return bytearray(b'\x00' * padding)
         return None
     
-    def _handle_custom_directive(self, node: DirectiveNode) -> Optional[bytearray]:
-        """Handle custom directive defined in ISA"""
-        directive = self.isa_definition.directives.get(node.name)
-        if not directive:
+    def _handle_dynamic_directive(self, node: DirectiveNode) -> Optional[bytearray]:
+        """Dynamic handler for any directive defined in the ISA"""
+        directive_name = node.name.lower()
+        directive_def = self.isa_definition.directives.get(directive_name)
+        
+        if not directive_def:
             return None
         
-        # If the directive has a custom implementation, execute it
-        if directive.implementation:
+        # If the directive has a custom implementation, use the executor
+        if directive_def.implementation:
             from .directive_executor import get_directive_executor, DirectiveContext
             executor = get_directive_executor()
+            
             context = DirectiveContext(
                 assembler=self,
                 symbol_table=self.symbol_table,
-                memory=bytearray(),  # Provide an empty bytearray by default
+                memory=bytearray(),
                 current_address=self.context.current_address,
                 section=self.context.current_section,
                 args=node.arguments,
                 extra={}
             )
-            result = executor.execute_directive(directive.name, context)
-            # If the directive implementation sets 'result' to a bytearray or bytes, return it
-            if isinstance(result, (bytearray, bytes)):
-                # Convert bytes to bytearray if needed
-                if isinstance(result, bytes):
-                    result = bytearray(result)
+            
+            try:
+                result = executor.execute_directive(directive_name, context)
+                
+                # Update context from the directive execution
                 self.context.current_address = context.current_address
-                self.symbol_table.set_current_address(self.context.current_address)
-                return result
-            return None
+                self.symbol_table.set_current_address(context.current_address)
+                
+                # Return the result if it's bytes/bytearray
+                if isinstance(result, (bytes, bytearray)):
+                    return bytearray(result)
+                elif hasattr(context, 'memory') and context.memory:
+                    return bytearray(context.memory)
+                else:
+                    return None
+                    
+            except Exception as e:
+                self._report_error(
+                    line_number=getattr(node, 'line', 0),
+                    column=getattr(node, 'column', 0),
+                    message=f"Error executing directive {directive_name}: {e}",
+                    context=f"ISA: {self.isa_definition.name}"
+                )
+                return None
         
-        action = directive.action
-        if action == "allocate_bytes":
-            return self._handle_word_directive(node)
-        elif action == "allocate_space":
-            return self._handle_space_directive(node)
-        elif action == "allocate_string":
-            return self._handle_ascii_directive(node)
-        elif action == "set_section":
-            return self._handle_section_directive(node)
-        elif action == "align_counter":
-            return self._handle_align_directive(node)
-        elif action == "define_constant":
-            return self._handle_equ_directive(node)
-        # elif action == "allocate_crazy":
-        #     return self._handle_crazy_directive(node)
+        # Fallback to action-based handling for backward compatibility
+        return self._handle_action_based_directive(node, directive_def)
+    
+    def _handle_action_based_directive(self, node: DirectiveNode, directive_def) -> Optional[bytearray]:
+        """Handle directives using the action field for backward compatibility"""
+        action = directive_def.action
+        
+        # Map actions to handlers
+        action_handlers = {
+            "allocate_bytes": self._handle_word_directive,
+            "allocate_space": self._handle_space_directive,
+            "allocate_string": self._handle_ascii_directive,
+            "set_section": self._handle_section_directive,
+            "align_counter": self._handle_align_directive,
+            "define_constant": self._handle_equ_directive,
+            "fill": self._handle_fill_directive,
+        }
+        
+        handler = action_handlers.get(action)
+        if handler:
+            return handler(node)
+        
+        # If no action handler, try to execute the implementation directly
+        if directive_def.implementation:
+            return self._handle_dynamic_directive(node)
         
         return None
     
@@ -1238,6 +1282,78 @@ class Assembler:
         self.context.current_address += len(data)
         self.symbol_table.set_current_address(self.context.current_address)
         return data
+    
+    def _handle_fill_directive(self, node: DirectiveNode) -> Optional[bytearray]:
+        """Handle .fill directive - Fill N items, M bytes each, with value"""
+        
+        if len(node.arguments) < 3:
+            self._report_error(
+                line_number=getattr(node, 'line', 0),
+                column=getattr(node, 'column', 0),
+                message=".fill directive requires three arguments: count, size, value",
+                context=f"ISA: {self.isa_definition.name}"
+            )
+            return None
+        
+        try:
+            count = self._parse_number(node.arguments[0])
+            size = self._parse_number(node.arguments[1])
+            value = self._parse_number(node.arguments[2])
+            
+            if count < 0:
+                self._report_error(
+                    line_number=getattr(node, 'line', 0),
+                    column=getattr(node, 'column', 0),
+                    message=".fill count cannot be negative",
+                    operand=str(node.arguments[0]),
+                    expected="Non-negative number",
+                    found=str(count),
+                    context=f"ISA: {self.isa_definition.name}"
+                )
+                return None
+            
+            if size <= 0:
+                self._report_error(
+                    line_number=getattr(node, 'line', 0),
+                    column=getattr(node, 'column', 0),
+                    message=".fill size must be positive",
+                    operand=str(node.arguments[1]),
+                    expected="Positive number",
+                    found=str(size),
+                    context=f"ISA: {self.isa_definition.name}"
+                )
+                return None
+            
+            if value < 0 or value >= (1 << (size * 8)):
+                self._report_error(
+                    line_number=getattr(node, 'line', 0),
+                    column=getattr(node, 'column', 0),
+                    message=f".fill value {value} does not fit in {size} bytes",
+                    operand=str(node.arguments[2]),
+                    expected=f"Value 0 to {((1 << (size * 8)) - 1)}",
+                    found=str(value),
+                    context=f"ISA: {self.isa_definition.name}"
+                )
+                return None
+            
+            # Generate the fill data
+            endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+            data = bytearray()
+            for _ in range(count):
+                data.extend(value.to_bytes(size, endianness))
+            
+            self.context.current_address += len(data)
+            self.symbol_table.set_current_address(self.context.current_address)
+            return data
+            
+        except ValueError as e:
+            self._report_error(
+                line_number=getattr(node, 'line', 0),
+                column=getattr(node, 'column', 0),
+                message=f"Invalid argument in .fill directive: {e}",
+                context=f"ISA: {self.isa_definition.name}"
+            )
+            return None
     
     def _find_entry_point(self) -> Optional[int]:
         """Find the entry point of the program"""
