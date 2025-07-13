@@ -4,13 +4,18 @@ ISA Loader: Loads and validates instruction set architecture definitions
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, field
 from jsonschema import validate, ValidationError
 import importlib.resources
 
-from ..utils.error_handling import ISALoadError, ISAValidationError
+from isa_xform.utils.error_handling import ISALoadError, ISAValidationError
+from isa_xform.utils.bit_utils import (
+    extract_bits, set_bits, sign_extend, parse_bit_range,
+    create_mask, bytes_to_int, int_to_bytes
+)
 
 
 @dataclass
@@ -33,9 +38,9 @@ class Instruction:
     encoding: Dict[str, Any]
     syntax: str
     semantics: str
-    implementation: str  # Required Python code for instruction behavior
     flags_affected: List[str] = field(default_factory=list)
     length: Optional[int] = None  # Optional explicit instruction length in bits
+    implementation: str = "" # Added implementation field
 
 
 @dataclass
@@ -65,7 +70,6 @@ class Directive:
     name: str
     description: str
     action: str
-    implementation: str  # Required Python code for directive behavior
     argument_types: List[str] = field(default_factory=list)
     handler: Optional[str] = None
     syntax: str = ""
@@ -174,7 +178,7 @@ class ISADefinition:
     symbol_resolution: Dict[str, Any] = field(default_factory=dict)
     error_messages: Dict[str, Any] = field(default_factory=dict)
     constants: Dict[str, Constant] = field(default_factory=dict)
-    ecall_services: Dict[str, ECallService] = field(default_factory=dict)
+    ecall_services: Dict[str, ECallService] = field(default_factory=dict) 
     validation_rules: Dict[str, Any] = field(default_factory=dict)
     
     # Universal ISA support fields
@@ -379,6 +383,7 @@ class ISALoader:
             raise ISALoadError(f"ISA file not found: {file_path}")
         
         return self._load_from_file(file_path)
+        return self._load_from_file(file_path)
     
     def _find_isa_file(self, isa_name: str) -> Optional[Path]:
         """Find an ISA file by name"""
@@ -436,10 +441,6 @@ class ISALoader:
         # Parse instructions
         instructions = []
         for instr_data in data.get("instructions", []):
-            # Validate that implementation is present
-            if "implementation" not in instr_data:
-                raise ISALoadError(f"Instruction '{instr_data['mnemonic']}' missing required 'implementation' field")
-            
             instruction = Instruction(
                 mnemonic=instr_data["mnemonic"],
                 opcode=instr_data.get("opcode", ""),
@@ -448,9 +449,9 @@ class ISALoader:
                 encoding=instr_data["encoding"],
                 syntax=instr_data["syntax"],
                 semantics=instr_data["semantics"],
-                implementation=instr_data["implementation"],
+                implementation=instr_data.get("implementation", ""),
                 flags_affected=instr_data.get("flags_affected", []),
-                length=instr_data.get("length") # Add length field
+                length=instr_data.get("length")
             )
             instructions.append(instruction)
 
@@ -471,22 +472,16 @@ class ISALoader:
         directives = {}
         for directive_data in data.get("directives", []):
             if isinstance(directive_data, dict):
-                # Validate that implementation is present
-                if "implementation" not in directive_data:
-                    raise ISALoadError(f"Directive '{directive_data['name']}' missing required 'implementation' field")
-                
                 directive = Directive(
                     name=directive_data["name"],
                     description=directive_data["description"],
-                    action=directive_data["action"],
-                    implementation=directive_data["implementation"],
                     argument_types=directive_data.get("argument_types", []),
+                    action=directive_data["action"],
                     handler=directive_data.get("handler"),
                     syntax=directive_data.get("syntax", ""),
                     examples=directive_data.get("examples", []),
                     validation_rules=directive_data.get("validation_rules", {})
                 )
-                directives[directive.name] = directive
 
         # Parse addressing modes
         addressing_modes = []

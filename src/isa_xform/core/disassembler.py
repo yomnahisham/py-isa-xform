@@ -3,6 +3,10 @@ Disassembler: Converts machine code back to assembly language
 """
 
 import struct
+import sys
+from pathlib import Path
+current_dir = Path(__file__).parent
+sys.path.insert(0, str(current_dir))
 from typing import List, Optional, Dict, Any, Tuple, Union
 from dataclasses import dataclass
 from .isa_loader import ISADefinition, Instruction
@@ -17,6 +21,7 @@ from ..utils.isa_utils import (
     get_immediate_sign_extend, get_shift_type_width, get_shift_amount_width,
     get_immediate_width, get_address_mask, get_register_count, format_signed_immediate
 )
+
 
 
 @dataclass
@@ -47,7 +52,7 @@ class Disassembler:
         max_consecutive_nops: int = 8):
         self.isa_definition = isa_definition
         self.symbol_table = symbol_table or SymbolTable()
-        self.instruction_size_bytes = isa_definition.instruction_size // 8
+        self.instruction_size_bytes = (isa_definition.instruction_size // 8)
         self.max_consecutive_nops = max_consecutive_nops
         
         # Calculate address space mask from ISA definition using ISA-aware utilities
