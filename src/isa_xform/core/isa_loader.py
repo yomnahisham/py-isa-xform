@@ -35,6 +35,7 @@ class Instruction:
     semantics: str
     implementation: str  # Required Python code for instruction behavior
     flags_affected: List[str] = field(default_factory=list)
+    length: Optional[int] = None  # Optional explicit instruction length in bits
 
 
 @dataclass
@@ -176,6 +177,10 @@ class ISADefinition:
     ecall_services: Dict[str, ECallService] = field(default_factory=dict)
     validation_rules: Dict[str, Any] = field(default_factory=dict)
     
+    # Universal ISA support fields
+    variable_length_instructions: bool = False
+    instruction_length_config: Dict[str, Any] = field(default_factory=dict)
+    
     def __post_init__(self):
         """Initialize ISA-derived constants and validate configuration"""
         self._init_isa_constants()
@@ -191,6 +196,15 @@ class ISADefinition:
         
         # Instruction size derived constants
         self.instruction_size_bytes = self.instruction_size // 8
+        
+        # Variable-length instruction support
+        self.variable_length_instructions = self.instruction_length_config.get('enabled', False)
+        if self.variable_length_instructions:
+            self.length_determination = self.instruction_length_config.get('length_determination', {})
+            self.length_table = self.instruction_length_config.get('length_table', {})
+            self.max_instruction_length = self.instruction_length_config.get('max_instruction_length', self.instruction_size)
+        else:
+            self.max_instruction_length = self.instruction_size
         
         # Address space derived constants
         if hasattr(self, 'address_space') and self.address_space:
@@ -231,6 +245,46 @@ class ISADefinition:
             'register_count': Constant('register_count', self.register_count, 'Number of registers')
         })
     
+    def get_instruction_length(self, instruction: Instruction, encoded_value: int = 0) -> int:
+        """Get the length of an instruction in bits"""
+        if not self.variable_length_instructions:
+            return self.instruction_size
+        
+        # Check if instruction has explicit length
+        if hasattr(instruction, 'length') and instruction.length:
+            return instruction.length
+        
+        # Check length table based on opcode
+        if self.length_table:
+            # Extract opcode from encoded value or instruction
+            opcode = self._extract_opcode_for_length(instruction, encoded_value)
+            if opcode in self.length_table:
+                return self.length_table[opcode]
+        
+        # Default to base instruction size
+        return self.instruction_size
+    
+    def _extract_opcode_for_length(self, instruction: Instruction, encoded_value: int = 0) -> str:
+        """Extract opcode for length determination"""
+        # Try to get opcode from instruction definition first
+        if hasattr(instruction, 'opcode') and instruction.opcode:
+            return instruction.opcode
+        
+        # Try to extract from encoding fields
+        if hasattr(instruction, 'encoding') and isinstance(instruction.encoding, dict):
+            fields = instruction.encoding.get('fields', [])
+            for field in fields:
+                if field.get('name') == 'opcode' and 'value' in field:
+                    return field['value']
+        
+        # Try to extract from encoded value if provided
+        if encoded_value > 0:
+            # This is a simplified extraction - in practice, you'd need to know the opcode field position
+            # For now, return a default
+            return "0x00"
+        
+        return "0x00"
+    
     def _validate_isa_config(self):
         """Validate ISA configuration for consistency"""
         # Validate word size and instruction size
@@ -240,6 +294,21 @@ class ISADefinition:
             raise ValueError(f"Invalid instruction_size: {self.instruction_size}")
         if self.instruction_size % 8 != 0:
             raise ValueError(f"Instruction size must be multiple of 8: {self.instruction_size}")
+        
+        # Validate variable-length configuration
+        if self.variable_length_instructions:
+            if not self.instruction_length_config:
+                raise ValueError("Variable-length instructions enabled but no length configuration provided")
+            
+            length_determination = self.instruction_length_config.get('length_determination', {})
+            if not length_determination:
+                raise ValueError("Variable-length instructions require length_determination configuration")
+            
+            # Validate length table if provided
+            length_table = self.instruction_length_config.get('length_table', {})
+            for opcode, length in length_table.items():
+                if length <= 0 or length % 8 != 0:
+                    raise ValueError(f"Invalid instruction length for opcode {opcode}: {length}")
         
         # Validate endianness
         if self.endianness.lower() not in ['little', 'big']:
@@ -380,7 +449,8 @@ class ISALoader:
                 syntax=instr_data["syntax"],
                 semantics=instr_data["semantics"],
                 implementation=instr_data["implementation"],
-                flags_affected=instr_data.get("flags_affected", [])
+                flags_affected=instr_data.get("flags_affected", []),
+                length=instr_data.get("length") # Add length field
             )
             instructions.append(instruction)
 
@@ -525,7 +595,9 @@ class ISALoader:
             error_messages=error_messages,
             constants=constants,
             ecall_services=ecall_services,
-            validation_rules={}
+            validation_rules={},
+            variable_length_instructions=data.get('variable_length_instructions', False),
+            instruction_length_config=data.get('instruction_length_config', {})
         )
     
     def list_available_isas(self) -> List[str]:

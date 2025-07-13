@@ -1,0 +1,334 @@
+{
+  "name": "VariableLengthExample",
+  "version": "1.0",
+  "description": "Example ISA demonstrating variable-length instructions",
+  "word_size": 32,
+  "instruction_size": 32,
+  "endianness": "little",
+  
+  "variable_length_instructions": true,
+  "instruction_length_config": {
+    "enabled": true,
+    "length_determination": {
+      "method": "opcode_based",
+      "opcode_field": "opcode",
+      "opcode_position": "31:24"
+    },
+    "length_table": {
+      "0x00": 8,
+      "0x01": 16,
+      "0x02": 32,
+      "0x03": 32,
+      "0x04": 32
+    },
+    "max_instruction_length": 64
+  },
+  
+  "address_space": {
+    "size": 4294967296,
+    "default_code_start": 4096,
+    "default_data_start": 32768,
+    "default_stack_start": 4294901760,
+    "memory_layout": {
+      "interrupt_vectors": {"start": 0, "end": 255},
+      "code_section": {"start": 4096, "end": 32767},
+      "data_section": {"start": 32768, "end": 65535},
+      "stack_section": {"start": 4294901760, "end": 4294967295},
+      "mmio": {"start": 65536, "end": 131071}
+    }
+  },
+  
+  "pc_behavior": {
+    "points_to": "next_instruction",
+    "offset_for_jumps": 0,
+    "jump_offset_calculation": "target_minus_pc",
+    "disassembly": {
+      "jump_target_calculation": "pc_plus_offset",
+      "pc_value_for_jumps": "instruction_address_plus_pc_offset"
+    }
+  },
+  
+  "instruction_architecture": {
+    "instruction_size": 32,
+    "instruction_size_bytes": 4,
+    "variable_length": true,
+    "alignment": 1,
+    "max_instruction_length": 64,
+    "address_bits": 32,
+    "address_mask": "0xFFFFFFFF",
+    "pc_increment": 4,
+    "immediate_widths": {
+      "i_type": 12,
+      "branch": 12,
+      "jump": 20,
+      "load_store": 12
+    },
+    "shift_config": {
+      "type_width": 3,
+      "amount_width": 5
+    },
+    "register_count": 16,
+    "register_bits": 4
+  },
+  
+  "register_formatting": {
+    "prefix": "r",
+    "suffix": "",
+    "case": "lower",
+    "zero_register": "r0",
+    "alternatives": {
+      "r0": ["zero", "zr"],
+      "r1": ["ra", "return"],
+      "r2": ["sp", "stack"],
+      "r3": ["fp", "frame"],
+      "r4": ["gp", "global"],
+      "r5": ["t0"],
+      "r6": ["t1"],
+      "r7": ["t2"],
+      "r8": ["s0"],
+      "r9": ["s1"],
+      "r10": ["a0"],
+      "r11": ["a1"],
+      "r12": ["a2"],
+      "r13": ["a3"],
+      "r14": ["a4"],
+      "r15": ["a5"]
+    }
+  },
+  
+  "operand_formatting": {
+    "immediate_prefix": "#",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "register_prefix": "r",
+    "address_format": "0x{addr:X}",
+    "immediate_format": "{value}",
+    "register_format": "r{reg}",
+    "separators": {
+      "operand": ", ",
+      "address": "(",
+      "address_close": ")"
+    },
+    "disassembly": {
+      "immediate_format": "decimal",
+      "hex_threshold": 255,
+      "negative_hex_threshold": -255,
+      "always_decimal_for": ["LDI", "ADDI", "SLTI", "SLTUI", "SLLI", "SRLI", "SRAI", "ORI", "ANDI", "XORI"],
+      "always_hex_for": ["LUI", "JMP", "JAL", "BEQ", "BNE", "BLT", "BGE", "BLTU", "BGEU", "BZ", "BNZ"]
+    }
+  },
+  
+  "assembly_syntax": {
+    "comment_char": ";",
+    "comment_chars": [";", "//"],
+    "label_suffix": ":",
+    "register_prefix": "r",
+    "immediate_prefix": "#",
+    "hex_prefix": "0x",
+    "binary_prefix": "0b",
+    "case_sensitive": false,
+    "directives": [".org", ".word", ".byte", ".space", ".ascii", ".asciiz", ".section", ".global", ".equ", ".align"],
+    "operand_separators": [",", " "],
+    "whitespace_handling": "flexible"
+  },
+  
+  "registers": {
+    "general_purpose": [
+      {"name": "r0", "number": 0, "size": 32, "alias": ["zero", "zr"]},
+      {"name": "r1", "number": 1, "size": 32, "alias": ["ra", "return"]},
+      {"name": "r2", "number": 2, "size": 32, "alias": ["sp", "stack"]},
+      {"name": "r3", "number": 3, "size": 32, "alias": ["fp", "frame"]},
+      {"name": "r4", "number": 4, "size": 32, "alias": ["gp", "global"]},
+      {"name": "r5", "number": 5, "size": 32, "alias": ["t0"]},
+      {"name": "r6", "number": 6, "size": 32, "alias": ["t1"]},
+      {"name": "r7", "number": 7, "size": 32, "alias": ["t2"]},
+      {"name": "r8", "number": 8, "size": 32, "alias": ["s0"]},
+      {"name": "r9", "number": 9, "size": 32, "alias": ["s1"]},
+      {"name": "r10", "number": 10, "size": 32, "alias": ["a0"]},
+      {"name": "r11", "number": 11, "size": 32, "alias": ["a1"]},
+      {"name": "r12", "number": 12, "size": 32, "alias": ["a2"]},
+      {"name": "r13", "number": 13, "size": 32, "alias": ["a3"]},
+      {"name": "r14", "number": 14, "size": 32, "alias": ["a4"]},
+      {"name": "r15", "number": 15, "size": 32, "alias": ["a5"]}
+    ]
+  },
+  
+  "instructions": [
+    {
+      "mnemonic": "NOP",
+      "opcode": "0x00",
+      "format": "simple",
+      "description": "No operation",
+      "syntax": "NOP",
+      "semantics": "No operation performed",
+      "implementation": "# NOP instruction - no operation",
+      "length": 8,
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "7:0", "value": "0x00"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "RET",
+      "opcode": "0x01",
+      "format": "simple",
+      "description": "Return from subroutine",
+      "syntax": "RET",
+      "semantics": "Return from subroutine",
+      "implementation": "# RET instruction - return from subroutine\ncontext.pc = read_register('ra')",
+      "length": 16,
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "7:0", "value": "0x01"},
+          {"name": "funct", "bits": "15:8", "value": "0x00"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "ADD",
+      "opcode": "0x02",
+      "format": "R-type",
+      "description": "Add registers",
+      "syntax": "ADD rd, rs1, rs2",
+      "semantics": "rd = rs1 + rs2",
+      "implementation": "# ADD instruction implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nresult = (rs1_val + rs2_val) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x80000000) != 0)",
+      "length": 32,
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "7:0", "value": "0x02"},
+          {"name": "rd", "bits": "11:8", "type": "register"},
+          {"name": "rs1", "bits": "15:12", "type": "register"},
+          {"name": "rs2", "bits": "19:16", "type": "register"},
+          {"name": "funct", "bits": "31:20", "value": "0x000"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "ADDI",
+      "opcode": "0x03",
+      "format": "I-type",
+      "description": "Add immediate",
+      "syntax": "ADDI rd, rs1, imm",
+      "semantics": "rd = rs1 + sign_extend(imm)",
+      "implementation": "# ADDI instruction implementation\nrs1_val = read_register(operands['rs1'])\nimm_val = operands['imm']\n# Sign extend 12-bit immediate\nif imm_val & 0x800:\n    imm_val = imm_val | 0xFFFFF000\nresult = (rs1_val + imm_val) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x80000000) != 0)",
+      "length": 32,
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "7:0", "value": "0x03"},
+          {"name": "rd", "bits": "11:8", "type": "register"},
+          {"name": "rs1", "bits": "15:12", "type": "register"},
+          {"name": "imm", "bits": "27:16", "type": "immediate", "signed": true},
+          {"name": "funct", "bits": "31:28", "value": "0x0"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "LUI",
+      "opcode": "0x04",
+      "format": "U-type",
+      "description": "Load upper immediate",
+      "syntax": "LUI rd, imm",
+      "semantics": "rd = imm << 12",
+      "implementation": "# LUI instruction implementation\nimm_val = operands['imm']\nresult = (imm_val << 12) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+      "length": 32,
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "7:0", "value": "0x04"},
+          {"name": "rd", "bits": "11:8", "type": "register"},
+          {"name": "imm", "bits": "27:12", "type": "immediate", "signed": false},
+          {"name": "funct", "bits": "31:28", "value": "0x0"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "JMP",
+      "opcode": "0x05",
+      "format": "J-type",
+      "description": "Jump to address",
+      "syntax": "JMP target",
+      "semantics": "PC = target",
+      "implementation": "# JMP instruction implementation\ntarget_addr = operands['target']\ncontext.pc = target_addr & 0xFFFFFFFF",
+      "length": 32,
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "31:28", "value": "0x05"},
+          {"name": "target", "bits": "27:8", "type": "address"},
+          {"name": "funct", "bits": "7:0", "value": "0x00"}
+        ]
+      }
+    },
+    {
+      "mnemonic": "COMPLEX",
+      "opcode": "0x06",
+      "format": "complex",
+      "description": "Complex 64-bit instruction",
+      "syntax": "COMPLEX rd, rs1, rs2, rs3, imm",
+      "semantics": "rd = (rs1 + rs2) * rs3 + imm",
+      "implementation": "# COMPLEX instruction implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\nrs3_val = read_register(operands['rs3'])\nimm_val = operands['imm']\nresult = ((rs1_val + rs2_val) * rs3_val + imm_val) & 0xFFFFFFFF\nwrite_register(operands['rd'], result)",
+      "length": 64,
+      "encoding": {
+        "fields": [
+          {"name": "opcode", "bits": "63:56", "value": "0x06"},
+          {"name": "rd", "bits": "55:52", "type": "register"},
+          {"name": "rs1", "bits": "51:48", "type": "register"},
+          {"name": "rs2", "bits": "47:44", "type": "register"},
+          {"name": "rs3", "bits": "43:40", "type": "register"},
+          {"name": "imm", "bits": "39:8", "type": "immediate", "signed": true},
+          {"name": "funct", "bits": "7:0", "value": "0x00"}
+        ]
+      }
+    }
+  ],
+  
+  "directives": [
+    {
+      "name": ".org",
+      "description": "Set origin address",
+      "action": "set_origin",
+      "implementation": "# Set origin address\ncontext.current_address = int(arguments[0], 0)\nsymbol_table.set_current_address(context.current_address)",
+      "argument_types": ["address"],
+      "syntax": ".org address",
+      "examples": [".org 0x1000", ".org 4096"]
+    },
+    {
+      "name": ".word",
+      "description": "Allocate word-sized data",
+      "action": "allocate_bytes",
+      "implementation": "# Allocate word data\nword_size = isa_definition.word_size // 8\nresult = []\nfor arg in arguments:\n    value = int(arg, 0)\n    for i in range(word_size):\n        result.append((value >> (i * 8)) & 0xFF)\nresult",
+      "argument_types": ["number"],
+      "syntax": ".word value1, value2, ...",
+      "examples": [".word 0x1234", ".word 42, 0xABCD"]
+    },
+    {
+      "name": ".byte",
+      "description": "Allocate byte data",
+      "action": "allocate_bytes",
+      "implementation": "# Allocate byte data\nresult = []\nfor arg in arguments:\n    value = int(arg, 0)\n    result.append(value & 0xFF)\nresult",
+      "argument_types": ["number"],
+      "syntax": ".byte value1, value2, ...",
+      "examples": [".byte 0x12", ".byte 65, 66, 67"]
+    }
+  ],
+  
+  "constants": {
+    "word_mask": {"value": 4294967295, "description": "32-bit word mask (0xFFFFFFFF)"},
+    "sign_bit_mask": {"value": 2147483648, "description": "32-bit sign bit mask (0x80000000)"},
+    "max_signed_value": {"value": 2147483647, "description": "Maximum 32-bit signed value (0x7FFFFFFF)"},
+    "min_signed_value": {"value": -2147483648, "description": "Minimum 32-bit signed value (-0x80000000)"},
+    "address_mask": {"value": 4294967295, "description": "32-bit address mask (0xFFFFFFFF)"},
+    "register_count": {"value": 16, "description": "Number of registers (r0-r15)"}
+  },
+  
+  "error_messages": {
+    "unknown_instruction": "Unknown instruction '{instruction}' at line {line}",
+    "invalid_operand": "Invalid operand '{operand}' for instruction '{instruction}'",
+    "undefined_symbol": "Undefined symbol '{symbol}' referenced at line {line}",
+    "invalid_address": "Invalid address {address} for {context}",
+    "format": {
+      "locale": "en_US",
+      "date_format": "YYYY-MM-DD",
+      "time_format": "HH:MM:SS"
+    }
+  }
+} 

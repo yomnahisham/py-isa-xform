@@ -98,6 +98,7 @@ class Assembler:
         self.directive_handlers = {
             '.org': self._handle_org_directive,
             '.word': self._handle_word_directive,
+            '.half': self._handle_half_directive,
             '.byte': self._handle_byte_directive,
             '.space': self._handle_space_directive,
             '.ascii': self._handle_ascii_directive,
@@ -293,7 +294,7 @@ class Assembler:
                     handler = self.directive_handlers.get(node.name.lower())
                     if handler:
                         # Automatically detect data directives and put them in data section
-                        data_directives = {'.word', '.byte', '.space', '.ascii', '.asciiz'}
+                        data_directives = {'.word', '.half', '.byte', '.space', '.ascii', '.asciiz'}
                         if node.name.lower() in data_directives or current_section == "data":
                             # Use logical data address for data
                             self.context.current_address = logical_data_address
@@ -377,14 +378,18 @@ class Assembler:
                 self._advance_address_for_instruction(n)
     
     def _assemble_instruction(self, node: InstructionNode, instruction_address: Optional[int] = None) -> bytearray:
-        """Assemble a single instruction, expanding pseudo-instructions if needed"""
+        """Assemble a single instruction node"""
         instruction = self._find_instruction(node.mnemonic)
         if not instruction:
             # Try pseudo-instruction expansion
-            # Pass the current instruction address to the expansion
-            expanded_nodes = self._expand_pseudo_instruction(node, self.context.current_address)
-            if not expanded_nodes:
-                # No pseudo-instruction expansion found - this is an error
+            expanded_nodes = self._expand_pseudo_instruction(node, instruction_address)
+            if expanded_nodes:
+                code = bytearray()
+                for n in expanded_nodes:
+                    code.extend(self._assemble_instruction(n, instruction_address))
+                return code
+            else:
+                # No instruction found and no pseudo-instruction expansion
                 self._report_error(
                     line_number=getattr(node, 'line', 0),
                     column=getattr(node, 'column', 0),
@@ -394,11 +399,6 @@ class Assembler:
                 )
                 # Return empty code to continue assembly
                 return bytearray()
-            
-            code = bytearray()
-            for n in expanded_nodes:
-                code.extend(self._assemble_instruction(n, instruction_address))
-            return code
         
         # Use passed instruction address or capture from context
         if instruction_address is None:
@@ -408,12 +408,16 @@ class Assembler:
             # Encode the instruction based on its format
             encoded = self._encode_instruction(instruction, node.operands, instruction_address)
             
+            # Get instruction length (support for variable-length instructions)
+            instruction_length_bits = self.isa_definition.get_instruction_length(instruction, encoded)
+            instruction_length_bytes = instruction_length_bits // 8
+            
             # Convert to bytes using bit utilities
             endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
-            instruction_bytes = int_to_bytes(encoded, self.instruction_size_bytes, endianness)
+            instruction_bytes = int_to_bytes(encoded, instruction_length_bytes, endianness)
             
-            # Update address
-            self.context.current_address += self.instruction_size_bytes
+            # Update address using actual instruction length
+            self.context.current_address += instruction_length_bytes
             self.symbol_table.set_current_address(self.context.current_address)
             
             return bytearray(instruction_bytes)
@@ -451,17 +455,20 @@ class Assembler:
         """Encode instruction using field definitions and operands, passing field_type for register bank resolution."""
         operand_map = self._map_operands_to_fields_modular(fields, operands, instruction)
         instruction_word = 0
+        
         for field in fields:
             field_name = field.get('name', '')
             field_type = field.get('type', '')
             bit_width = field.get('bit_width', None)
             signed = field.get('signed', False)
+            
             if field_name in operand_map:
                 value = self._resolve_operand_value(operand_map[field_name], field_type, bit_width or 0, signed, instruction_address, field, instruction)
                 instruction_word = self._insert_field(instruction_word, field['bits'], value)
             elif 'value' in field:
                 value = int(field['value'], 2) if isinstance(field['value'], str) and set(field['value']) <= {'0', '1'} else int(field['value'], 0)
                 instruction_word = self._insert_field(instruction_word, field['bits'], value)
+        
         return instruction_word
 
     def _map_operands_to_fields_modular(self, fields: List[Dict[str, Any]], operands: List[OperandNode], instruction: Instruction) -> Dict[str, OperandNode]:
@@ -779,23 +786,23 @@ class Assembler:
                 # Handle both Register objects and dictionaries
                 if hasattr(reg, 'name'):
                     # Register object
-                    if reg.name == reg_name:
-                        reg_num = getattr(reg, 'number', 0)
+                    reg_name_in_bank = reg.name
+                    reg_num = getattr(reg, 'number', 0)
+                    aliases = getattr(reg, 'alias', [])
+                    if reg_name_in_bank == reg_name:
                         return reg_num
                     # Check aliases
-                    aliases = getattr(reg, 'alias', [])
                     if reg_name in aliases:
-                        reg_num = getattr(reg, 'number', 0)
                         return reg_num
                 else:
                     # Dictionary
-                    if reg.get('name') == reg_name:
-                        reg_num = int(reg.get('number', 0))
+                    reg_name_in_bank = reg.get('name')
+                    reg_num = int(reg.get('number', 0))
+                    aliases = reg.get('alias', [])
+                    if reg_name_in_bank == reg_name:
                         return reg_num
                     # Check aliases
-                    aliases = reg.get('alias', [])
                     if reg_name in aliases:
-                        reg_num = int(reg.get('number', 0))
                         return reg_num
         
         # Check alternatives (register aliases)
@@ -807,11 +814,13 @@ class Assembler:
                         if hasattr(reg, 'name'):
                             # Register object
                             if reg.name == alt_name:
-                                return getattr(reg, 'number', 0)
+                                reg_num = getattr(reg, 'number', 0)
+                                return reg_num
                         else:
                             # Dictionary
                             if reg.get('name') == alt_name:
-                                return int(reg.get('number', 0))
+                                reg_num = int(reg.get('number', 0))
+                                return reg_num
         
         # If not found, try to parse as a number
         try:
@@ -1068,6 +1077,21 @@ class Assembler:
             endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
             word_bytes = int_to_bytes(value, word_size, endianness)
             data.extend(word_bytes)
+        
+        self.context.current_address += len(data)
+        self.symbol_table.set_current_address(self.context.current_address)
+        return data
+    
+    def _handle_half_directive(self, node: DirectiveNode) -> bytearray:
+        """Handle .half directive"""
+        data = bytearray()
+        half_size = 2  # 16-bit half words
+        
+        for arg in node.arguments:
+            value = self._parse_number(arg)
+            endianness = 'little' if self.isa_definition.endianness.lower().startswith('little') else 'big'
+            half_bytes = int_to_bytes(value, half_size, endianness)
+            data.extend(half_bytes)
         
         self.context.current_address += len(data)
         self.symbol_table.set_current_address(self.context.current_address)

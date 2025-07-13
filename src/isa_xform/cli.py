@@ -138,6 +138,8 @@ Examples:
                                         'If not specified, automatically detects data regions based on ISA memory layout.')
     disassemble_parser.add_argument('--smart', action='store_true', 
                                    help='Reconstruct pseudo-instructions using patterns from the ISA definition')
+    disassemble_parser.add_argument('--reconstruct-labels', action='store_true',
+                                   help='Reconstruct labels in branch and jump instructions (default: show raw addresses)')
     
     # Validate command
     validate_parser = subparsers.add_parser('validate', help='Validate ISA definition')
@@ -441,14 +443,15 @@ def disassemble_command(args) -> int:
                 disassemble_start = 0
             
             disassembler = Disassembler(isa_definition)
-            result = disassembler.disassemble(machine_code, disassemble_start, debug=args.debug, data_regions=data_regions, reconstruct_pseudo=args.smart)
+            result = disassembler.disassemble(machine_code, disassemble_start, debug=args.debug, data_regions=data_regions, reconstruct_pseudo=args.smart, reconstruct_labels=args.reconstruct_labels)
             
             # Format output
             output_text = disassembler.format_disassembly(
                 result, 
                 include_addresses=args.show_addresses,
                 include_machine_code=args.show_machine_code,
-                reconstruct_pseudo=args.smart
+                reconstruct_pseudo=args.smart,
+                reconstruct_labels=args.reconstruct_labels
             )
             
             # Write output

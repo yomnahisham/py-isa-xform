@@ -1063,7 +1063,9 @@
         "expansion": "XORI rd, -1; ADDI rd, 1",
         "disassembly": {
           "hide_operands": true,
-          "show_as_pseudo": true
+          "show_as_pseudo": true,
+          "reconstruction_type": "multi_instruction",
+          "instructions": ["XORI", "ADDI"]
         }
       },
       {
@@ -1140,7 +1142,8 @@
         "disassembly": {
           "hide_operands": false,
           "show_as_pseudo": true,
-          "reconstruction_type": "stack_operation"
+          "reconstruction_type": "multi_instruction",
+          "instructions": ["ADDI", "SW"]
         }
       },
       {
@@ -1151,7 +1154,8 @@
         "disassembly": {
           "hide_operands": false,
           "show_as_pseudo": true,
-          "reconstruction_type": "stack_operation"
+          "reconstruction_type": "multi_instruction",
+          "instructions": ["LW", "ADDI"]
         }
       }
     ],
