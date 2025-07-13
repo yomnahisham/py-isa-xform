@@ -263,21 +263,28 @@ class OperandParser:
         # Get alternatives from JSON config
         alternatives = self.reg_config.get('alternatives', {})
         
+        # Normalize name for case-insensitive comparison
+        if not self.syntax.case_sensitive:
+            name = name.upper()
+        
         # Check direct name match
         for category, reg_list in self.registers.items():
             for register in reg_list:
-                if register.name == name:
+                reg_name = register.name.upper() if not self.syntax.case_sensitive else register.name
+                if reg_name == name:
                     return register
                 
                 # Check aliases
                 for alias in register.alias:
-                    if alias == name:
+                    alias_name = alias.upper() if not self.syntax.case_sensitive else alias
+                    if alias_name == name:
                         return register
                 
                 # Check alternatives from JSON config
                 if register.name in alternatives:
                     for alt_name in alternatives[register.name]:
-                        if alt_name == name:
+                        alt_name_normalized = alt_name.upper() if not self.syntax.case_sensitive else alt_name
+                        if alt_name_normalized == name:
                             return register
         
         return None

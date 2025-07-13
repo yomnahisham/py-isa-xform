@@ -105,7 +105,7 @@ class TestParser:
         """Test parsing hex numbers"""
         text = "LDI R1, #0x1234"
         nodes = self.parser.parse(text)
-        
+    
         assert len(nodes) == 1
         assert isinstance(nodes[0], InstructionNode)
         assert nodes[0].mnemonic == "LDI"
@@ -113,7 +113,7 @@ class TestParser:
         assert nodes[0].operands[0].type == "register"
         assert nodes[0].operands[0].value == "R1"
         assert nodes[0].operands[1].type == "immediate"
-        assert nodes[0].operands[1].value == "4660"  # 0x1234 converted to decimal
+        assert nodes[0].operands[1].value == 4660  # 0x1234 converted to decimal
     
     def test_parse_binary_numbers(self):
         """Test parsing binary numbers"""
@@ -127,7 +127,7 @@ class TestParser:
         assert nodes[0].operands[0].type == "register"
         assert nodes[0].operands[0].value == "R1"
         assert nodes[0].operands[1].type == "immediate"
-        assert nodes[0].operands[1].value == "10"  # 0b1010 converted to decimal
+        assert nodes[0].operands[1].value == 10  # 0b1010 converted to decimal
     
     def test_parse_directives(self):
         """Test parsing directives"""
@@ -164,13 +164,13 @@ class TestParser:
         text = "LDI R1, #0x1234"
         nodes = self.parser.parse(text)
         assert isinstance(nodes[0], InstructionNode)
-        assert nodes[0].operands[1].value == "4660"  # 0x1234 converted to decimal
+        assert nodes[0].operands[1].value == 4660  # 0x1234 converted to decimal
         
         # Test binary
         text = "LDI R1, #0b1010"
         nodes = self.parser.parse(text)
         assert isinstance(nodes[0], InstructionNode)
-        assert nodes[0].operands[1].value == "10"  # 0b1010 converted to decimal
+        assert nodes[0].operands[1].value == 10  # 0b1010 converted to decimal
     
     def test_parse_identifier_classification(self):
         """Test identifier classification through parsing"""

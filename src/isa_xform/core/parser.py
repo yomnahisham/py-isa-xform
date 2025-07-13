@@ -227,20 +227,46 @@ class Parser:
             return None
         mnemonic = parts[0]
         operands = []
+        
+        # Find instruction definition to get syntax information
+        instruction_def = None
+        if self.isa_definition:
+            for instr in self.isa_definition.instructions:
+                if instr.mnemonic.upper() == mnemonic.upper():
+                    instruction_def = instr
+                    break
+        
         # Parse operands
         if len(parts) > 1:
             operand_str = ' '.join(parts[1:])
             operand_parts = [part.strip() for part in operand_str.split(',')]
-            for operand_part in operand_parts:
+            
+            # Extract expected operand types from instruction syntax if available
+            expected_types = []
+            if instruction_def and hasattr(instruction_def, 'syntax'):
+                # Parse syntax like "ADD $rd, $rs1, $rs2" to extract operand types
+                syntax_parts = instruction_def.syntax.split()
+                if len(syntax_parts) > 1:
+                    syntax_operands = syntax_parts[1:]  # Skip mnemonic
+                    for syntax_op in syntax_operands:
+                        if syntax_op.startswith('$'):
+                            expected_types.append(syntax_op[1:])  # Remove $ prefix
+                        else:
+                            expected_types.append(syntax_op)
+            
+            for i, operand_part in enumerate(operand_parts):
                 # Strip any comment from the operand
                 for comment_char in self.comment_chars:
                     comment_pos = operand_part.find(comment_char)
                     if comment_pos != -1:
                         operand_part = operand_part[:comment_pos].strip()
                 if operand_part:
-                    operand = self._parse_operand(operand_part, line_num, file)
+                    # Use expected type if available
+                    expected_type = expected_types[i] if i < len(expected_types) else ""
+                    operand = self._parse_operand_modular_typed(operand_part, line_num, file, expected_type)
                     if operand:
                         operands.append(operand)
+        
         return InstructionNode(mnemonic, operands, line_num, 1, file)
 
     def _parse_operand_modular_typed(self, operand_str: str, line_num: int, file: Optional[str], expected_type: str = "") -> Optional[OperandNode]:
@@ -279,7 +305,7 @@ class Parser:
                 if self.operand_parser._is_immediate_value(operand_str):
                     parsed = self.operand_parser._parse_immediate(operand_str, line_num, 1)
                     if parsed.value is not None:
-                        return OperandNode(str(parsed.value), 'immediate', line_num, 1, file)
+                        return OperandNode(parsed.value, 'immediate', line_num, 1, file)
                 # Fallback: try parsing as label if it looks like a label
                 if self.operand_parser._is_label_name(operand_str):
                     parsed = self.operand_parser._parse_label(operand_str, line_num, 1)
@@ -292,9 +318,14 @@ class Parser:
         
         # Map ParsedOperand to OperandNode
         if parsed.type == 'register' and parsed.value is not None:
-            return OperandNode(parsed.value.name, 'register', line_num, 1, file)
+            # Normalize register name if case insensitive
+            if not self.case_sensitive:
+                normalized_name = parsed.value.name.upper()
+            else:
+                normalized_name = parsed.value.name
+            return OperandNode(normalized_name, 'register', line_num, 1, file)
         elif parsed.type == 'immediate' and parsed.value is not None:
-            return OperandNode(str(parsed.value), 'immediate', line_num, 1, file)
+            return OperandNode(parsed.value, 'immediate', line_num, 1, file)
         elif parsed.type == 'label' and parsed.value is not None:
             return OperandNode(parsed.value, 'label', line_num, 1, file)
         elif parsed.type == 'address' and parsed.value is not None:
@@ -333,6 +364,18 @@ class Parser:
         # Immediate value (starts with #)
         if operand_str.startswith('#'):
             value = operand_str[1:]  # Remove #
+            # Convert to integer if it's a number
+            if self._is_number(value):
+                try:
+                    if value.startswith('0x'):
+                        int_value = int(value, 16)
+                    elif value.startswith('0b'):
+                        int_value = int(value, 2)
+                    else:
+                        int_value = int(value, 10)
+                    return OperandNode(int_value, "immediate", line_num, 1, file)
+                except ValueError:
+                    pass
             return OperandNode(value, "immediate", line_num, 1, file)
         
         # Register (starts with prefix or is a register name)
@@ -343,7 +386,12 @@ class Parser:
             if self._is_register(reg_name):
                 return OperandNode(operand_str, "register", line_num, 1, file)  # Keep full name with prefix
         if self._is_register(operand_str):
-            return OperandNode(operand_str, "register", line_num, 1, file)
+            # Normalize register name to uppercase if case insensitive
+            if not self.case_sensitive:
+                normalized_name = operand_str.upper()
+            else:
+                normalized_name = operand_str
+            return OperandNode(normalized_name, "register", line_num, 1, file)
         
         # Check if it's a number
         if self._is_number(operand_str):

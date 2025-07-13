@@ -23,9 +23,9 @@ class Register:
     """Represents a register definition"""
     name: str
     size: int
-    number: int = 0
     alias: List[str] = field(default_factory=list)
     description: Optional[str] = None
+    number: int = 0
 
 
 @dataclass
