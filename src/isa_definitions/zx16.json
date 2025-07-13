@@ -272,7 +272,7 @@
         "format": "R-type",
         "description": "Shift right arithmetic",
         "syntax": "SRA rd, rs2",
-        "semantics": "rd = rd >> (rs2 & 0xF)",
+        "semantics": "rd = unsigned(rd) >> (rs2 & 0xF)",
         "implementation": "# Shift right arithmetic implementation\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nshift_amount = rs2_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -439,7 +439,7 @@
         "format": "I-type",
         "description": "Shift left logical immediate",
         "syntax": "SLLI rd, imm",
-        "semantics": "rd = rd << imm",
+        "semantics": "rd = rd << (imm & 0xF)",
         "implementation": "# Shift left logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val << shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -455,7 +455,7 @@
         "format": "I-type",
         "description": "Shift right logical immediate",
         "syntax": "SRLI rd, imm",
-        "semantics": "rd = rd >> imm",
+        "semantics": "rd = rd >> (imm & 0xF)",
         "implementation": "# Shift right logical immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\nresult = (rd_val >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -471,7 +471,7 @@
         "format": "I-type",
         "description": "Shift right arithmetic immediate",
         "syntax": "SRAI rd, imm",
-        "semantics": "rd = unsigned(rd) >> imm",
+        "semantics": "rd = unsigned(rd) >> (imm & 0xF)",
         "implementation": "# Shift right arithmetic immediate implementation\nrd_val = read_register(operands['rd'])\nimm_val = operands['imm']\nshift_amount = imm_val & 0xF\n# Sign extend for arithmetic shift\nrd_signed = rd_val if (rd_val & 0x8000) == 0 else rd_val - 0x10000\nresult = (rd_signed >> shift_amount) & 0xFFFF\nwrite_register(operands['rd'], result)\n# Set flags\nset_flag('Z', result == 0)\nset_flag('N', (result & 0x8000) != 0)",
         "encoding": {
           "fields": [
@@ -695,7 +695,7 @@
         "format": "S-type",
         "description": "Store byte",
         "syntax": "SB rs2, offset(rs1)",
-        "semantics": "mem[rs1 + offset] = rs2",
+        "semantics": "memory[rs1 + offset] = (imm & 0xF) << 3 | rs2",
         "implementation": "# Store byte implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store low byte\nif addr < len(memory):\n    memory[addr] = rs2_val & 0xFF",
         "encoding": {
           "fields": [
@@ -712,7 +712,7 @@
         "format": "S-type",
         "description": "Store word",
         "syntax": "SW rs2, offset(rs1)",
-        "semantics": "mem[rs1 + offset] = rs2",
+        "semantics": "memory[rs1 + offset] = rs2",
         "implementation": "# Store word implementation\nrs1_val = read_register(operands['rs1'])\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs1_val + offset) & 0xFFFF\n# Store 16-bit word (little endian)\nif addr + 1 < len(memory):\n    memory[addr] = rs2_val & 0xFF\n    memory[addr + 1] = (rs2_val >> 8) & 0xFF",
         "encoding": {
           "fields": [
@@ -729,7 +729,7 @@
         "format": "L-type",
         "description": "Load byte",
         "syntax": "LB rd, offset(rs2)",
-        "semantics": "rd = mem[rs2 + offset]",
+        "semantics": "rd = memory[rs2 + offset]",
         "implementation": "# Load byte implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load byte and sign extend\nif addr < len(memory):\n    byte_val = memory[addr]\n    # Sign extend 8-bit to 16-bit\n    if byte_val & 0x80:\n        result = byte_val | 0xFF00\n    else:\n        result = byte_val\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -746,7 +746,7 @@
         "format": "L-type",
         "description": "Load word",
         "syntax": "LW rd, offset(rs2)",
-        "semantics": "rd = mem[rs2 + offset]",
+        "semantics": "rd = memory[rs2 + offset]",
         "implementation": "# Load word implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load 16-bit word (little endian)\nif addr + 1 < len(memory):\n    result = memory[addr] | (memory[addr + 1] << 8)\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [
@@ -763,7 +763,7 @@
         "format": "L-type",
         "description": "Load byte unsigned",
         "syntax": "LBU rd, offset(rs2)",
-        "semantics": "rd = mem[rs2 + offset])",
+        "semantics": "rd = memory[rs2 + offset])",
         "implementation": "# Load byte unsigned implementation\nrs2_val = read_register(operands['rs2'])\noffset = operands['imm']\n# Sign extend 4-bit offset\nif offset & 0x8:\n    offset = offset | 0xFFF0\naddr = (rs2_val + offset) & 0xFFFF\n# Load byte and zero extend\nif addr < len(memory):\n    result = memory[addr] & 0xFF\n    write_register(operands['rd'], result)",
         "encoding": {
           "fields": [
