@@ -71,6 +71,8 @@ Examples:
   %(prog)s disassemble --isa simple_risc --input program.bin --output disassembled.s
   %(prog)s disassemble --isa zx16 --input program.bin --output disassembled.s --start-address 0x20
   %(prog)s disassemble --isa zx16 --input program.bin --output disassembled.s --data-regions 0x100-0x200
+  %(prog)s simulate --isa zx16 --input program.bin
+  %(prog)s simulate --isa zx16 --input program.bin --step
   %(prog)s validate --isa simple_risc
   %(prog)s list-isas
 
@@ -168,6 +170,13 @@ Examples:
     scaffold_parser.add_argument('--registers', help='Comma-separated list of register names (overrides --register-count)')
     scaffold_parser.add_argument('--output', help='Output file path (default: {name}_isa.json)')
     
+    # Simulate command
+    simulate_parser = subparsers.add_parser('simulate', help='Run modular simulator with graphics')
+    simulate_parser.add_argument('--isa', required=True, help='ISA definition file or name')
+    simulate_parser.add_argument('--input', required=True, help='Input binary file to simulate')
+    simulate_parser.add_argument('--step', action='store_true', help='Step through instructions one by one')
+    simulate_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    
     args = parser.parse_args()
     
     if not args.command:
@@ -187,6 +196,8 @@ Examples:
             return list_isas_command(args)
         elif args.command == 'scaffold':
             return scaffold_command(args)
+        elif args.command == 'simulate':
+            return simulate_command(args)
         else:
             print(f"Unknown command: {args.command}")
             return 1
@@ -625,6 +636,60 @@ def scaffold_command(args) -> int:
     print('Running:', ' '.join(shlex.quote(c) for c in cmd))
     result = subprocess.run(cmd)
     return result.returncode
+
+
+def simulate_command(args) -> int:
+    """Handle simulate command"""
+    error_reporter = ErrorReporter()
+    
+    try:
+        # Load ISA definition
+        isa_definition = load_isa_smart(args.isa)
+        if args.verbose:
+            print(f"Loaded ISA: {isa_definition.name} v{isa_definition.version}")
+        
+        # Check if input file exists
+        if not Path(args.input).exists():
+            error_reporter.add_error(ISAError(f"Input file not found: {args.input}"))
+            error_reporter.raise_if_errors()
+            return 1
+        
+        # Import the modular simulator
+        from .core.modular_sim import Simulator, ISALoader, SymbolTable, Disassembler
+        
+        # Create simulator components
+        isa_loader = ISALoader()
+        symbol_table = SymbolTable()
+        disassembler = Disassembler(isa_definition, symbol_table)
+        simulator = Simulator(isa_definition, symbol_table, disassembler)
+        
+        # Load the binary file
+        if not simulator.load_memory_from_file(args.input):
+            error_reporter.add_error(ISAError(f"Failed to load binary file: {args.input}"))
+            error_reporter.raise_if_errors()
+            return 1
+        
+        if args.verbose:
+            print(f"Loaded binary file: {args.input}")
+            print(f"Entry point: 0x{simulator.pc:04X}")
+            print(f"Code section: 0x{simulator.code_start:04X} - 0x{simulator.code_start + simulator.code_size:04X}")
+        
+        # Run the simulator
+        from .core.modular_sim import run_simulator_with_graphics
+        run_simulator_with_graphics(simulator, step=args.step)
+        
+        return 0
+        
+    except ISAError as e:
+        error_reporter.add_error(e)
+        print(error_reporter.format_errors(), file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Simulation error: {e}", file=sys.stderr)
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
+        return 1
 
 
 if __name__ == "__main__":
