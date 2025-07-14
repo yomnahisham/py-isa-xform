@@ -29,4 +29,6 @@
 
 ; Data sections:
     ; Data section at 0x8000
-    8000: .word 0x0012, 0x0034, 0x0030
+    8000: .word 0x0012
+    8002: .word 0x0034
+    8004: .word 0x0030

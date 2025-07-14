@@ -5,18 +5,20 @@ Comprehensive ZX16 test with labels, offsets, and immediates
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
-
+sys.path.append('../../../src')
 from isa_xform.core.isa_loader import ISALoader
 from isa_xform.core.assembler import Assembler
-from isa_xform.core.parser import Parser
 from isa_xform.core.disassembler import Disassembler
+from isa_xform.core.parser import Parser
 
 
 def test_zx16_comprehensive():
     """Test ZX16 with labels, offsets, and immediates"""
     print("Comprehensive ZX16 Test")
     print("=" * 50)
+    
+    # Get the directory where this test file is located
+    test_dir = os.path.dirname(os.path.abspath(__file__))
     
     # Load ZX16 ISA
     loader = ISALoader()
@@ -31,7 +33,7 @@ def test_zx16_comprehensive():
     try:
         # Parse the assembly code
         parser = Parser(isa_def)
-        with open("test_zx16_comprehensive.s", "r") as f:
+        with open(os.path.join(test_dir, "test_zx16_comprehensive.s"), "r") as f:
             assembly_code = f.read()
         
         nodes = parser.parse(assembly_code)
@@ -52,7 +54,7 @@ def test_zx16_comprehensive():
                 print(f"    {name}: 0x{symbol.value:04X}")
         
         # Save the binary
-        with open("test_zx16_comprehensive.bin", "wb") as f:
+        with open(os.path.join(test_dir, "test_zx16_comprehensive.bin"), "wb") as f:
             f.write(result.machine_code)
         print("  ✓ Binary saved to test_zx16_comprehensive.bin")
         
@@ -65,7 +67,7 @@ def test_zx16_comprehensive():
     
     try:
         # Read the binary back
-        with open("test_zx16_comprehensive.bin", "rb") as f:
+        with open(os.path.join(test_dir, "test_zx16_comprehensive.bin"), "rb") as f:
             machine_code = f.read()
         
         # Disassemble
@@ -76,7 +78,7 @@ def test_zx16_comprehensive():
         print(f"  Disassembled {len(disassembled.instructions)} instructions")
         
         # Save disassembly
-        with open("test_zx16_comprehensive_dis.s", "w") as f:
+        with open(os.path.join(test_dir, "test_zx16_comprehensive_dis.s"), "w") as f:
             f.write(disassembler.format_disassembly(disassembled))
         print("  ✓ Disassembly saved to test_zx16_comprehensive_dis.s")
         
@@ -138,8 +140,8 @@ def test_zx16_comprehensive():
         result = subprocess.run([
             'python3', '-m', 'isa_xform.cli', 'assemble',
             '--isa', 'zx16',
-            '--input', 'test_zx16_comprehensive.s',
-            '--output', 'test_zx16_comprehensive_cli.bin',
+            '--input', os.path.join(test_dir, 'test_zx16_comprehensive.s'),
+            '--output', os.path.join(test_dir, 'test_zx16_comprehensive_cli.bin'),
             '--verbose'
         ], capture_output=True, text=True)
         
@@ -153,8 +155,8 @@ def test_zx16_comprehensive():
         result = subprocess.run([
             'python3', '-m', 'isa_xform.cli', 'disassemble',
             '--isa', 'zx16',
-            '--input', 'test_zx16_comprehensive_cli.bin',
-            '--output', 'test_zx16_comprehensive_cli_dis.s',
+            '--input', os.path.join(test_dir, 'test_zx16_comprehensive_cli.bin'),
+            '--output', os.path.join(test_dir, 'test_zx16_comprehensive_cli_dis.s'),
             '--verbose'
         ], capture_output=True, text=True)
         
@@ -170,20 +172,22 @@ def test_zx16_comprehensive():
     
     print("\n" + "=" * 50)
     print("✓ All tests passed! ZX16 handles labels, offsets, and immediates correctly.")
-    return True
 
 
 def show_comparison():
     """Show a comparison between original and disassembled code"""
     print("\n=== Code Comparison ===")
     
+    # Get the directory where this test file is located
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    
     try:
         # Read original assembly
-        with open("test_zx16_comprehensive.s", "r") as f:
+        with open(os.path.join(test_dir, "test_zx16_comprehensive.s"), "r") as f:
             original = f.read()
         
         # Read disassembled code
-        with open("test_zx16_comprehensive_dis.s", "r") as f:
+        with open(os.path.join(test_dir, "test_zx16_comprehensive_dis.s"), "r") as f:
             disassembled = f.read()
         
         print("Original assembly (first 10 lines):")
@@ -213,9 +217,9 @@ def show_comparison():
 
 
 if __name__ == "__main__":
-    success = test_zx16_comprehensive()
-    if success:
+    try:
+        test_zx16_comprehensive()
         show_comparison()
-    else:
-        print("\n✗ Test failed!")
+    except Exception as e:
+        print(f"\n✗ Test failed: {e}")
         sys.exit(1) 

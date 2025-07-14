@@ -31,4 +31,6 @@
     JR x1
 
 ; Data sections:
-    .word 0x0012, 0x0034, 0x0030
+    .word 0x0012
+    .word 0x0034
+    .word 0x0030

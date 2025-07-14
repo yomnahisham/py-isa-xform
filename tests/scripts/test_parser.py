@@ -99,7 +99,7 @@ class TestParser:
         assert nodes[0].operands[0].type == "register"
         assert nodes[0].operands[0].value == "R1"
         assert nodes[0].operands[1].type == "immediate"
-        assert nodes[0].operands[1].value == "42"
+        assert nodes[0].operands[1].value == 42
     
     def test_parse_hex_numbers(self):
         """Test parsing hex numbers"""
@@ -158,7 +158,7 @@ class TestParser:
         text = "LDI R1, #42"
         nodes = self.parser.parse(text)
         assert isinstance(nodes[0], InstructionNode)
-        assert nodes[0].operands[1].value == "42"
+        assert nodes[0].operands[1].value == 42
         
         # Test hex
         text = "LDI R1, #0x1234"
@@ -307,7 +307,7 @@ class TestParser:
         assert nodes[0].operands[0].type == "register"
         assert nodes[0].operands[0].value == "R1"
         assert nodes[0].operands[1].type == "immediate"
-        assert nodes[0].operands[1].value == "42"
+        assert nodes[0].operands[1].value == 42
 
 
 class TestToken:

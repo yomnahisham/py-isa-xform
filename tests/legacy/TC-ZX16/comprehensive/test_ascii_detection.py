@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import sys
+import os
 sys.path.append('../../../src')
 from isa_xform.core.isa_loader import ISALoader
 from isa_xform.core.assembler import Assembler
@@ -12,8 +13,11 @@ def test_ascii_detection():
     loader = ISALoader()
     isa = loader.load_isa('zx16')
     
+    # Get the directory where this test file is located
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    
     # Read the test file
-    with open('test_ascii_data.s', 'r') as f:
+    with open(os.path.join(test_dir, 'test_ascii_data.s'), 'r') as f:
         program = f.read()
     
     print("Original assembly:")
@@ -27,7 +31,7 @@ def test_ascii_detection():
     result = assembler.assemble(nodes)
     
     # Save binary for inspection
-    with open('test_ascii_data.bin', 'wb') as f:
+    with open(os.path.join(test_dir, 'test_ascii_data.bin'), 'wb') as f:
         f.write(result.machine_code)
     
     print(f"Binary size: {len(result.machine_code)} bytes")
