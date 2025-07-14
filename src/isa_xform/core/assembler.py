@@ -50,6 +50,12 @@ class AssemblyContext:
     warnings: List[AssemblyError] = field(default_factory=list)
     current_line: int = 0
     current_file: str = ""
+    
+    # Modular section management
+    sections: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # section_name -> section_info
+    section_addresses: Dict[str, int] = field(default_factory=dict)  # section_name -> current_address
+    section_data: Dict[str, bytearray] = field(default_factory=dict)  # section_name -> data_bytes
+    section_attributes: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # section_name -> attributes
 
 
 @dataclass 
@@ -113,11 +119,157 @@ class Assembler:
         # Add dynamic handlers for all ISA-defined directives
         self._register_isa_directives()
     
+    def _initialize_sections(self):
+        """Initialize sections from ISA definition and create default sections"""
+        # Clear existing sections
+        self.context.sections.clear()
+        self.context.section_addresses.clear()
+        self.context.section_data.clear()
+        self.context.section_attributes.clear()
+        
+        # Add ISA-defined sections from memory_layout
+        memory_layout = self.isa_definition.address_space.memory_layout
+        for section_name, section_info in memory_layout.items():
+            if isinstance(section_info, dict) and 'start' in section_info:
+                attributes = section_info.get('attributes', {})
+                if not isinstance(attributes, dict):
+                    attributes = {}
+                self._create_section(
+                    name=section_name,
+                    start_address=section_info['start'],
+                    end_address=section_info.get('end', section_info['start'] + 1024),
+                    attributes=attributes
+                )
+        
+        # Create default sections if not defined in ISA
+        if 'text' not in self.context.sections:
+            code_section = self.isa_definition.address_space.memory_layout.get('code_section', {})
+            code_start = code_section.get('start', 0)
+            code_end = code_section.get('end', code_start + 65536)  # Default to 64KB if not specified
+            self._create_section('text', code_start, code_end, {'type': 'code', 'executable': True})
+        
+        if 'data' not in self.context.sections:
+            data_section = self.isa_definition.address_space.memory_layout.get('data_section', {})
+            data_start = data_section.get('start', 512)
+            data_end = data_section.get('end', data_start + 65536)  # Default to 64KB if not specified
+            self._create_section('data', data_start, data_end, {'type': 'data', 'writable': True})
+        
+        if 'bss' not in self.context.sections:
+            bss_start = data_end if 'data' in self.context.sections else 1024
+            bss_end = bss_start + 65536  # Default to 64KB
+            self._create_section('bss', bss_start, bss_end, {'type': 'bss', 'writable': True, 'zero_fill': True})
+    
+    def _create_section(self, name: str, start_address: int, end_address: int, attributes: Optional[Dict[str, Any]] = None):
+        """Create a new section with specified attributes"""
+        if attributes is None:
+            attributes = {}
+        
+        self.context.sections[name] = {
+            'start': start_address,
+            'end': end_address,
+            'size': end_address - start_address,
+            'attributes': attributes
+        }
+        self.context.section_addresses[name] = start_address
+        self.context.section_data[name] = bytearray()
+        self.context.section_attributes[name] = attributes.copy()
+    
+    def _switch_section(self, section_name: str, address: Optional[int] = None):
+        """Switch to a different section, optionally setting a specific address"""
+        if section_name not in self.context.sections:
+            # Create a new user-defined section
+            if address is None:
+                # Find a free address range
+                address = self._find_free_address_range()
+            self._create_section(section_name, address, address + 1024, {'type': 'user_defined'})
+        
+        self.context.current_section = section_name
+        
+        if address is not None:
+            # Validate address is within section bounds
+            section_info = self.context.sections[section_name]
+            if address < section_info['start'] or address >= section_info['end']:
+                self._report_error(
+                    line_number=self.context.current_line,
+                    column=0,
+                    message=f"Address 0x{address:X} is outside section '{section_name}' bounds (0x{section_info['start']:X}-0x{section_info['end']:X})",
+                    context=f"Section: {section_name}"
+                )
+                return False
+            
+            self.context.section_addresses[section_name] = address
+            self.context.current_address = address
+        else:
+            # Use current address in the section
+            self.context.current_address = self.context.section_addresses[section_name]
+        
+        return True
+    
+    def _find_free_address_range(self) -> int:
+        """Find a free address range for a new section"""
+        # Simple implementation: find the highest end address and add some padding
+        max_end = 0
+        for section_info in self.context.sections.values():
+            max_end = max(max_end, section_info['end'])
+        
+        # Add 1KB padding between sections
+        return max_end + 1024
+    
+    def _get_current_section_info(self) -> Dict[str, Any]:
+        """Get information about the current section"""
+        return self.context.sections.get(self.context.current_section, {})
+    
+    def _add_data_to_section(self, section_name: str, data: bytes, address: Optional[int] = None):
+        """Add data to a specific section at a specific address"""
+        if section_name not in self.context.sections:
+            self._report_error(
+                line_number=self.context.current_line,
+                column=0,
+                message=f"Unknown section '{section_name}'",
+                context="Section management"
+            )
+            return False
+        
+        section_info = self.context.sections[section_name]
+        section_data = self.context.section_data[section_name]
+        
+        if address is None:
+            # Append to end of section
+            address = self.context.section_addresses[section_name]
+        
+        # Check bounds
+        if address < section_info['start'] or address + len(data) > section_info['end']:
+            self._report_error(
+                line_number=self.context.current_line,
+                column=0,
+                message=f"Data placement would exceed section '{section_name}' bounds",
+                context=f"Address: 0x{address:X}, Size: {len(data)}, Section: 0x{section_info['start']:X}-0x{section_info['end']:X}"
+            )
+            return False
+        
+        # Ensure section_data is large enough
+        while len(section_data) < address - section_info['start'] + len(data):
+            section_data.append(0)
+        
+        # Place data at the specified address
+        offset = address - section_info['start']
+        section_data[offset:offset + len(data)] = data
+        
+        # Update current address in the section
+        self.context.section_addresses[section_name] = address + len(data)
+        
+        return True
+    
     def _register_isa_directives(self):
         """Register all directives defined in the ISA as dynamic handlers"""
         for directive_name, directive_def in self.isa_definition.directives.items():
-            # Register every ISA directive as a dynamic handler
+            # Register the main directive
             self.directive_handlers[directive_name] = self._handle_dynamic_directive
+            
+            # Register aliases if they exist
+            if hasattr(directive_def, 'aliases') and directive_def.aliases:
+                for alias in directive_def.aliases:
+                    self.directive_handlers[alias] = self._handle_dynamic_directive
     
     def _compile_directive_implementations(self):
         """Compile custom directive implementations from ISA definition"""
@@ -212,6 +364,9 @@ class Assembler:
         self.context.errors.clear()
         self.context.warnings.clear()
         
+        # Initialize sections from ISA definition
+        self._initialize_sections()
+        
         if two_pass:
             # First pass: collect symbols and calculate addresses
             self.context.pass_number = 1
@@ -219,7 +374,6 @@ class Assembler:
             
             # Second pass: generate code
             self.context.pass_number = 2
-            self.context.current_address = 0
             machine_code = self._second_pass(nodes)
         else:
             # Single pass assembly
@@ -243,12 +397,9 @@ class Assembler:
         """First pass: collect symbols and calculate addresses"""
         self.symbol_table.reset()
         
-        # Initialize with default code start address from ISA
-        code_section_start = self.isa_definition.address_space.memory_layout.get('code_section', {}).get('start', 0)
-        data_section_start = self.isa_definition.address_space.memory_layout.get('data_section', {}).get('start', 0)
-        
-        self.context.current_address = code_section_start
+        # Set initial section and address
         self.context.current_section = "text"
+        self.context.current_address = self.context.section_addresses["text"]
         
         for node in nodes:
             if isinstance(node, LabelNode):
@@ -300,27 +451,32 @@ class Assembler:
                             logical_code_address = address
                         self.context.current_address = address
                 else:
-                    # Use directive handler dispatch
-                    handler = self.directive_handlers.get(node.name.lower())
-                    if handler:
-                        # Dynamically detect data directives from ISA definition
-                        is_data_directive = (
-                            node.name.lower() in {'.word', '.half', '.byte', '.space', '.ascii', '.asciiz'} or
-                            current_section == "data" or
-                            (node.name.lower() in self.isa_definition.directives and 
-                             self.isa_definition.directives[node.name.lower()].action in 
-                             {"allocate_bytes", "allocate_space", "allocate_string", "fill"})
-                        )
-                        
+                    # Use proper directive handling method
+                    result = self._handle_directive_second_pass(node)
+                    
+                    # Dynamically detect data directives from ISA definition
+                    is_data_directive = (
+                        node.name.lower() in {'.word', '.half', '.byte', '.space', '.ascii', '.asciiz'} or
+                        current_section == "data" or
+                        (node.name.lower() in self.isa_definition.directives and 
+                         self.isa_definition.directives[node.name.lower()].action in 
+                         {"allocate_bytes", "allocate_space", "allocate_string", "fill"})
+                    )
+                    
+                    if result is not None:
                         if is_data_directive:
                             # Use logical data address for data
                             self.context.current_address = logical_data_address
-                            data_bytes.extend(handler(node) or b"")
+                            # Add data to the current section at the current address
+                            self._add_data_to_section("data", bytes(result), logical_data_address)
+                            data_bytes.extend(result)
                             logical_data_address = self.context.current_address
                         else:
                             # Use logical code address for code
                             self.context.current_address = logical_code_address
-                            code_bytes.extend(handler(node) or b"")
+                            # Add code to the current section at the current address
+                            self._add_data_to_section("text", bytes(result), logical_code_address)
+                            code_bytes.extend(result)
                             logical_code_address = self.context.current_address
             elif isinstance(node, InstructionNode):
                 # Use the address recorded in the first pass for this instruction
@@ -328,6 +484,8 @@ class Assembler:
                 self.context.current_address = instruction_address
                 print(f"[DEBUG] Second pass: logical_code_address={logical_code_address}, current_address={self.context.current_address}, instruction_address={instruction_address}")
                 code = self._assemble_instruction(node, instruction_address)
+                # Add code to the current section at the current address
+                self._add_data_to_section("text", bytes(code), instruction_address)
                 code_bytes.extend(code)
                 logical_code_address = self.context.current_address
         
@@ -989,19 +1147,11 @@ class Assembler:
                 self.context.origin_set = True
                 self.symbol_table.set_current_address(address)
         elif directive_name == '.data':
-            # Switch to data section, but don't set address yet - wait for .org directive
-            self.context.current_section = "data"
-            # Only set default address if we haven't seen an .org directive yet
-            if not self.context.origin_set:
-                data_section_start = self.isa_definition.address_space.memory_layout.get('data_section', {}).get('start', 0)
-                self.context.current_address = data_section_start
-                self.symbol_table.set_current_address(data_section_start)
+            # Switch to data section
+            self._switch_section("data")
         elif directive_name == '.text':
-            # Switch to code section address
-            code_section_start = self.isa_definition.address_space.memory_layout.get('code_section', {}).get('start', 0)
-            self.context.current_address = code_section_start
-            self.context.current_section = "text"
-            self.symbol_table.set_current_address(code_section_start)
+            # Switch to text section
+            self._switch_section("text")
         elif directive_name in ['.word', '.byte']:
             # Calculate space needed
             if directive_name == '.word':
@@ -1052,6 +1202,14 @@ class Assembler:
                 #     size = 4  # Use word size from ISA
                 #     self.context.current_address += size * len(node.arguments)
                 #     self.symbol_table.set_current_address(self.context.current_address)
+            else:
+                # Report error for unknown directive
+                self._report_error(
+                    line_number=getattr(node, 'line', 0),
+                    column=getattr(node, 'column', 0),
+                    message=f"Unknown directive '{node.name}'",
+                    context="Directive processing"
+                )
     
     def _handle_directive_second_pass(self, node: DirectiveNode) -> Optional[bytearray]:
         """Handle directive during second pass"""
@@ -1065,6 +1223,13 @@ class Assembler:
             if directive_name in self.isa_definition.directives:
                 return self._handle_dynamic_directive(node)
         
+        # Report error for unknown directive
+        self._report_error(
+            line_number=getattr(node, 'line', 0),
+            column=getattr(node, 'column', 0),
+            message=f"Unknown directive '{node.name}'",
+            context="Directive processing"
+        )
         return None
     
     # Directive handlers
@@ -1159,7 +1324,22 @@ class Assembler:
     def _handle_section_directive(self, node: DirectiveNode) -> Optional[bytearray]:
         """Handle .section directive"""
         if node.arguments:
-            self.context.current_section = node.arguments[0]
+            section_name = node.arguments[0]
+            # Check if additional arguments specify address
+            address = None
+            if len(node.arguments) > 1:
+                try:
+                    address = self._parse_number(node.arguments[1])
+                except ValueError:
+                    self._report_error(
+                        line_number=getattr(node, 'line', 0),
+                        column=getattr(node, 'column', 0),
+                        message=f"Invalid address '{node.arguments[1]}' for section '{section_name}'",
+                        context="Section directive"
+                    )
+                    return None
+            
+            self._switch_section(section_name, address)
         return None
     
     def _handle_global_directive(self, node: DirectiveNode) -> Optional[bytearray]:

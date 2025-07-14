@@ -75,6 +75,8 @@ class Directive:
     syntax: str = ""
     examples: List[str] = field(default_factory=list)
     validation_rules: Dict[str, Any] = field(default_factory=dict)
+    aliases: List[str] = field(default_factory=list)
+    implementation: str = ""
 
 
 @dataclass
@@ -480,8 +482,11 @@ class ISALoader:
                     handler=directive_data.get("handler"),
                     syntax=directive_data.get("syntax", ""),
                     examples=directive_data.get("examples", []),
-                    validation_rules=directive_data.get("validation_rules", {})
+                    validation_rules=directive_data.get("validation_rules", {}),
+                    aliases=directive_data.get("aliases", []),
+                    implementation=directive_data.get("implementation", "")
                 )
+                directives[directive_data["name"]] = directive
 
         # Parse addressing modes
         addressing_modes = []

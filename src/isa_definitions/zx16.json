@@ -873,6 +873,7 @@
         "name": ".word",
         "description": "Define word data",
         "action": "define_word",
+        "aliases": [".dw", ".data"],
         "implementation": "# Define word directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    # Little endian 16-bit word\n    result.extend([value & 0xFF, (value >> 8) & 0xFF])\n    context.current_address += 2\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
         "argument_types": ["number"],
         "syntax": ".word value1, value2, ...",
@@ -882,6 +883,7 @@
         "name": ".byte",
         "description": "Define byte data",
         "action": "define_byte",
+        "aliases": [".db", ".data8"],
         "implementation": "# Define byte directive implementation\nresult = bytearray()\nfor arg in args:\n    value = int(arg, 0)  # Parse as hex/decimal\n    result.append(value & 0xFF)\n    context.current_address += 1\nassembler.context.current_address = context.current_address\nassembler.symbol_table.set_current_address(context.current_address)",
         "argument_types": ["number"],
         "syntax": ".byte value1, value2, ...",
@@ -925,9 +927,10 @@
       },
       {
         "name": ".set",
-        "description": "Define constant (alias for .equ)",
+        "description": "Define constant",
         "action": "define_constant",
-        "implementation": "# .set is an alias for .equ\nif len(args) >= 2:\n    symbol = args[0]\n    value = int(args[1], 0)\n    assembler.symbol_table.define_constant(symbol, value)",
+        "aliases": [".equ", ".define", ".const"],
+        "implementation": "# Define constant directive implementation\nif len(args) >= 2:\n    symbol = args[0]\n    value = int(args[1], 0)\n    assembler.symbol_table.define_constant(symbol, value)",
         "argument_types": ["string", "number"],
         "syntax": ".set NAME, VALUE",
         "examples": [".set MAX_COUNT, 100"]
