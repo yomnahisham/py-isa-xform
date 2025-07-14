@@ -29,7 +29,7 @@ def main():
     simulator = Simulator(isa_loader.load_isa("zx16"), symbol_table, disassembler)
     if not simulator.load_memory_from_file(filename):
         sys.exit(1)
-    simulator.run(False)
+    simulator.run(True)
     # for i in range(0, 300):
     #     if simulator.memory[i] != 0:
     #         print(f"Memory[{i:04X}]: {simulator.memory[i]}")
