@@ -481,13 +481,13 @@ def validate_command(args) -> int:
         # Load ISA definition
         isa_definition = load_isa_smart(args.isa)
         
-        print(f"✓ ISA Definition: {isa_definition.name} v{isa_definition.version}")
-        print(f"✓ Word size: {isa_definition.word_size} bits")
-        print(f"✓ Endianness: {isa_definition.endianness}")
-        print(f"✓ Instruction size: {isa_definition.instruction_size} bits")
-        print(f"✓ Instructions: {len(isa_definition.instructions)}")
-        print(f"✓ Registers: {sum(len(regs) for regs in isa_definition.registers.values())}")
-        print(f"✓ Directives: {len(isa_definition.directives)}")
+        print(f"[OK] ISA Definition: {isa_definition.name} v{isa_definition.version}")
+        print(f"[OK] Word size: {isa_definition.word_size} bits")
+        print(f"[OK] Endianness: {isa_definition.endianness}")
+        print(f"[OK] Instruction size: {isa_definition.instruction_size} bits")
+        print(f"[OK] Instructions: {len(isa_definition.instructions)}")
+        print(f"[OK] Registers: {sum(len(regs) for regs in isa_definition.registers.values())}")
+        print(f"[OK] Directives: {len(isa_definition.directives)}")
         
         if args.verbose:
             print("\nInstructions:")
@@ -500,12 +500,12 @@ def validate_command(args) -> int:
                 for reg in registers:
                     print(f"    {reg.name}: {reg.description}")
         
-        print("\n✓ ISA definition is valid!")
+        print("\n[OK] ISA definition is valid!")
         return 0
         
     except ISAError as e:
         error_reporter.add_error(e)
-        print("✗ ISA definition validation failed:")
+        print("[ERROR] ISA definition validation failed:")
         print(error_reporter.format_errors(), file=sys.stderr)
         return 1
 
