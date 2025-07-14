@@ -266,7 +266,7 @@ class Simulator:
                     data_start = int.from_bytes(data_start, byteorder='little')
                     data_size = data[24:28]
                     data_size = int.from_bytes(data_size, byteorder='little')
-                    self.memory[data_start:data_start + data_size] = data[entry_point:entry_point + data_size]
+                    self.memory[self.data_start:self.data_start + data_size] = data[entry_point:entry_point + data_size]
             else:
                 with open(filename, 'rb') as f:
                     data = f.read()
