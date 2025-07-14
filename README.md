@@ -17,6 +17,8 @@ xform serves as a foundation for building custom instruction set architectures a
 - **Pseudo-Instruction Support**: Automatic expansion of high-level assembly constructs
 - **Multiple ISA Support**: Built-in support for various instruction set architectures
 - **Professional Toolchain**: Command-line interface suitable for integration into development workflows
+- **Variable Length Instruction Support**: Support for ISAs with variable-length instructions
+- **Automatic Data Region Detection**: Smart disassembly that automatically detects code vs data regions
 
 ## Project Structure
 
@@ -36,30 +38,46 @@ py-isa-xform/
 │   │   │   ├── directive_handler.py   # Handles assembly directives
 │   │   │   ├── directive_executor.py  # Executes custom directives
 │   │   │   ├── instruction_executor.py # Executes custom instructions
-│   │   │   └── operand_parser.py      # Operand parsing and validation
+│   │   │   ├── operand_parser.py      # Operand parsing and validation
+│   │   │   ├── simulator.py           # Instruction execution simulator
+│   │   │   ├── modular_sim.py         # Modular simulation support
+│   │   │   └── zx16sim.py             # ZX16-specific simulator
 │   │   ├── utils/
 │   │   │   ├── __init__.py
 │   │   │   ├── bit_utils.py           # Bit manipulation utilities
-│   │   │   └── error_handling.py      # Error classes and handling
+│   │   │   ├── error_handling.py      # Error classes and handling
+│   │   │   └── isa_utils.py           # ISA utility functions
 │   │   └── cli.py                     # Command-line interface
 │   └── isa_definitions/               # Built-in ISA configurations
 │       ├── zx16.json                  # ZX16 16-bit RISC-V inspired ISA
+│       ├── riscv_rv32i.json           # RISC-V RV32I implementation
 │       ├── simple_risc.json           # Simple RISC instruction set
 │       ├── modular_example.json       # Modular ISA example
 │       ├── custom_isa_example.json    # Custom ISA example
 │       ├── custom_modular_isa.json    # Custom modular ISA
 │       ├── test_user_custom_isa.json  # Test custom ISA
-│       └── complete_user_isa_example.json # Complete user ISA example
+│       ├── complete_user_isa_example.json # Complete user ISA example
+│       ├── variable_length_example.json # Variable-length instruction example
+│       └── quantum_core_isa.json      # Quantum computing ISA example
 ├── tests/
-│   ├── TC-ZX16/                       # ZX16 test cases
-│   │   ├── ALU/                       # Arithmetic and logical operations
-│   │   ├── Branching/                 # Control flow operations
-│   │   ├── LoadStore/                 # Memory operations
-│   │   ├── Ecall/                     # System call services
-│   │   ├── Debug/                     # Debug functionality
-│   │   └── comprehensive/             # Comprehensive test suite
-│   └── [other test directories]
+│   ├── important/                     # Critical test cases
+│   ├── custom/                        # Custom instruction tests
+│   ├── legacy/                        # Legacy test cases
+│   │   └── TC-ZX16/                   # ZX16 test cases
+│   │       ├── ALU/                   # Arithmetic and logical operations
+│   │       ├── Branching/             # Control flow operations
+│   │       ├── LoadStore/             # Memory operations
+│   │       ├── Ecall/                 # System call services
+│   │       ├── Debug/                 # Debug functionality
+│   │       └── comprehensive/         # Comprehensive test suite
+│   └── scripts/                       # Test automation scripts
 ├── examples/                          # Example programs and demonstrations
+│   ├── quantum_core_demo/             # Quantum computing demo
+│   ├── isa_definition_examples/       # ISA definition examples
+│   ├── automatic_data_regions_demo.py # Data region detection demo
+│   ├── custom_instruction_demo.py     # Custom instruction demo
+│   ├── scaffold_demo.py               # ISA scaffold demo
+│   └── install_and_use_example.py     # Installation and usage example
 ├── docs/                              # Comprehensive documentation
 ├── setup.py
 ├── requirements.txt
@@ -88,11 +106,17 @@ pip install -e .
 # Assemble with headered binary output (recommended)
 python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
 
-# Disassemble with automatic header detection
+# Disassemble with automatic data region detection
 python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output disassembled.s
 
 # Raw binary output (for bootloaders/legacy systems)
 python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin --raw
+
+# Smart disassembly with pseudo-instruction reconstruction
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output disassembled.s --smart
+
+# Manual data region specification
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output disassembled.s --data-regions 0x100-0x200
 ```
 
 ### Professional Binary Format
@@ -130,9 +154,12 @@ The disassembled output will correctly show instructions starting at address 0x2
 
 ### Built-in ISAs
 - **ZX16**: 16-bit RISC-V inspired ISA with comprehensive instruction set (by Dr. Mohamed Shalan, Professor @ AUC)
+- **RISC-V RV32I**: Standard RISC-V 32-bit integer instruction set
 - **Simple RISC**: Basic RISC-style instruction set for educational purposes
 - **Modular Example**: Demonstrates modular ISA design patterns
 - **Custom Examples**: Various custom ISA examples for learning and testing
+- **Variable Length Example**: Demonstrates variable-length instruction support
+- **Quantum Core ISA**: Quantum computing instruction set example
 
 ### Creating Your Own ISA
 
@@ -143,10 +170,10 @@ Automatically generates boilerplate ISA definitions with implementations for com
 
 ```bash
 # Generate a basic ISA
-python3 -m isa_xform.core.isa_scaffold --name "MY_ISA" --instructions "ADD,SUB,LI,J,ECALL" --directives ".org,.word,.byte"
+python -m isa_xform.cli scaffold --name "MY_ISA" --instructions "ADD,SUB,LI,J,ECALL" --directives ".org,.word,.byte"
 
 # Generate a comprehensive ISA
-python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
+python -m isa_xform.cli scaffold --name "ADVANCED_ISA" \
   --instructions "ADD,SUB,AND,OR,XOR,ADDI,ANDI,ORI,XORI,LI,J,JAL,BEQ,BNE,LW,SW,ECALL" \
   --directives ".org,.word,.byte,.ascii,.align" \
   --word-size 16 \
@@ -173,6 +200,7 @@ python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
 - **Automatic Data Region Detection**: Automatically detects data vs code regions based on ISA memory layout
 - **Professional Output**: Clean, readable assembly code generation
 - **Debug Mode**: Detailed PC progression and mode switching information
+- **Smart Mode**: Reconstructs pseudo-instructions using patterns from ISA definition
 
 ### ISA Definition System
 - **JSON-Based Configuration**: Human-readable ISA specifications
@@ -182,6 +210,7 @@ python3 -m isa_xform.core.isa_scaffold --name "ADVANCED_ISA" \
 - **Syntax Specification**: Customizable assembly language syntax
 - **Validation Rules**: Built-in validation for ISA definitions
 - **Custom Directives**: Define custom assembly directives with Python implementations
+- **Variable Length Support**: Support for ISAs with variable-length instructions
 
 ### Custom Instruction Implementations
 - **Python Code Semantics**: Write actual Python code to define instruction behavior
@@ -247,48 +276,43 @@ main:
 ### Assembly and Disassembly
 ```bash
 # Assemble the program
-python3 -m isa_xform.cli assemble --isa zx16 --input example.s --output example.bin
+python -m isa_xform.cli assemble --isa zx16 --input example.s --output example.bin
 
-# Disassemble to verify
-python3 -m isa_xform.cli disassemble --isa zx16 --input example.bin --output example_dis.s
+# Disassemble with smart mode
+python -m isa_xform.cli disassemble --isa zx16 --input example.bin --output example_dis.s --smart
+
+# List available ISAs
+python -m isa_xform.cli list-isas
+
+# Validate ISA definition
+python -m isa_xform.cli validate --isa zx16
 ```
 
-## Development Status
+## Testing
 
-The project is actively developed with a focus on modularity, extensibility, and comprehensive testing. The current implementation provides a complete foundation for ISA definition and basic assembly/disassembly operations, with ongoing work on advanced optimization features and expanded ISA support.
+Run the comprehensive test suite:
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run specific test categories
+python -m pytest tests/important/ -v
+python -m pytest tests/custom/ -v
+
+# Run with coverage
+python -m pytest tests/ --cov=src/isa_xform --cov-report=html
+```
 
 ## Contributing
 
-Contributions are welcome and encouraged! Please refer to the [Contributing Guide](docs/contributing.md) for more.
+We welcome contributions! Please see the [Contributing Guide](docs/contributing.md) for development setup, coding standards, and submission guidelines.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/yomnahisham/py-isa-xform/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yomnahisham/py-isa-xform/discussions)
-- **Documentation**: [Project Documentation](docs/)
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
-This project is designed for educational and research purposes in computer architecture and compiler design. It provides a foundation for understanding instruction set architecture design and implementation.
-
-## Development and Local CLI Usage
-
-If you are developing or testing changes to the CLI or core modules, make sure to run the CLI with the local source by setting the `PYTHONPATH` environment variable:
-
-```sh
-PYTHONPATH=src python3 -m isa_xform.cli <command> [options]
-```
-
-This ensures that your changes in the `src/` directory are used, rather than any installed version of the package.
-
-For example:
-
-```sh
-PYTHONPATH=src python3 -m isa_xform.cli validate --isa src/isa_definitions/simple_risc.json
-```
-
-The `--isa` argument now accepts both ISA names (for built-in ISAs) and file paths (for custom or temporary ISAs).
+- **ZX16 ISA**: Designed by Dr. Mohamed Shalan, Professor at AUC
+- **Open Source**: Built on the shoulders of many excellent open source projects

@@ -82,4 +82,8 @@ def compile_directive_implementations(isa_definition) -> None:
     executor = get_directive_executor()
     for directive in isa_definition.directives.values():
         if directive.implementation:
-            executor.compile_implementation(directive.name, directive.implementation) 
+            # Compile for the canonical name
+            executor.compile_implementation(directive.name, directive.implementation)
+            # Also compile for all aliases
+            for alias in getattr(directive, 'aliases', []):
+                executor.compile_implementation(alias, directive.implementation) 

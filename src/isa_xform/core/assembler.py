@@ -1211,11 +1211,28 @@ class Assembler:
                         size = len(text)
                         self.context.current_address += size
                         self.symbol_table.set_current_address(self.context.current_address)
+                elif action == "define_constant":
+                    # Define constant directive (like .equ, .set)
+                    if len(node.arguments) >= 2:
+                        name = node.arguments[0]
+                        value = self._parse_number(node.arguments[1])
+                        self.symbol_table.define_constant(name, value)
                 # elif action == "allocate_crazy":
                 #     # Crazy directive - allocate word size per argument
                 #     size = 4  # Use word size from ISA
                 #     self.context.current_address += size * len(node.arguments)
                 #     self.symbol_table.set_current_address(self.context.current_address)
+            elif directive_name in self.directive_handlers:
+                # Check if it's a directive handler (including aliases)
+                handler = self.directive_handlers[directive_name]
+                if hasattr(handler, '__name__') and handler.__name__ == '_handle_equ_directive':
+                    # Handle .equ directive in first pass
+                    if len(node.arguments) >= 2:
+                        name = node.arguments[0]
+                        value = self._parse_number(node.arguments[1])
+                        self.symbol_table.define_constant(name, value)
+                # For other directive handlers, they don't need first pass processing
+                pass
             else:
                 # Report error for unknown directive
                 self._report_error(
@@ -1366,7 +1383,7 @@ class Assembler:
         return None
     
     def _handle_equ_directive(self, node: DirectiveNode) -> Optional[bytearray]:
-        """Handle .equ directive"""
+        print(f"[DEBUG] _handle_equ_directive called for {node.name}")
         if len(node.arguments) >= 2:
             name = node.arguments[0]
             value = self._parse_number(node.arguments[1])
@@ -1393,29 +1410,61 @@ class Assembler:
         
         if not directive_def:
             return None
-        
-        # If the directive has a custom implementation, use the executor
-        if directive_def.implementation:
+        print(f"[DEBUG] _handle_dynamic_directive for {directive_name}, implementation={repr(directive_def.implementation)}")
+        # Find the canonical name for this directive (the one with the implementation)
+        canonical_name = None
+        for k, v in self.isa_definition.directives.items():
+            if v is directive_def and (not k.startswith('.')):
+                canonical_name = k
+                break
+        if not canonical_name:
+            # Fallback: use the first name that matches the directive object
+            for k, v in self.isa_definition.directives.items():
+                if v is directive_def:
+                    canonical_name = k
+                    break
+        if not canonical_name:
+            canonical_name = directive_name
+        # Only use the executor if the implementation is non-empty and not None
+        if getattr(directive_def, 'implementation', None) and str(directive_def.implementation).strip():
+            # --- Fix 1: For define_constant, skip second pass if already defined ---
+            if directive_def.action == "define_constant":
+                if self.context.pass_number == 2:
+                    # Only define if not already defined
+                    name = node.arguments[0] if node.arguments else None
+                    sym = self.symbol_table.get_symbol(name) if name else None
+                    if sym is not None and sym.defined:
+                        return None
+            # --- Fix 2: For data directives, resolve symbols in arguments ---
+            resolved_args = []
+            data_directive_names = {'.byte', '.word', '.half', '.ascii', '.asciiz', '.space'}
+            if directive_def.action in {"allocate_bytes", "allocate_space", "fill"} or directive_name in data_directive_names:
+                for arg in node.arguments:
+                    # Try to resolve as symbol
+                    sym = self.symbol_table.get_symbol(arg)
+                    if sym and sym.defined:
+                        resolved_args.append(str(sym.value))
+                    else:
+                        resolved_args.append(arg)
+            else:
+                resolved_args = node.arguments
             from .directive_executor import get_directive_executor, DirectiveContext
             executor = get_directive_executor()
-            
             context = DirectiveContext(
                 assembler=self,
                 symbol_table=self.symbol_table,
                 memory=bytearray(),
                 current_address=self.context.current_address,
                 section=self.context.current_section,
-                args=node.arguments,
+                args=resolved_args,
                 extra={}
             )
-            
             try:
-                result = executor.execute_directive(directive_name, context)
-                
+                print(f"[DEBUG] Executing directive: {canonical_name} (original: {directive_name})")
+                result = executor.execute_directive(canonical_name, context)
                 # Update context from the directive execution
                 self.context.current_address = context.current_address
                 self.symbol_table.set_current_address(context.current_address)
-                
                 # Return the result if it's bytes/bytearray
                 if isinstance(result, (bytes, bytearray)):
                     return bytearray(result)
@@ -1423,7 +1472,6 @@ class Assembler:
                     return bytearray(context.memory)
                 else:
                     return None
-                    
             except Exception as e:
                 self._report_error(
                     line_number=getattr(node, 'line', 0),
@@ -1432,14 +1480,17 @@ class Assembler:
                     context=f"ISA: {self.isa_definition.name}"
                 )
                 return None
-        
+        # Always fall back to action-based handler for define_constant
+        if directive_def.action == "define_constant":
+            print(f"[DEBUG] Fallback to action-based handler for {directive_name} (define_constant)")
+            return self._handle_action_based_directive(node, directive_def)
         # Fallback to action-based handling for backward compatibility
         return self._handle_action_based_directive(node, directive_def)
     
     def _handle_action_based_directive(self, node: DirectiveNode, directive_def) -> Optional[bytearray]:
         """Handle directives using the action field for backward compatibility"""
         action = directive_def.action
-        
+        print(f"[DEBUG] _handle_action_based_directive called for {node.name} with action {action}")
         # Map actions to handlers
         action_handlers = {
             "allocate_bytes": self._handle_word_directive,

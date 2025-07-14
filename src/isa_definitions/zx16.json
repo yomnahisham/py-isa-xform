@@ -814,7 +814,7 @@
         "format": "U-type",
         "description": "Load upper immediate",
         "syntax": "LUI rd, imm",
-        "semantics": "rd = (imm << 7) & 0xFFFF",
+        "semantics": "rd = (imm<< 7) & 0xFFFF",
         "implementation": "# Load upper immediate implementation\nimm1 = operands['imm']\nimm2 = operands['imm2']\n# Combine 6-bit and 3-bit immediates\nimm = (imm1 << 3) | imm2\n# Shift left by 7 bits\nresult = (imm << 7) & 0xFFFF\nwrite_register(operands['rd'], result)",
         "encoding": {
           "fields": [

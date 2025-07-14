@@ -13,6 +13,7 @@ py-isa-xform is designed with modularity, extensibility, and maintainability as 
 5. **Bit Manipulation** - Low-level operations for instruction encoding/decoding
 6. **Error Handling** - Comprehensive error management and reporting
 7. **Command-Line Interface** - Provides unified access to all functionality
+8. **Simulation** - Instruction execution simulation for testing and debugging
 
 ## Core Components
 
@@ -26,8 +27,10 @@ The foundation of the entire system that provides infrastructure for defining an
 - Provide standardized internal representation of ISAs
 - Support extensible instruction and addressing mode definitions
 - Handle ISA-specific syntax configurations
+- Support variable-length instruction architectures
 
 **Key Classes:**
+- `ISALoader` - Main loader for ISA definitions with validation
 - `ISADefinition` - Complete ISA specification with metadata, instructions, and syntax rules
 - `Instruction` - Individual instruction specification with operands and encoding
 - `Register` - Register definitions with size, aliases, and descriptions
@@ -41,7 +44,18 @@ The foundation of the entire system that provides infrastructure for defining an
 JSON File → JSON Parser → Validation → ISADefinition Object → Components
 ```
 
-### 2. Assembly Parser (`src/isa_xform/core/parser.py`)
+### 2. ISA Scaffold Generator (`src/isa_xform/core/isa_scaffold.py`)
+
+Automatically generates ISA definitions with common instruction patterns and implementations.
+
+**Key Responsibilities:**
+- Generate complete ISA definitions from high-level specifications
+- Provide templates for common instruction types (R-type, I-type, etc.)
+- Include standard assembly directives and pseudo-instructions
+- Support customizable register sets and instruction lists
+- Generate working implementations for basic instructions
+
+### 3. Assembly Parser (`src/isa_xform/core/parser.py`)
 
 Converts human-readable assembly code into structured Abstract Syntax Tree (AST) representations with full ISA syntax support.
 
@@ -51,6 +65,7 @@ Converts human-readable assembly code into structured Abstract Syntax Tree (AST)
 - Handle labels, instructions, directives, and comments
 - Support configurable syntax (comment chars, prefixes, case sensitivity)
 - Provide detailed error reporting with line and column information
+- Support variable-length instruction parsing
 
 **Key Classes:**
 - `Parser` - Main parsing engine with ISA-aware syntax processing
@@ -66,17 +81,19 @@ Converts human-readable assembly code into structured Abstract Syntax Tree (AST)
 Assembly Text → ISA Syntax Rules → Line Tokenization → AST Node Creation → AST List
 ```
 
-### 3. Assembler (`src/isa_xform/core/assembler.py`)
+### 4. Assembler (`src/isa_xform/core/assembler.py`)
 
 Converts assembly language AST into binary machine code with full ISA support.
 
 **Key Responsibilities:**
 - Transform AST nodes into binary machine code
 - Handle two-pass assembly for forward reference resolution
-- Support field-based and legacy instruction encoding
+- Support field-based instruction encoding
 - Process assembly directives (.org, .word, .byte, etc.)
 - Validate operand values against bit field constraints
 - Generate comprehensive error messages with context
+- Support variable-length instruction encoding
+- Generate headered binaries by default
 
 **Key Classes:**
 - `Assembler` - Main assembly engine with ISA-aware encoding
@@ -88,17 +105,20 @@ Converts assembly language AST into binary machine code with full ISA support.
 AST Nodes → Symbol Collection (Pass 1) → Code Generation (Pass 2) → Machine Code
 ```
 
-### 4. Disassembler (`src/isa_xform/core/disassembler.py`)
+### 5. Disassembler (`src/isa_xform/core/disassembler.py`)
 
-Converts binary machine code back into human-readable assembly language.
+Converts binary machine code back into human-readable assembly language with advanced features.
 
 **Key Responsibilities:**
 - Decode binary machine code using ISA instruction patterns
-- Identify code vs. data sections automatically
+- Identify code vs. data sections automatically based on ISA memory layout
 - Generate symbolic labels for jump targets and data references
 - Support multiple instruction encoding formats
 - Handle endianness and instruction size configurations
 - Provide formatted output with optional addresses and machine code
+- Support variable-length instruction disassembly
+- Reconstruct pseudo-instructions using smart pattern matching
+- Automatic data region detection
 
 **Key Classes:**
 - `Disassembler` - Main disassembly engine with pattern matching
@@ -110,7 +130,7 @@ Converts binary machine code back into human-readable assembly language.
 Machine Code → Pattern Matching → Instruction Decode → Symbol Extraction → Assembly Text
 ```
 
-### 5. Symbol Table Management (`src/isa_xform/core/symbol_table.py`)
+### 6. Symbol Table Management (`src/isa_xform/core/symbol_table.py`)
 
 Manages symbols, labels, and their values during assembly and disassembly processes.
 
@@ -121,6 +141,7 @@ Manages symbols, labels, and their values during assembly and disassembly proces
 - Support multiple passes for complex symbol resolution
 - Provide symbol lookup and validation services
 - Generate symbol export/import capabilities
+- Support label bitfield extraction (label[high:low])
 
 **Key Classes:**
 - `SymbolTable` - Main symbol management container
@@ -133,7 +154,40 @@ Manages symbols, labels, and their values during assembly and disassembly proces
 AST Nodes → Symbol Extraction → Address Assignment → Forward Reference Resolution → Symbol Table
 ```
 
-### 6. Bit Utilities (`src/isa_xform/utils/bit_utils.py`)
+### 7. Directive System (`src/isa_xform/core/directive_handler.py`, `src/isa_xform/core/directive_executor.py`)
+
+Handles assembly directives and custom directive implementations.
+
+**Key Responsibilities:**
+- Process standard assembly directives (.org, .word, .byte, etc.)
+- Execute custom directive implementations written in Python
+- Handle directive arguments and validation
+- Support data definition and memory layout directives
+- Provide extensible directive system for custom ISAs
+
+### 8. Instruction Execution (`src/isa_xform/core/instruction_executor.py`)
+
+Executes custom instruction implementations written in Python.
+
+**Key Responsibilities:**
+- Execute Python code embedded in ISA definitions
+- Provide safe execution environment with controlled access
+- Handle register access, memory operations, and flag management
+- Support custom instruction semantics and behavior
+- Integrate with assembler, disassembler, and simulator
+
+### 9. Simulator (`src/isa_xform/core/simulator.py`, `src/isa_xform/core/zx16sim.py`)
+
+Provides instruction execution simulation for testing and debugging.
+
+**Key Responsibilities:**
+- Execute instructions using ISA definitions
+- Simulate register and memory state
+- Support debugging and step-by-step execution
+- Provide execution traces and state inspection
+- Handle system calls and interrupts
+
+### 10. Bit Utilities (`src/isa_xform/utils/bit_utils.py`)
 
 Provides low-level bit manipulation operations essential for instruction encoding and decoding.
 
@@ -153,7 +207,7 @@ Provides low-level bit manipulation operations essential for instruction encodin
 - `align_up()`, `align_down()` - Memory alignment
 - `bytes_to_int()`, `int_to_bytes()` - Endianness conversion
 
-### 7. Error Handling (`src/isa_xform/utils/error_handling.py`)
+### 11. Error Handling (`src/isa_xform/utils/error_handling.py`)
 
 Comprehensive error management system with detailed context and reporting.
 
@@ -171,7 +225,17 @@ Comprehensive error management system with detailed context and reporting.
 - `ErrorReporter` - Batch error collection and formatting
 - Specific error types: `ISALoadError`, `ParseError`, `AssemblerError`, etc.
 
-### 8. Command-Line Interface (`src/isa_xform/cli.py`)
+### 12. ISA Utilities (`src/isa_xform/utils/isa_utils.py`)
+
+Provides utility functions for working with ISA definitions.
+
+**Key Responsibilities:**
+- ISA validation and consistency checking
+- Instruction format analysis and validation
+- Register set validation and analysis
+- ISA comparison and compatibility checking
+
+### 13. Command-Line Interface (`src/isa_xform/cli.py`)
 
 Provides unified command-line interface for all py-isa-xform operations.
 
@@ -181,6 +245,7 @@ Provides unified command-line interface for all py-isa-xform operations.
 - Provide user-friendly error messages and help
 - Support multiple input/output formats
 - Handle ISA loading and validation
+- Support scaffold generation for new ISAs
 
 **Supported Commands:**
 - `validate` - Validate ISA definition files
@@ -188,6 +253,7 @@ Provides unified command-line interface for all py-isa-xform operations.
 - `assemble` - Convert assembly to machine code
 - `disassemble` - Convert machine code to assembly
 - `list-isas` - List available ISA definitions
+- `scaffold` - Generate new ISA scaffold definitions
 
 ## System Data Flow
 
@@ -198,158 +264,118 @@ Assembly File → Parser → AST Nodes → Assembler → Machine Code
      ↓              ↓         ↓          ↓           ↓
   Text Input   ISA Syntax   Structured  Instruction  Binary
               Processing    AST         Encoding     Output
-                ↓              ↓          ↓           ↓
-            Symbol Table → Forward Ref → Final       Error
-            Management     Resolution    Addresses   Reporting
 ```
 
 ### Complete Disassembly Flow
 
 ```
-Machine Code → Disassembler → Instructions → Formatter → Assembly Text
-     ↓              ↓              ↓            ↓            ↓
-  Binary Input   Pattern        Decoded       Symbol       Human
-                Matching        Structs      Generation   Readable
-                    ↓              ↓            ↓
-                Data Section   Operand       Address
-                Detection      Resolution    Formatting
+Machine Code → Disassembler → Instruction Decode → Symbol Reconstruction → Assembly Text
+     ↓              ↓              ↓                    ↓                    ↓
+  Binary Input   Pattern Match   Instruction        Label/Data          Formatted
+                                   Recognition       Detection           Output
 ```
 
 ### ISA Definition Flow
 
 ```
-JSON File → ISA Loader → Validation → ISADefinition → All Components
-    ↓           ↓           ↓            ↓              ↓
-  Raw JSON   JSON Parse   Rules Check   Validated      Available
-             & Load       & Validate    Object         for Use
-                ↓            ↓
-            Syntax Rules  Field Defs
-            Extraction    Processing
+JSON Definition → ISALoader → Validation → ISADefinition Object
+      ↓              ↓            ↓              ↓
+  User Input    File Loading   Consistency   Component Access
+                                   Check
 ```
 
-## ISA Definition Format
+## Built-in ISA Support
 
-ISAs are defined using a comprehensive JSON format that specifies all aspects of the instruction set architecture:
+The system includes several built-in ISA definitions:
 
-```json
-{
-  "name": "SimpleRISC",
-  "version": "1.0",
-  "description": "A simple RISC-style instruction set",
-  "word_size": 32,
-  "endianness": "little",
-  "instruction_size": 32,
-  "assembly_syntax": {
-    "comment_char": ";",
-    "label_suffix": ":",
-    "register_prefix": "$",
-    "immediate_prefix": "#",
-    "hex_prefix": "0x",
-    "binary_prefix": "0b",
-    "case_sensitive": false
-  },
-  "address_space": {
-    "default_code_start": 4096,
-    "default_data_start": 8192,
-    "default_stack_start": 12288
-  },
-  "registers": {
-    "general_purpose": [
-      {"name": "R0", "size": 32, "alias": ["ZERO"], "description": "Zero register"},
-      {"name": "R1", "size": 32, "alias": ["AT"], "description": "Assembler temporary"}
-    ]
-  },
-  "instructions": [
-    {
-      "mnemonic": "ADD",
-      "opcode": "0001",
-      "format": "R-type",
-      "description": "Add two registers",
-      "encoding": {
-        "fields": [
-          {"name": "opcode", "bits": "31:28", "value": "0001"},
-          {"name": "rd", "bits": "27:24", "type": "register"},
-          {"name": "rs1", "bits": "23:20", "type": "register"},
-          {"name": "rs2", "bits": "19:16", "type": "register"}
-        ]
-      },
-      "syntax": "ADD $rd, $rs1, $rs2",
-      "semantics": "$rd = $rs1 + $rs2"
-    }
-  ]
-}
-```
+- **ZX16**: 16-bit RISC-V inspired ISA (reference implementation)
+- **RISC-V RV32I**: Standard RISC-V 32-bit integer instruction set
+- **Simple RISC**: Basic RISC-style instruction set for educational purposes
+- **Modular Example**: Demonstrates modular ISA design patterns
+- **Variable Length Example**: Demonstrates variable-length instruction support
+- **Quantum Core ISA**: Quantum computing instruction set example
+- **Custom Examples**: Various custom ISA examples for learning and testing
 
-## Design Principles
+## Advanced Features
 
-### 1. ISA-Agnostic Design
+### Variable Length Instructions
 
-All components are designed to work with any custom ISA definition:
-- No hardcoded instruction sets or syntax rules
-- Configurable bit widths, endianness, and instruction sizes
-- Flexible encoding formats supporting various architectures
-- Adaptable to educational, research, or commercial ISAs
+Support for ISAs with variable-length instructions through:
+- Opcode-based length determination
+- Configurable length tables
+- Dynamic instruction parsing and encoding
 
-### 2. Comprehensive Error Handling
+### Automatic Data Region Detection
 
-Every component provides detailed error information:
-- Context-aware error messages with file/line/column
-- Suggestions for problem resolution
-- Batch error collection for complex validation
-- Graceful degradation when possible
+The disassembler automatically detects data vs code regions based on:
+- ISA memory layout configuration
+- Interrupt vector regions
+- Data section definitions
+- MMIO region specifications
 
-### 3. Modular Architecture
+### Smart Disassembly
 
-Clean separation allows independent testing and extension:
-- Each component has well-defined interfaces
-- Minimal dependencies between modules
-- Easy to extend with new ISA features
-- Supports plugin architectures for custom functionality
+Advanced disassembly features including:
+- Pseudo-instruction reconstruction
+- Symbol reconstruction from machine code
+- Automatic label generation for jump targets
+- Data pattern recognition
 
-### 4. Performance Optimization
+### Professional Binary Format
 
-Efficient implementations for common operations:
-- Optimized bit manipulation routines
-- Cached ISA definition parsing
-- Streaming processing for large files
-- Memory-efficient data structures
+Default headered binary format with:
+- Automatic entry point detection
+- Tool interoperability
+- Robust disassembly without manual address specification
+- Industry-standard patterns
 
-## Future Architecture Enhancements
+## Integration Points
 
-### Planned Features
-- **Optimization Passes**: Code optimization during assembly
-- **Debugging Support**: Debug symbol generation and handling
-- **Simulation Integration**: Direct integration with simulation engines
-- **Advanced Disassembly**: Control flow analysis and function detection
+### External Tool Integration
 
-### Long-term Vision
-- **Higher-level Language Support**: C-like syntax compilation
-- **IDE Integration**: Language server protocol support
-- **Cross-Architecture Analysis**: Compare ISAs and translate between them
-- **Formal Verification**: Mathematical verification of ISA properties
+The system is designed for integration with:
+- Debuggers and development tools
+- EDA (Electronic Design Automation) tools
+- Educational platforms
+- Research and analysis tools
 
-## Performance Characteristics
+### API Design
 
-### Memory Usage
-- ISA definitions: ~10-100KB per architecture
-- Symbol tables: Linear in number of symbols
-- AST nodes: Proportional to source code size
-- Machine code: 1:1 with instruction count
+The system provides clean APIs for:
+- ISA definition loading and validation
+- Assembly and disassembly operations
+- Symbol table management
+- Error handling and reporting
+- Custom instruction and directive implementation
 
-### Processing Speed
-- Parsing: ~1000-10000 lines/second
-- Assembly: ~500-5000 instructions/second
-- Disassembly: ~1000-10000 instructions/second
-- Validation: Sub-second for typical ISA definitions
+## Performance Considerations
+
+### Memory Management
+
+- Efficient bit manipulation for large instruction sets
+- Streaming disassembly for large binary files
+- Symbol table optimization for complex programs
 
 ### Scalability
-- Handles programs up to millions of instructions
-- Supports ISAs with thousands of instructions
-- Memory usage scales linearly with program size
-- Parallel processing opportunities in batch operations
+
+- Modular design supports large ISA definitions
+- Efficient parsing for large assembly files
+- Optimized encoding/decoding for complex instructions
+
+## Security and Safety
+
+### Sandboxed Execution
+
+- Safe execution environment for custom instruction implementations
+- Controlled access to system resources
+- Input validation and sanitization
+
+### Error Handling
+
+- Comprehensive error detection and reporting
+- Graceful degradation for malformed input
+- Detailed context information for debugging
 
 ## Conclusion
 
-The py-isa-xform architecture provides a robust, extensible foundation for instruction set architecture development and analysis. The modular design ensures flexibility while maintaining performance and reliability. The comprehensive error handling and validation systems enable confident use across diverse applications, from education to research to commercial development.
-
-The architecture successfully achieves its goal of being truly ISA-agnostic while providing professional-grade tooling capabilities. The clear component boundaries and well-defined interfaces support both current needs and future enhancements. 
+The py-isa-xform architecture provides a complete, modular framework for working with custom instruction set architectures. The clean separation of concerns, comprehensive error handling, and extensible design make it suitable for both educational and production environments. The system's support for variable-length instructions, automatic data detection, and professional tool integration demonstrates its maturity and readiness for real-world applications. 

@@ -487,6 +487,10 @@ class ISALoader:
                     implementation=directive_data.get("implementation", "")
                 )
                 directives[directive_data["name"]] = directive
+        # Add aliases as normal directive names
+        for directive in list(directives.values()):
+            for alias in directive.aliases:
+                directives[alias] = directive
 
         # Parse addressing modes
         addressing_modes = []

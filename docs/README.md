@@ -15,11 +15,13 @@ py-isa-xform is a professional-grade toolkit designed for educators, researchers
 - **Modular Architecture**: Clean separation of concerns with well-defined interfaces
 - **Extensive Testing**: Comprehensive test suite with multiple ISA examples
 - **Rich Documentation**: Complete guides and examples for all features
+- **Variable Length Instruction Support**: Support for ISAs with variable-length instructions
+- **Automatic Data Region Detection**: Smart disassembly that automatically detects code vs data regions
 
 ## Documentation Structure
 
 - **[Getting Started](getting-started.md)** - Quick start guide and installation
-- **[ISA Creation Guide](isa-creation-guide.md)** - Step-by-step custom ISA creation
+- **[ISA Creation Guide](isa-creation-guide.md)** - Step-by-step custom ISA creation based on ZX16 and variable length examples
 - **[ISA Definition](isa-definition.md)** - Complete ISA definition reference
 - **[Custom Instructions](custom-instructions.md)** - Custom instruction implementation guide
 - **[Architecture](architecture.md)** - System design and component overview
@@ -42,7 +44,7 @@ py-isa-xform is a professional-grade toolkit designed for educators, researchers
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/py-isa-xform.git
+git clone https://github.com/yomnahisham/py-isa-xform.git
 cd py-isa-xform
 
 # Install dependencies
@@ -56,8 +58,17 @@ pip install -e .
 # Assemble a program
 python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
 
-# Disassemble a program
+# Disassemble a program with automatic data region detection
 python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program_dis.s
+
+# Smart disassembly with pseudo-instruction reconstruction
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program_dis.s --smart
+
+# List available ISAs
+python -m isa_xform.cli list-isas
+
+# Validate ISA definition
+python -m isa_xform.cli validate --isa zx16
 ```
 
 ### Example Assembly Program
@@ -78,13 +89,16 @@ main:
 
 The toolkit includes several built-in ISA definitions:
 
-- **ZX16**: 16-bit RISC-V inspired ISA by Dr. Mohamed Shalan (Professor @ AUC)
+- **ZX16**: 16-bit RISC-V inspired ISA by Dr. Mohamed Shalan (Professor @ AUC) - the reference implementation
+- **RISC-V RV32I**: Standard RISC-V 32-bit integer instruction set
 - **Simple RISC**: Basic RISC-style instruction set for educational purposes
 - **Modular Example**: Demonstrates modular ISA design patterns
 - **Custom ISA Example**: Example custom ISA definition
 - **Custom Modular ISA**: Modular custom ISA example
 - **Test User Custom ISA**: Test custom ISA for validation
 - **Complete User ISA Example**: Complete example of a user-defined ISA
+- **Variable Length Example**: Demonstrates variable-length instruction support
+- **Quantum Core ISA**: Quantum computing instruction set example
 
 ## Core Components
 
@@ -106,6 +120,9 @@ Manages symbols, labels, and forward references during the assembly process, pro
 ### Bit Utils
 Provides low-level bit manipulation functions for instruction encoding, decoding, and data processing.
 
+### Simulator
+Provides instruction execution simulation for testing and debugging ISA implementations.
+
 ## Custom Instruction System
 
 The toolkit supports custom instruction implementations using Python code embedded in ISA definitions:
@@ -115,6 +132,44 @@ The toolkit supports custom instruction implementations using Python code embedd
   "mnemonic": "MULT",
   "implementation": "# Custom multiplication\nrd_val = read_register(operands['rd'])\nrs2_val = read_register(operands['rs2'])\nresult = (rd_val * rs2_val) & 0xFFFF\nwrite_register(operands['rd'], result)"
 }
+```
+
+## Variable Length Instruction Support
+
+The toolkit supports ISAs with variable-length instructions through the `variable_length_instructions` configuration:
+
+```json
+{
+  "variable_length_instructions": true,
+  "instruction_length_config": {
+    "enabled": true,
+    "length_determination": {
+      "method": "opcode_based",
+      "opcode_field": "opcode",
+      "opcode_position": "31:24"
+    },
+    "length_table": {
+      "0x00": 8,
+      "0x01": 16,
+      "0x02": 32
+    }
+  }
+}
+```
+
+## Automatic Data Region Detection
+
+The disassembler automatically detects data vs code regions based on ISA memory layout:
+
+- **Interrupt vectors**: Treated as data
+- **Data sections**: Treated as data  
+- **MMIO regions**: Treated as data
+- **Code sections**: Treated as instructions
+
+This can be overridden with manual data region specification:
+
+```bash
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s --data-regions 0x100-0x200
 ```
 
 ## Error Handling
@@ -135,9 +190,30 @@ Run the comprehensive test suite:
 # Run all tests
 python -m pytest tests/ -v
 
+# Run specific test categories
+python -m pytest tests/important/ -v
+python -m pytest tests/custom/ -v
+
 # Run with coverage
 python -m pytest tests/ --cov=src/isa_xform --cov-report=html
 ```
+
+## ISA Creation Guide
+
+The [ISA Creation Guide](isa-creation-guide.md) provides comprehensive instructions for creating custom ISAs, with examples based on:
+
+- **ZX16 ISA**: The reference implementation showing best practices
+- **Variable Length Example**: Demonstrating variable-length instruction support
+- **Scaffold Generator**: Automated ISA creation tool
+
+Key topics covered:
+- Basic ISA structure and configuration
+- Instruction definition and encoding
+- Register and operand formatting
+- Custom directive implementation
+- Pseudo-instruction support
+- Variable length instruction configuration
+- Testing and validation
 
 ## Contributing
 

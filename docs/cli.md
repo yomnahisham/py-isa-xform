@@ -2,308 +2,22 @@
 
 ## Overview
 
-The Command-Line Interface (CLI) provides a comprehensive user interface to the py-isa-xform toolkit, enabling users to perform all major operations including ISA validation, assembly parsing, and program analysis through simple, intuitive commands.
+The Command-Line Interface (CLI) provides a comprehensive user interface to the py-isa-xform toolkit, enabling users to perform all major operations including ISA validation, assembly, disassembly, and program analysis through simple, intuitive commands.
 
-## Installation and Setup
+## Basic Usage
 
-To use the `xform` command directly in your terminal (instead of `python3 -m src.isa_xform.cli`), you need to install the package and ensure the executable is in your PATH.
-
-### Step 1: Install the Package
-
-Install the package in development mode from the project root directory:
+The CLI is accessed through the `isa_xform.cli` module:
 
 ```bash
-# Navigate to the project root directory
-cd py-isa-xform
-
-# Install in development mode
-pip3 install -e .
+python -m isa_xform.cli <command> [options]
 ```
-
-### Step 2: Locate the Installed Command
-
-After installation, find where pip installed the `xform` executable:
-
-**On macOS/Linux:**
-```bash
-# Find your Python user base directory
-python3 -m site --user-base
-
-# The xform command will be in: <user-base>/bin/xform
-# For example: /Users/username/Library/Python/3.9/bin/xform
-```
-
-**On Windows:**
-```cmd
-# Find your Python user base directory
-python -m site --user-base
-
-# The xform command will be in: <user-base>\Scripts\xform.exe
-# For example: C:\Users\username\AppData\Roaming\Python\Python39\Scripts\xform.exe
-```
-
-### Step 3: Add to PATH (Choose One Method)
-
-#### Method 1: Permanent PATH Setup (Recommended)
-
-Add the Python user Scripts directory to your PATH permanently:
-
-**For Windows (PowerShell) - Recommended:**
-```powershell
-# Get the user Scripts directory
-$userBase = python -m site --user-base
-$scriptsPath = "$userBase\Scripts"
-
-# Add to PATH permanently for current user
-[Environment]::SetEnvironmentVariable("PATH", "$env:PATH;$scriptsPath", "User")
-
-# Refresh PATH for current session
-$env:PATH += ";$scriptsPath"
-```
-
-**For Windows (Command Prompt):**
-```cmd
-# Get the user base directory (note the output)
-python -m site --user-base
-
-# Add to PATH permanently (replace <user-base> with actual path)
-setx PATH "%PATH%;<user-base>\Scripts"
-
-# Example:
-# setx PATH "%PATH%;C:\Users\username\AppData\Roaming\Python\Python39\Scripts"
-```
-
-**For Windows (Manual GUI Method):**
-1. Press `Win + R`, type `sysdm.cpl`, press Enter
-2. Click "Environment Variables..."
-3. Under "User variables", select "Path" and click "Edit..."
-4. Click "New" and add: `C:\Users\<username>\AppData\Roaming\Python\Python39\Scripts` (replace with your actual path)
-5. Click "OK" to close all dialogs
-6. Restart your terminal/command prompt
-
-**For macOS/Linux (Bash users)** - add to `~/.bashrc` or `~/.bash_profile`:
-```bash
-echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-**For macOS (Zsh users)** - add to `~/.zshrc`:
-```bash
-echo 'export PATH="$(python3 -m site --user-base)/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-**For Linux (Fish users)** - add to `~/.config/fish/config.fish`:
-```bash
-echo 'set PATH (python3 -m site --user-base)/bin $PATH' >> ~/.config/fish/config.fish
-source ~/.config/fish/config.fish
-```
-
-#### Method 2: Manual PATH for Current Session Only
-
-**For Windows (PowerShell):**
-```powershell
-$env:PATH += ";$(python -m site --user-base)\Scripts"
-```
-
-**For Windows (Command Prompt):**
-```cmd
-set PATH=%PATH%;%APPDATA%\Python\Python39\Scripts
-```
-
-**For macOS/Linux:**
-```bash
-export PATH="$(python3 -m site --user-base)/bin:$PATH"
-```
-
-#### Method 3: Use Full Path
-
-If you prefer not to modify your PATH, you can always use the full path:
-
-**On Windows:**
-```cmd
-# Example (replace with your actual path)
-C:\Users\username\AppData\Roaming\Python\Python39\Scripts\xform.exe list-isas
-```
-
-**On macOS/Linux:**
-```bash
-# Example (replace with your actual path)
-/Users/username/Library/Python/3.9/bin/xform list-isas
-```
-
-### Step 4: Verify Installation
-
-Test that the `xform` command is working:
-
-**On Windows:**
-```cmd
-# Check if xform is accessible
-xform --help
-
-# Test a basic command
-xform list-isas
-```
-
-**On macOS/Linux:**
-```bash
-# Check if xform is accessible
-xform --help
-
-# Test a basic command
-xform list-isas
-```
-
-You should see the help output and available ISA definitions.
-
-**Note for Windows users:** If you get `'xform' is not recognized as an internal or external command`, you may need to:
-1. Restart your Command Prompt/PowerShell after adding to PATH
-2. Use `xform.exe` instead of just `xform`
-3. Verify the PATH was added correctly with: `echo %PATH%` (CMD) or `$env:PATH` (PowerShell)
-
-### Troubleshooting
-
-#### Command Not Found
-
-**On Windows** - if you get `'xform' is not recognized as an internal or external command`:
-
-1. **Verify installation**: Check if `xform.exe` exists at the expected location:
-   ```cmd
-   dir "%APPDATA%\Python\Python39\Scripts\xform.exe"
-   ```
-2. **Check PATH**: Verify the Scripts directory is in your PATH:
-   ```cmd
-   echo %PATH% | findstr Scripts
-   ```
-3. **Restart terminal**: Close and reopen Command Prompt/PowerShell after modifying PATH
-4. **Try with .exe extension**: Use `xform.exe` instead of `xform`
-5. **Use full path**: As a fallback, use the complete path to the executable
-
-**On macOS/Linux** - if you get `command not found: xform`:
-
-1. **Verify installation**: Check if the executable exists at the expected location
-2. **Check PATH**: Ensure the Python user bin directory is in your PATH
-3. **Restart terminal**: Close and reopen your terminal after modifying PATH
-4. **Use full path**: As a fallback, use the complete path to the executable
-
-#### Permission Issues
-
-**On macOS/Linux**, if you encounter permission errors:
-
-```bash
-# You might need to make it executable
-chmod +x $(python3 -m site --user-base)/bin/xform
-```
-
-**On Windows**, permission issues are rare, but if encountered:
-
-1. **Run as Administrator**: Try running Command Prompt or PowerShell as Administrator
-2. **Check antivirus**: Some antivirus software may block newly installed executables
-3. **Verify file exists**: Ensure the `xform.exe` file actually exists in the Scripts directory
-
-#### Different Python Versions
-
-If you have multiple Python versions, ensure you're using the same version for installation and execution:
-
-**On Windows:**
-```cmd
-# Check your Python version
-python --version
-
-# Install with specific Python version if needed
-py -3.9 -m pip install -e .
-```
-
-**On macOS/Linux:**
-```bash
-# Check your Python version
-python3 --version
-
-# Install with specific Python version if needed
-python3.9 -m pip install -e .
-```
-
-### Alternative Installation Methods
-
-#### System-wide Installation (requires admin/sudo)
-
-```bash
-# Install system-wide (not recommended for development)
-sudo pip3 install -e .
-```
-
-#### Virtual Environment Installation
-
-**On Windows:**
-```cmd
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-venv\Scripts\activate
-
-# Install in virtual environment
-pip install -e .
-
-# xform will be available while the virtual environment is active
-xform --help
-```
-
-**On macOS/Linux:**
-```bash
-# Create virtual environment
-python3 -m venv venv
-
-# Activate virtual environment
-source venv/bin/activate
-
-# Install in virtual environment
-pip install -e .
-
-# xform will be available while the virtual environment is active
-xform --help
-```
-
-### Verification Commands
-
-Once successfully installed, you can use these commands:
-
-```bash
-# Show help
-xform --help
-
-# List available ISAs
-xform list-isas
-
-# Validate an ISA
-xform validate --isa simple_risc
-
-# Parse assembly code
-xform parse --isa simple_risc --input program.s
-
-# Assemble code
-xform assemble --isa simple_risc --input program.s --output program.bin
-
-# Disassemble binary
-xform disassemble --isa simple_risc --input program.bin --output output.s
-```
-
-## Design Philosophy
-
-The CLI is designed with the following principles:
-
-- **Simplicity**: Clear, consistent command syntax that follows standard conventions
-- **Completeness**: Access to all toolkit functionality through command-line operations
-- **Robustness**: Comprehensive error handling with informative error messages
-- **Flexibility**: Support for both interactive use and automation/scripting
-- **Extensibility**: Easy addition of new commands and options
 
 ## Command Structure
 
 All commands follow a consistent structure:
 
 ```bash
-xform <command> [options] [arguments]
+python -m isa_xform.cli <command> [options] [arguments]
 ```
 
 ### Global Options
@@ -312,10 +26,95 @@ All commands support these global options:
 
 - `--help`, `-h`: Display help information for the command
 - `--verbose`, `-v`: Enable verbose output with detailed information
-- `--quiet`, `-q`: Suppress non-essential output
-- `--version`: Display version information
 
 ## Available Commands
+
+### `assemble` - Assembly
+
+Converts assembly source files to machine code.
+
+**Syntax:**
+```bash
+python -m isa_xform.cli assemble --isa <isa> --input <files> --output <file> [options]
+```
+
+**Required Options:**
+- `--isa <isa>`: ISA definition file or name (e.g., "zx16", "simple_risc", or path to JSON file)
+- `--input <files>`: Input assembly files (one or more)
+- `--output <file>`: Output binary file
+
+**Optional Options:**
+- `--verbose`, `-v`: Verbose output
+- `--list-symbols`: List resolved symbols
+- `--raw`: Output raw binary with no header (for legacy/bootloader use)
+
+**Examples:**
+```bash
+# Basic assembly
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
+
+# Assembly with symbol listing
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin --list-symbols
+
+# Raw binary output
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin --raw
+
+# Multiple input files
+python -m isa_xform.cli assemble --isa zx16 --input file1.s file2.s --output program.bin
+```
+
+### `disassemble` - Disassembly
+
+Converts machine code back to assembly with automatic data region detection.
+
+**Syntax:**
+```bash
+python -m isa_xform.cli disassemble --isa <isa> --input <file> --output <file> [options]
+```
+
+**Required Options:**
+- `--isa <isa>`: ISA definition file or name
+- `--input <file>`: Input binary file
+- `--output <file>`: Output assembly file
+
+**Optional Options:**
+- `--verbose`, `-v`: Verbose output
+- `--debug`: Show detailed PC progression and mode switches
+- `--show-addresses`: Show addresses in output
+- `--show-machine-code`: Show machine code in output
+- `--start-address <addr>`: Starting address for disassembly (default: 0)
+- `--data-regions <regions>`: Data regions as start-end pairs (e.g., "0x0-0xA 0x100-0x200")
+- `--smart`: Reconstruct pseudo-instructions using patterns from ISA definition
+- `--reconstruct-labels`: Reconstruct labels in branch and jump instructions
+
+**Disassembly Modes:**
+- **Raw Mode (default)**: Shows only real hardware instructions as encoded in the binary
+- **Smart Mode (--smart)**: Reconstructs pseudo-instructions using patterns from the ISA definition
+
+**Data Region Detection:**
+The disassembler automatically detects data regions based on your ISA's memory layout when `--data-regions` is not specified. This includes:
+- Interrupt vectors (treated as data)
+- Data sections (treated as data)
+- MMIO regions (treated as data)
+- Code sections (treated as instructions)
+
+**Examples:**
+```bash
+# Basic disassembly
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s
+
+# Smart disassembly with pseudo-instruction reconstruction
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s --smart
+
+# Manual override with custom data regions
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s --data-regions 0x100-0x200
+
+# Start disassembly at specific address
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s --start-address 0x20
+
+# Debug mode with detailed information
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program.s --debug --show-addresses
+```
 
 ### `validate` - ISA Definition Validation
 
@@ -323,28 +122,26 @@ Validates ISA definition files for correctness and completeness.
 
 **Syntax:**
 ```bash
-xform validate --isa <file> [options]
+python -m isa_xform.cli validate --isa <isa> [options]
 ```
 
-**Options:**
-- `--isa <file>`: Path to the ISA definition JSON file or ISA name (required)
+**Required Options:**
+- `--isa <isa>`: ISA definition file or name
+
+**Optional Options:**
 - `--verbose`, `-v`: Display detailed validation information
 
 **Examples:**
 ```bash
 # Basic validation
-xform validate --isa my_isa.json
+python -m isa_xform.cli validate --isa zx16
 
-# Verbose validation with detailed output
-xform validate --isa my_isa.json --verbose
+# Verbose validation
+python -m isa_xform.cli validate --isa zx16 --verbose
 
-# Validate by ISA name
-xform validate --isa simple_risc --verbose
+# Validate custom ISA file
+python -m isa_xform.cli validate --isa my_isa.json --verbose
 ```
-
-**Output:**
-- Success: "ISA definition is valid" message
-- Failure: Detailed error messages with specific issues identified
 
 ### `parse` - Assembly Code Parsing
 
@@ -352,325 +149,290 @@ Parses assembly code and displays the Abstract Syntax Tree (AST) representation.
 
 **Syntax:**
 ```bash
-xform parse --isa <file> --input <file> [options]
+python -m isa_xform.cli parse --isa <isa> --input <file> [options]
 ```
 
-**Options:**
-- `--isa <file>`: Path to the ISA definition JSON file or ISA name (required)
-- `--input <file>`: Path to the assembly source file (required)
-- `--output <file>`: Output file for AST (optional, defaults to stdout)
+**Required Options:**
+- `--isa <isa>`: ISA definition file or name
+- `--input <file>`: Path to the assembly source file
+
+**Optional Options:**
+- `--output <file>`: Output file for AST (JSON format)
 - `--verbose`, `-v`: Display detailed parsing information
 
 **Examples:**
 ```bash
 # Basic parsing
-xform parse --isa simple_risc --input program.s
-
-# Verbose parsing with detailed information
-xform parse --isa simple_risc --input program.s --verbose
+python -m isa_xform.cli parse --isa zx16 --input program.s
 
 # Save AST to file
-xform parse --isa simple_risc --input program.s --output ast.json
+python -m isa_xform.cli parse --isa zx16 --input program.s --output ast.json
+
+# Verbose parsing
+python -m isa_xform.cli parse --isa zx16 --input program.s --verbose
 ```
 
-**Output Formats:**
+### `list-isas` - List Available ISAs
 
-1. **Text Format** (default):
-   ```
-   LabelNode: main (line 5, column 1)
-   InstructionNode: add r3, r1, r2 (line 6, column 5)
-   DirectiveNode: .data (line 1, column 1)
-   ```
-
-2. **JSON Format**:
-   ```json
-   [
-     {
-       "type": "LabelNode",
-       "name": "main",
-       "line_number": 5,
-       "column": 1
-     },
-     {
-       "type": "InstructionNode",
-       "mnemonic": "add",
-       "operands": ["r3", "r1", "r2"],
-       "line_number": 6,
-       "column": 5
-     }
-   ]
-   ```
-
-3. **Tree Format**:
-   ```
-   AST:
-   ├── DirectiveNode (.data)
-   ├── LabelNode (main)
-   └── InstructionNode (add r3, r1, r2)
-   ```
-
-### `assemble` - Assembly to Machine Code
-
-Converts assembly code to machine code binary with optional metadata headers.
+Lists all available ISA definitions.
 
 **Syntax:**
 ```bash
-xform assemble --isa <file> --input <file> --output <file> [options]
+python -m isa_xform.cli list-isas [options]
 ```
 
-**Options:**
-- `--isa <file>`: Path to the ISA definition JSON file or ISA name (required)
-- `--input <file>`: Path to the assembly source file (required, can specify multiple files)
-- `--output <file>`: Path to the output binary file (required)
-- `--list-symbols`: Display symbol table after assembly
-- `--verbose`, `-v`: Display detailed assembly information
-- `--raw`: Output raw binary without header (for bootloaders/legacy systems)
-
-**Binary Output Format:**
-- **Default**: Headered binary with entry point and metadata (recommended)
-- **Raw**: Use `--raw` flag for raw machine code without headers
+**Optional Options:**
+- `--verbose`, `-v`: Display detailed information about each ISA
 
 **Examples:**
 ```bash
-# Basic assembly (headered binary by default)
-xform assemble --isa simple_risc --input program.s --output program.bin
+# List all ISAs
+python -m isa_xform.cli list-isas
 
-# Assembly with symbol listing
-xform assemble --isa simple_risc --input program.s --output program.bin --list-symbols
-
-# Assembly multiple files
-xform assemble --isa simple_risc --input main.s data.s system.s --output program.bin
-
-# Raw binary output (for bootloaders/legacy)
-xform assemble --isa simple_risc --input program.s --output program.bin --raw
+# Verbose listing
+python -m isa_xform.cli list-isas --verbose
 ```
 
-### `disassemble` - Machine Code to Assembly
+### `simulate` - Run Modular Simulator
 
-Converts machine code binary back to assembly code with automatic header detection.
+Runs the modular simulator with graphics support to execute and visualize binary programs.
 
 **Syntax:**
 ```bash
-xform disassemble --isa <file> --input <file> --output <file> [options]
+python -m isa_xform.cli simulate --isa <isa> --input <file> [options]
 ```
 
-**Options:**
-- `--isa <file>`: Path to the ISA definition JSON file or ISA name (required)
-- `--input <file>`: Path to the binary input file (required)
-- `--output <file>`: Path to the assembly output file (required)
-- `--start-address <addr>`: Starting address for disassembly (default: auto-detect from header)
-- `--show-addresses`: Show addresses in output
-- `--show-machine-code`: Show machine code in output
-- `--verbose`, `-v`: Display detailed disassembly information
-- `--debug`: Show detailed PC progression and mode switches
-- `--data-regions`: Specify custom data regions (overrides automatic detection)
+**Required Options:**
+- `--isa <isa>`: ISA definition file or name
+- `--input <file>`: Input binary file to simulate
 
-**Binary Input Support:**
-- **Headered Binaries**: Automatically detects entry point and starts disassembly correctly
-- **Raw Binaries**: Uses ISA default or manual `--start-address` specification
+**Optional Options:**
+- `--step`: Step through instructions one by one (press Enter to continue)
+- `--verbose`, `-v`: Verbose output with detailed information
+
+**Features:**
+- **Graphics Support**: Visual display of program execution with pygame
+- **Step Mode**: Execute instructions one at a time for debugging
+- **Register Display**: Real-time register state visualization
+- **Memory Dump**: Display memory contents at the end of execution
+- **Keyboard Input**: Support for keyboard input simulation
+- **ECALL Services**: Built-in system call support (exit, print, input, etc.)
 
 **Examples:**
 ```bash
-# Basic disassembly (automatic header detection)
-xform disassemble --isa simple_risc --input program.bin --output disassembled.s
+# Basic simulation
+python -m isa_xform.cli simulate --isa zx16 --input program.bin
 
-# Disassembly with addresses and machine code shown
-xform disassemble --isa simple_risc --input program.bin --output disassembled.s --show-addresses --show-machine-code
+# Step-by-step execution
+python -m isa_xform.cli simulate --isa zx16 --input program.bin --step
 
-# Disassembly with custom starting address (for raw binaries)
-xform disassemble --isa simple_risc --input program.bin --output disassembled.s --start-address 0x1000
+# Verbose simulation with detailed output
+python -m isa_xform.cli simulate --isa zx16 --input program.bin --verbose
+```
 
-# Debug output with automatic data region detection
-xform disassemble --isa zx16 --input program.bin --output disassembled.s --debug
+### `scaffold` - Generate ISA Scaffold
+
+Generates a new ISA scaffold definition with basic structure and common instructions.
+
+**Syntax:**
+```bash
+python -m isa_xform.cli scaffold --name <name> --instructions <list> [options]
+```
+
+**Required Options:**
+- `--name <name>`: Name of the ISA
+- `--instructions <list>`: Comma-separated list of instructions to include
+
+**Optional Options:**
+- `--directives <list>`: Comma-separated list of directives to include
+- `--word-size <size>`: Word size in bits (default: 16)
+- `--instruction-size <size>`: Instruction size in bits (default: 16)
+- `--register-count <count>`: Number of general-purpose registers (default: 8)
+- `--registers <list>`: Comma-separated list of register names (overrides --register-count)
+- `--output <file>`: Output file path (default: {name}_isa.json)
+
+**Examples:**
+```bash
+# Generate basic ISA
+python -m isa_xform.cli scaffold --name "MY_ISA" --instructions "ADD,SUB,LI,J,ECALL" --directives ".org,.word,.byte"
+
+# Generate comprehensive ISA
+python -m isa_xform.cli scaffold --name "ADVANCED_ISA" \
+  --instructions "ADD,SUB,AND,OR,XOR,ADDI,ANDI,ORI,XORI,LI,J,JAL,BEQ,BNE,LW,SW,ECALL" \
+  --directives ".org,.word,.byte,.ascii,.align" \
+  --word-size 16 \
+  --instruction-size 16
+
+# Generate with custom registers
+python -m isa_xform.cli scaffold --name "CUSTOM_ISA" \
+  --instructions "ADD,SUB,LI" \
+  --registers "r0,r1,r2,r3,r4,r5,r6,r7" \
+  --output my_custom_isa.json
+```
+
+## Built-in ISA Definitions
+
+The toolkit includes several built-in ISA definitions that can be referenced by name:
+
+- **zx16**: 16-bit RISC-V inspired ISA (reference implementation)
+- **riscv_rv32i**: Standard RISC-V 32-bit integer instruction set
+- **simple_risc**: Basic RISC-style instruction set for educational purposes
+- **modular_example**: Demonstrates modular ISA design patterns
+- **custom_isa_example**: Example custom ISA definition
+- **custom_modular_isa**: Modular custom ISA example
+- **test_user_custom_isa**: Test custom ISA for validation
+- **complete_user_isa_example**: Complete example of a user-defined ISA
+- **variable_length_example**: Demonstrates variable-length instruction support
+- **quantum_core_isa**: Quantum computing instruction set example
+
+## Example Workflows
+
+### Complete Assembly/Disassembly Workflow
+
+```bash
+# 1. Create a simple assembly program
+cat > program.s << 'EOF'
+.org 32
+_start:
+    LI x0, 10
+    LI x1, 5
+    ADD x0, x1
+    ECALL 0x3FF
+EOF
+
+# 2. Assemble the program
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
+
+# 3. Disassemble to verify
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program_dis.s
+
+# 4. Compare the output
+diff program.s program_dis.s
+```
+
+### ISA Development Workflow
+
+```bash
+# 1. Generate a new ISA scaffold
+python -m isa_xform.cli scaffold --name "MY_ISA" \
+  --instructions "ADD,SUB,LI,J,ECALL" \
+  --directives ".org,.word,.byte" \
+  --output my_isa.json
+
+# 2. Validate the generated ISA
+python -m isa_xform.cli validate --isa my_isa.json --verbose
+
+# 3. Create a test program
+cat > test.s << 'EOF'
+.org 0
+_start:
+    LI r0, 42
+    ADD r1, r0
+    ECALL 0
+EOF
+
+# 4. Test assembly and disassembly
+python -m isa_xform.cli assemble --isa my_isa.json --input test.s --output test.bin
+python -m isa_xform.cli disassemble --isa my_isa.json --input test.bin --output test_dis.s
+```
+
+### Debugging Workflow
+
+```bash
+# 1. Parse assembly to check syntax
+python -m isa_xform.cli parse --isa zx16 --input program.s --verbose
+
+# 2. Assemble with symbol listing
+python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin --list-symbols
+
+# 3. Disassemble with debug information
+python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program_dis.s --debug --show-addresses
 ```
 
 ## Error Handling
 
-The CLI provides comprehensive error handling with different levels of detail:
+The CLI provides comprehensive error handling with detailed context information:
 
-### Error Types
-
-1. **Usage Errors**: Invalid command syntax or missing required options
-2. **File Errors**: Missing files, permission issues, or invalid file formats
-3. **Validation Errors**: ISA definition validation failures
-4. **Parsing Errors**: Assembly syntax or semantic errors
-5. **System Errors**: Internal errors or resource limitations
-
-### Error Output Format
-
-```bash
-# Usage error
-xform: error: missing required argument: --isa
-
-# File error
-xform: error: file not found: 'nonexistent.json'
-
-# Validation error
-xform: error: ISA validation failed:
-  - Missing required field 'instructions' in ISA definition
-  - Invalid opcode value in instruction 'add': must be non-negative
-
-# Parsing error
-xform: error: parsing failed at line 5, column 10:
-  - Unknown instruction 'invalid_instruction'
-  - Expected register operand, got 'invalid_operand'
+```
+Error: Immediate value 256 doesn't fit in 8-bit unsigned field at line 15, column 20 in main.s
+  Context: LDI $r1, #256
+  Suggestion: Use a value between 0 and 255, or use a different instruction
 ```
 
-## Integration with Development Workflow
+Common error types and solutions:
 
-### Build System Integration
+1. **ISA Loading Errors**: Check that the ISA file exists and is valid JSON
+2. **Assembly Errors**: Verify instruction syntax and operand constraints
+3. **Disassembly Errors**: Check binary file format and ISA compatibility
+4. **Validation Errors**: Fix missing or invalid fields in ISA definition
 
-The CLI can be easily integrated into build systems:
+## Professional Binary Format
 
+The toolchain generates **headered binaries by default** following industry best practices:
+
+- **Automatic Entry Point Detection**: Disassemblers automatically determine the correct starting address
+- **Tool Interoperability**: Works seamlessly with debuggers, loaders, and other tools
+- **Robust Disassembly**: No manual address specification required
+- **Industry Standard**: Follows patterns from ELF, PE, and other executable formats
+
+Use the `--raw` option for legacy systems or bootloaders that require raw binary output.
+
+## Integration with Development Tools
+
+The CLI is designed to integrate seamlessly with development workflows:
+
+### Makefile Integration
 ```makefile
-# Makefile example
-program.bin: program.s simple_risc.json
-	xform assemble --isa simple_risc --input program.s --output program.bin
+%.bin: %.s
+	python -m isa_xform.cli assemble --isa zx16 --input $< --output $@
 
-validate-isa: simple_risc.json
-	xform validate --isa simple_risc
+%.s: %.bin
+	python -m isa_xform.cli disassemble --isa zx16 --input $< --output $@
 ```
 
-### Scripting and Automation
-
+### Script Integration
 ```bash
 #!/bin/bash
 # Build script example
-
-# Validate ISA definition
-if ! xform validate --isa simple_risc; then
-    echo "ISA validation failed"
-    exit 1
-fi
-
-# Assemble program
-if ! xform assemble --isa simple_risc --input program.s --output program.bin; then
-    echo "Assembly failed"
-    exit 1
-fi
-
-echo "Build completed successfully"
+for file in *.s; do
+    base=${file%.s}
+    python -m isa_xform.cli assemble --isa zx16 --input "$file" --output "${base}.bin"
+done
 ```
 
-## Performance Considerations
+### CI/CD Integration
+```yaml
+# GitHub Actions example
+- name: Validate ISA
+  run: python -m isa_xform.cli validate --isa zx16
 
-### Large File Handling
-
-For large assembly files, the CLI provides options to optimize performance:
-
-```bash
-# Parse large file with minimal output
-xform parse --isa simple_risc --input large_program.s --quiet
-
-# Validate ISA with progress indication
-xform validate --isa large_isa.json --verbose
-```
-
-### Memory Usage
-
-The CLI is designed to handle files efficiently:
-- Line-by-line parsing for large assembly files
-- Streaming processing where possible
-- Configurable memory limits for very large files
-
-## Configuration and Customization
-
-### Environment Variables
-
-The CLI respects these environment variables:
-
-- `XFORM_VERBOSE`: Enable verbose output by default
-- `XFORM_CONFIG`: Path to configuration file
-- `XFORM_LOG_LEVEL`: Set logging level (DEBUG, INFO, WARNING, ERROR)
-
-### Configuration Files
-
-Create a configuration file `~/.xform/config.json`:
-
-```json
-{
-    "default_isa": "simple_risc",
-    "output_format": "text",
-    "verbose": false,
-    "strict_validation": true
-}
+- name: Assemble Programs
+  run: |
+    python -m isa_xform.cli assemble --isa zx16 --input program.s --output program.bin
+    python -m isa_xform.cli disassemble --isa zx16 --input program.bin --output program_dis.s
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Command Not Found**: Ensure py-isa-xform is installed and in PATH
-2. **Permission Denied**: Check file permissions and directory access
-3. **Invalid JSON**: Use a JSON validator to check ISA definition files
-4. **Parse Errors**: Review assembly syntax and ensure it matches ISA definition
+1. **"Unknown ISA"**: Use `python -m isa_xform.cli list-isas` to see available ISAs
+2. **"File not found"**: Check file paths and ensure files exist
+3. **"Invalid ISA definition"**: Use `python -m isa_xform.cli validate --isa <isa>` to check for errors
+4. **"Assembly/disassembly mismatch"**: Check ISA definition and operand formatting
 
-### Debug Mode
-
-Enable debug output for troubleshooting:
+### Getting Help
 
 ```bash
-# Set debug environment variable
-export XFORM_LOG_LEVEL=DEBUG
+# General help
+python -m isa_xform.cli --help
 
-# Run command with debug output
-xform parse --isa simple_risc --input program.s --verbose
+# Command-specific help
+python -m isa_xform.cli assemble --help
+python -m isa_xform.cli disassemble --help
+python -m isa_xform.cli validate --help
 ```
-
-## Future Enhancements
-
-### Planned Features
-
-- **Interactive Mode**: Command-line interface with history and completion
-- **Batch Processing**: Process multiple files with a single command
-- **Plugin System**: Support for custom commands and extensions
-- **Web Interface**: Web-based GUI for ISA design and testing
-
-### Extension Points
-
-The CLI architecture supports easy extension:
-- New commands can be added by implementing command handlers
-- Custom output formats can be registered
-- Validation rules can be extended
-- Integration with external tools is supported
 
 ## Conclusion
 
-The xform CLI provides a powerful, flexible interface for working with custom instruction set architectures. Its comprehensive feature set, robust error handling, and extensible design make it suitable for both educational use and professional development workflows.
-
-The consistent command structure and detailed documentation ensure that users can quickly become productive with the toolkit, while the integration capabilities support automation and build system integration for more complex workflows.
-
-## How It Fits Into the Project
-- The CLI is the main entry point for users and scripts.
-- It connects all core modules (ISA loader, parser, symbol table, assembler, disassembler).
-
-## Example Usage
-```bash
-# Assemble a program
-xform assemble --isa simple_risc --input program.s --output program.bin --verbose
-
-# Disassemble a binary
-xform disassemble --isa simple_risc --input program.bin --output program.s
-
-# Validate an ISA
-xform validate --isa simple_risc --verbose
-
-# List available ISAs
-xform list-isas --verbose
-
-# Parse and show AST
-xform parse --isa simple_risc --input program.s --verbose
-```
-
-## Diagram
-```mermaid
-graph TD;
-  A[User/Shell] -->|commands| B[CLI];
-  B --> C[ISA Loader];
-  B --> D[Parser];
-  B --> E[Symbol Table];
-  B --> F[Assembler/Disassembler];
-```
-
-## File Location
-- `src/isa_xform/cli.py`
+The CLI provides a complete interface to the py-isa-xform toolkit, enabling both interactive use and automation. The consistent command structure, comprehensive error handling, and integration capabilities make it suitable for both educational and production environments.
