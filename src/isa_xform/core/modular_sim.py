@@ -261,6 +261,13 @@ class Simulator:
                     code_size = data[16:20]
                     code_size = int.from_bytes(code_size, byteorder='little')
                     self.memory[code_start:code_start + code_size] = data[entry_point:entry_point + code_size]
+                    # Set PC to the entry point from the binary header
+                    self.pc = entry_point
+                    # Store code section info for later use
+                    self.code_start = code_start
+                    self.code_size = code_size
+                    print(f"DEBUG: Entry point from binary: {entry_point} (0x{entry_point:04X})")
+                    print(f"DEBUG: Setting PC to: {self.pc} (0x{self.pc:04X})")
                     entry_point += code_size
                     data_start = data[20:24]
                     data_start = int.from_bytes(data_start, byteorder='little')
@@ -278,6 +285,13 @@ class Simulator:
                     code_size = data[16:20]
                     code_size = int.from_bytes(code_size, byteorder='big')
                     self.memory[self.pc:self.pc + code_size] = data[code_start:code_start + code_size]
+                    # Set PC to the entry point from the binary header
+                    entry_point = data[8:12]
+                    entry_point = int.from_bytes(entry_point, byteorder='big')
+                    self.pc = entry_point
+                    # Store code section info for later use
+                    self.code_start = code_start
+                    self.code_size = code_size
                     data_start = data[20:24]
                     data_start = int.from_bytes(data_start, byteorder='big')
                     data_size = data[24:28]
@@ -497,6 +511,10 @@ def draw_screen(screen, memory):
 def run_simulator_with_graphics(simulator, step=False):
     simulator.running = True
 
+    # Debug: print first 64 bytes of memory
+    print("[DEBUG] First 64 bytes of memory:")
+    print(' '.join(f'{b:02X}' for b in simulator.memory[:64]))
+
     # Init pygame
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -514,9 +532,12 @@ def run_simulator_with_graphics(simulator, step=False):
     print(f"Code Start: {simulator.pc}")
     print(f"Data Start: {simulator.data_start}")
 
+    # Only disassemble the code section, not the whole memory
+    code_section = simulator.memory[simulator.code_start:simulator.code_start + simulator.code_size]
     instructions_map = simulator.map_disassembly_result_to_pc(
-        simulator.disassembler.disassemble(simulator.memory, simulator.pc)
+        simulator.disassembler.disassemble(code_section, simulator.code_start)
     )
+    print(f"[DEBUG] Instruction map keys: {sorted(list(instructions_map.keys()))}")
 
     while simulator.pc < len(simulator.memory) and simulator.running:
         for event in pygame.event.get():
@@ -576,6 +597,41 @@ def run_simulator_with_graphics(simulator, step=False):
 
     print("Simulation completed")
     simulator.dump_memory(0xFA00, 0xFA03)
+def run(self, step: bool = False):
+        """Runs the simulator, disassembling and executing instructions in memory"""
+        disassembly_result = self.disassembler.disassemble(self.memory, self.pc)
+        instuctions_map = self.map_disassembly_result_to_pc(disassembly_result)
+        loop = "start"
+
+        while self.pc < len(self.memory) and (loop != 'q' or (not step)):
+            current_instruction = instuctions_map[self.pc] if self.pc in instuctions_map else None
+            if current_instruction is None:
+                print(f"Skipping instruction at PC: {self.pc} (NoneType)")
+                continue
+
+            print(f"PC: {self.pc:04X} - {current_instruction.mnemonic} {', '.join(current_instruction.operands)}")
+            temp_pc = self.pc
+            if self.execute_instruction(current_instruction):
+                if temp_pc == self.pc:
+                    self.pc += self.pc_step
+                if "NOP" in current_instruction.mnemonic:
+                    continue
+                else:
+                    if step:
+                        self.print_registers()
+                        loop = input("Press Enter to continue, 'q' to quit: ").strip().lower()
+                    else:
+                        self.print_registers()
+                        # print("Reached end of disassembled instructions")
+                        # break
+                    # for i in range(0, 65536, 2):
+                    #     if self.memory[i] | (self.memory[i+1] << 8) != 0:
+                    #         print(f"Memory[{i:04X}]: {self.memory[i] | (self.memory[i+1] << 8) if i+1 < len(self.memory) else 0}")
+                
+            else:
+                print("Execution terminated by instruction")
+                break
+        print("Simulation completed")
 
 def main():
     if len(sys.argv) != 2:
@@ -601,7 +657,6 @@ def main():
     run_simulator_with_graphics(simulator)
 
     return 0
-
 
 if __name__ == "__main__":
     main()
