@@ -46,6 +46,7 @@ class AssemblyContext:
     origin_set: bool = False
     symbols_defined: Dict[str, int] = field(default_factory=dict)
     org_address: int = 0
+    org_address_set: bool = False  # Track if .org directive was used
     errors: List[AssemblyError] = field(default_factory=list)
     warnings: List[AssemblyError] = field(default_factory=list)
     current_line: int = 0
@@ -237,8 +238,11 @@ class Assembler:
             # Append to end of section
             address = self.context.section_addresses[section_name]
         
-        # Check bounds
-        if address < section_info['start'] or address + len(data) > section_info['end']:
+        # Check bounds - but allow data placement at any address for MMIO usage
+        # Only enforce bounds for the default data section, not when using .org
+        if (section_name == "data" and 
+            (address < section_info['start'] or address + len(data) > section_info['end']) and
+            not self.context.org_address_set):
             self._report_error(
                 line_number=self.context.current_line,
                 column=0,
@@ -246,6 +250,16 @@ class Assembler:
                 context=f"Address: 0x{address:X}, Size: {len(data)}, Section: 0x{section_info['start']:X}-0x{section_info['end']:X}"
             )
             return False
+        
+        # Additional check: if .org was used but address is outside valid MMIO range, warn
+        if (section_name == "data" and self.context.org_address_set and
+            address >= 0xFFFF):  # ZX16 address space is 16-bit
+            self._report_warning(
+                line_number=self.context.current_line,
+                column=0,
+                message=f"Data placement at 0x{address:X} may be outside valid address space",
+                context=f"Address: 0x{address:X}, ZX16 address space: 0x0000-0xFFFF"
+            )
         
         # Ensure section_data is large enough
         while len(section_data) < address - section_info['start'] + len(data):
@@ -447,6 +461,7 @@ class Assembler:
                         if current_section == "data":
                             logical_data_address = address
                             actual_data_start = address  # Update actual data start for ISAX header
+                            self.context.org_address_set = True  # Mark that .org was used in data section
                         else:
                             logical_code_address = address
                         self.context.current_address = address
@@ -457,22 +472,21 @@ class Assembler:
                     # Dynamically detect data directives from ISA definition
                     is_data_directive = (
                         node.name.lower() in {'.word', '.half', '.byte', '.space', '.ascii', '.asciiz'} or
-                        current_section == "data" or
                         (node.name.lower() in self.isa_definition.directives and 
                          self.isa_definition.directives[node.name.lower()].action in 
                          {"allocate_bytes", "allocate_space", "allocate_string", "fill"})
                     )
                     
                     if result is not None:
-                        if is_data_directive:
-                            # Use logical data address for data
+                        if is_data_directive and current_section == "data":
+                            # Use logical data address for data in data section
                             self.context.current_address = logical_data_address
                             # Add data to the current section at the current address
                             self._add_data_to_section("data", bytes(result), logical_data_address)
                             data_bytes.extend(result)
                             logical_data_address = self.context.current_address
                         else:
-                            # Use logical code address for code
+                            # Use logical code address for code or data in code section
                             self.context.current_address = logical_code_address
                             # Add code to the current section at the current address
                             self._add_data_to_section("text", bytes(result), logical_code_address)
